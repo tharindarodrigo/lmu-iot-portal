@@ -1,0 +1,93 @@
+name: Enforce Conventions
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-commit-messages:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit message format
+        run: |
+          echo "Checking commit messages for US-<number> prefix..."
+          
+          # Get all commits in the PR
+          COMMITS=$(git log --format=%s origin/${{ github.base_ref }}..HEAD)
+          
+          INVALID_COMMITS=""
+          while IFS= read -r commit; do
+            # Skip merge commits and empty lines
+            if [[ "$commit" =~ ^Merge || -z "$commit" ]]; then
+              continue
+            fi
+            
+            # Check if commit message starts with US-<number>:
+            if ! [[ "$commit" =~ ^US-[0-9]+: ]]; then
+              INVALID_COMMITS="${INVALID_COMMITS}\n❌ $commit"
+            else
+              echo "✅ $commit"
+            fi
+          done <<< "$COMMITS"
+          
+          if [ -n "$INVALID_COMMITS" ]; then
+            echo ""
+            echo "❌ Invalid commit messages found:"
+            echo -e "$INVALID_COMMITS"
+            echo ""
+            echo "All commits must follow the format: US-<issue-number>: <description>"
+            echo "Example: US-1: Add ProtocolType enum"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ All commit messages follow the correct format!"
+
+  check-branch-name:
+    name: Validate Branch Name
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch naming convention
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          echo "Checking branch name: $BRANCH"
+          
+          # Allow feature/us-<number>-<slug> or hotfix/us-<number>-<slug>
+          if [[ "$BRANCH" =~ ^(feature|hotfix)/us-[0-9]+-[a-z0-9-]+$ ]]; then
+            echo "✅ Branch name follows convention: $BRANCH"
+          else
+            echo "❌ Invalid branch name: $BRANCH"
+            echo ""
+            echo "Branch names must follow one of these formats:"
+            echo "  - feature/us-<issue-number>-<slug>"
+            echo "  - hotfix/us-<issue-number>-<slug>"
+            echo ""
+            echo "Example: feature/us-1-device-types"
+            exit 1
+          fi
+
+  check-pr-links-issue:
+    name: Validate PR Links Issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PR references an issue
+        run: |
+          PR_BODY="${{ github.event.pull_request.body }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          
+          # Check if PR body or title contains a reference to an issue
+          if [[ "$PR_BODY" =~ (#[0-9]+|US-[0-9]+) ]] || [[ "$PR_TITLE" =~ (US-[0-9]+) ]]; then
+            echo "✅ PR references an issue"
+          else
+            echo "❌ PR does not reference any issue"
+            echo ""
+            echo "Please reference the issue in your PR title or description using:"
+            echo "  - US-<issue-number> format in the title"
+            echo "  - #<issue-number> or 'Closes #<issue-number>' in the description"
+            exit 1
+          fi

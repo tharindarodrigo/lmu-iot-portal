@@ -5,6 +5,25 @@
 
 The Laravel Boost guidelines are specifically curated by Laravel maintainers for this application. These guidelines should be followed closely to ensure the best experience when building Laravel applications.
 
+=== git workflow rules ===
+
+# Git Workflow & Contribution Standards
+
+- This project follows a **git-flow inspired workflow** with automated enforcement via GitHub Actions.
+- ALL commits MUST follow the format: `US-<issue-number>: <description>` (e.g., `US-1: Add ProtocolType enum`).
+- ALL feature branches MUST follow the format: `feature/us-<issue-number>-<slug>` (e.g., `feature/us-1-device-types`).
+- ALL pull requests MUST reference an issue using `Closes #<number>` in the description.
+- Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for complete workflow documentation.
+
+## When Starting Implementation
+1. Check GitHub Issues and pick from "Ready" or "Backlog"
+2. Create feature branch: `git checkout -b feature/us-<issue>-<slug>`
+3. Commit with proper format: `git commit -m "US-<issue>: <what you did>"`
+4. Open PR against `main` with issue reference
+5. GitHub Actions will validate commit format, branch name, and issue linking
+6. Move issue to "In Review" when PR is opened
+7. After merge, issue auto-closes and moves to "Done"
+
 ## Foundational Context
 
 This application is a Laravel application and its main Laravel ecosystems package & versions are below. You are an expert with them all. Ensure you abide by these specific packages & versions.
@@ -144,6 +163,13 @@ protected function isAccessible(User $user, ?string $path = null): bool
 - The application is served by Laravel Herd and will be available at: `https?://[kebab-case-project-dir].test`. Use the `get-absolute-url` tool to generate valid URLs for the user.
 - You must not run any commands to make the site available via HTTP(S). It is always available through Laravel Herd.
 
+=== tests rules ===
+
+# Test Enforcement
+
+- Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
+- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
+
 === laravel/core rules ===
 
 # Do Things the Laravel Way
@@ -256,6 +282,60 @@ protected function isAccessible(User $user, ?string $path = null): bool
 - Filament is used by this application. Follow existing conventions for how and where it's implemented.
 - Filament is a Server-Driven UI (SDUI) framework for Laravel that lets you define user interfaces in PHP using structured configuration objects. Built on Livewire, Alpine.js, and Tailwind CSS.
 - Use the `search-docs` tool for official documentation on Artisan commands, code examples, testing, relationships, and idiomatic practices.
+
+### Filament Resource Structure Convention
+
+This application uses a **domain-driven directory structure** for Filament resources:
+
+```
+app/Filament/{Panel}/Resources/{Domain}/{Entity}/
+├── {Entity}Resource.php
+├── Pages/
+│   ├── Create{Entity}.php
+│   ├── Edit{Entity}.php
+│   ├── List{Entity}s.php
+│   └── View{Entity}.php (optional)
+├── Schemas/
+│   ├── {Entity}Form.php
+│   └── {Entity}Infolist.php
+├── Tables/
+│   └── {Entity}Table.php
+└── RelationManagers/ (optional)
+    └── {Relation}RelationManager.php
+```
+
+**Panels:**
+- `Admin` - Super admin panel (cross-tenant, global management)
+- `Portal` - Organization-scoped portal (tenant-aware)
+
+**Domains:**
+- `Authorization` - Roles, Permissions
+- `Shared` - Users, Organizations
+- `IoT` - Device Types, Devices, Schemas, etc. (NEW for this project)
+
+**Example for Device Types (US-1):**
+```
+app/Filament/Admin/Resources/IoT/DeviceTypes/
+├── DeviceTypeResource.php
+├── Pages/
+│   ├── CreateDeviceType.php
+│   ├── EditDeviceType.php
+│   ├── ListDeviceTypes.php
+│   └── ViewDeviceType.php
+├── Schemas/
+│   ├── DeviceTypeForm.php
+│   └── DeviceTypeInfolist.php
+└── Tables/
+    └── DeviceTypeTable.php
+```
+
+**Rules:**
+- ALWAYS follow this structure when creating Filament resources
+- Check existing resources in the same domain for naming patterns
+- Forms go in `Schemas/{Entity}Form.php`
+- Infolists (read-only views) go in `Schemas/{Entity}Infolist.php`
+- Table configurations go in `Tables/{Entity}Table.php`
+- Keep resource files thin - delegate to Schemas/Tables/Pages
 
 ### Artisan
 
