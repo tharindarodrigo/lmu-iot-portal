@@ -1,0 +1,21 @@
+{
+    "agents": [
+        "junie",
+        "cursor",
+        "claude_code",
+        "codex",
+        "opencode",
+        "copilot"
+    ],
+    "guidelines": true,
+    "herd_mcp": true,
+    "mcp": true,
+    "packages": [
+        "filament/filament"
+    ],
+    "sail": false,
+    "skills": [
+        "pennant-development",
+        "pest-testing"
+    ]
+}

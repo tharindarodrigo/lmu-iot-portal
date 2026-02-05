@@ -1,0 +1,22 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+
+    paths:
+        - app/
+
+    # Level 9 is the highest level
+    level: 9
+
+    ignoreErrors:
+        - message: '#(Cannot access property|Access to an undefined property) \$id on Illuminate\\Database\\Eloquent\\Model(\|null)?#'
+          path: app/Http/Middleware/ApplyTenantScopes.php
+        - '#Call to an undefined method App\\Domain\\Authorization\\Models\\Role\|Illuminate\\Database\\Eloquent\\Collection<int, App\\Domain\\Authorization\\Models\\Role>::permissions\(\)#'
+
+    excludePaths:
+        - ./app/Http/Middleware/ApplyTenantScopes.php
+        - ./app/Providers/AppServiceProvider.php
+
+#
+#    checkMissingIterableValueType: false
