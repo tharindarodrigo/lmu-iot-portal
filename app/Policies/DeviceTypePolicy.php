@@ -1,0 +1,47 @@
+<?php
+
+namespace App\Policies;
+
+use App\Domain\Shared\Models\User;
+use App\Domain\IoT\Models\DeviceType;
+use App\Domain\IoT\Permissions\DeviceTypePermission;
+
+class DeviceTypePolicy
+{
+    public function viewAny(User $user): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::VIEW_ANY);
+    }
+
+    public function view(User $user, DeviceType $model): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::VIEW);
+    }
+
+    public function create(User $user): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::CREATE);
+    }
+
+    public function update(User $user, DeviceType $model): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::UPDATE);
+    }
+
+    public function delete(User $user, DeviceType $model): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::DELETE);
+    }
+
+    public function restore(User $user, DeviceType $model): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::RESTORE);
+    }
+
+    public function forceDelete(User $user, DeviceType $model): bool
+    {
+        return $user->hasPermissionTo(DeviceTypePermission::FORCE_DELETE);
+    }
+
+
+}
