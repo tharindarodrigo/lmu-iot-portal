@@ -24,31 +24,29 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         public ?string $authPassword = null,
         public int $timeout = 30,
     ) {
+        if (empty($this->baseUrl) || ! filter_var($this->baseUrl, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException('Base URL must be a valid URL');
+        }
+
+        if (! in_array($this->method, ['GET', 'POST', 'PUT', 'PATCH'], true)) {
+            throw new \InvalidArgumentException('HTTP method must be GET, POST, PUT, or PATCH');
+        }
+
+        if ($this->timeout <= 0) {
+            throw new \InvalidArgumentException('Timeout must be greater than 0');
+        }
+
+        if ($this->authType === HttpAuthType::Bearer && empty($this->authToken)) {
+            throw new \InvalidArgumentException('Bearer token is required');
+        }
+
+        if ($this->authType === HttpAuthType::Basic && (empty($this->authUsername) || empty($this->authPassword))) {
+            throw new \InvalidArgumentException('Basic auth username and password are required');
+        }
     }
 
     public function validate(): bool
     {
-        if (empty($this->baseUrl) || !filter_var($this->baseUrl, FILTER_VALIDATE_URL)) {
-            return false;
-        }
-
-        if (!in_array($this->method, ['GET', 'POST', 'PUT', 'PATCH'], true)) {
-            return false;
-        }
-
-        if ($this->timeout <= 0) {
-            return false;
-        }
-
-        // Validate auth requirements
-        if ($this->authType === HttpAuthType::Bearer && empty($this->authToken)) {
-            return false;
-        }
-
-        if ($this->authType === HttpAuthType::Basic && (empty($this->authUsername) || empty($this->authPassword))) {
-            return false;
-        }
-
         return true;
     }
 
@@ -90,17 +88,49 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
      */
     public static function fromArray(array $data): static
     {
+        $baseUrl = $data['base_url'] ?? null;
+        if (! is_string($baseUrl) || $baseUrl === '') {
+            throw new \InvalidArgumentException('base_url is required');
+        }
+
+        $telemetryEndpoint = $data['telemetry_endpoint'] ?? null;
+        $telemetryEndpoint = is_string($telemetryEndpoint) ? $telemetryEndpoint : '/telemetry';
+
+        $controlEndpoint = $data['control_endpoint'] ?? null;
+        $controlEndpoint = is_string($controlEndpoint) ? $controlEndpoint : null;
+
+        $method = $data['method'] ?? null;
+        $method = is_string($method) ? $method : 'POST';
+
+        $headers = $data['headers'] ?? [];
+        $headers = is_array($headers) ? $headers : [];
+        /** @var array<string, string> $headers */
+        $headers = array_map(
+            static fn ($value): string => is_scalar($value) ? (string) $value : '',
+            $headers
+        );
+
+        $authTypeValue = $data['auth_type'] ?? null;
+        $authType = $authTypeValue instanceof HttpAuthType
+            ? $authTypeValue
+            : (is_string($authTypeValue) || is_int($authTypeValue)
+                ? HttpAuthType::from($authTypeValue)
+                : HttpAuthType::None);
+
+        $timeoutValue = $data['timeout'] ?? 30;
+        $timeout = is_numeric($timeoutValue) ? (int) $timeoutValue : 30;
+
         return new self(
-            baseUrl: $data['base_url'] ?? throw new \InvalidArgumentException('base_url is required'),
-            telemetryEndpoint: $data['telemetry_endpoint'] ?? '/telemetry',
-            controlEndpoint: $data['control_endpoint'] ?? null,
-            method: $data['method'] ?? 'POST',
-            headers: $data['headers'] ?? [],
-            authType: isset($data['auth_type']) ? HttpAuthType::from($data['auth_type']) : HttpAuthType::None,
-            authToken: $data['auth_token'] ?? null,
-            authUsername: $data['auth_username'] ?? null,
-            authPassword: $data['auth_password'] ?? null,
-            timeout: $data['timeout'] ?? 30,
+            baseUrl: $baseUrl,
+            telemetryEndpoint: $telemetryEndpoint,
+            controlEndpoint: $controlEndpoint,
+            method: $method,
+            headers: $headers,
+            authType: $authType,
+            authToken: isset($data['auth_token']) && is_string($data['auth_token']) ? $data['auth_token'] : null,
+            authUsername: isset($data['auth_username']) && is_string($data['auth_username']) ? $data['auth_username'] : null,
+            authPassword: isset($data['auth_password']) && is_string($data['auth_password']) ? $data['auth_password'] : null,
+            timeout: $timeout,
         );
     }
 }

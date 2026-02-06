@@ -57,8 +57,7 @@ it('can create a new device type with HTTP protocol', function (): void {
             'protocol_config.telemetry_endpoint' => '/telemetry/{device_id}',
             'protocol_config.command_endpoint' => '/commands/{device_id}',
             'protocol_config.method' => 'POST',
-            'protocol_config.auth_type' => HttpAuthType::Bearer->value,
-            'protocol_config.auth_token' => 'test_token_123',
+            'protocol_config.auth_type' => HttpAuthType::None->value,
             'protocol_config.timeout' => 30,
             'protocol_config.headers' => [],
         ])

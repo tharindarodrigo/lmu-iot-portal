@@ -4,14 +4,23 @@ declare(strict_types=1);
 
 use App\Domain\IoT\Models\DeviceType;
 use App\Domain\IoT\Permissions\DeviceTypePermission;
+use App\Domain\Shared\Models\Organization;
 use App\Domain\Shared\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    $organization = Organization::factory()->create();
+    setPermissionsTeamId($organization->id);
+
     $this->user = User::factory()->create();
+
+    foreach (DeviceTypePermission::cases() as $permission) {
+        Permission::findOrCreate($permission->value, 'web');
+    }
 });
 
 it('allows user with viewAny permission to view device types index', function (): void {

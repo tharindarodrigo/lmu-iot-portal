@@ -4,7 +4,7 @@ namespace App\Domain\IoT\Permissions;
 
 use Althinect\EnumPermission\Concerns\HasPermissionGroup;
 
-enum DeviceTypePermission : string
+enum DeviceTypePermission: string
 {
     use HasPermissionGroup;
 

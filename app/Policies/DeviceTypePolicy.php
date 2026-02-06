@@ -2,9 +2,9 @@
 
 namespace App\Policies;
 
-use App\Domain\Shared\Models\User;
 use App\Domain\IoT\Models\DeviceType;
 use App\Domain\IoT\Permissions\DeviceTypePermission;
+use App\Domain\Shared\Models\User;
 
 class DeviceTypePolicy
 {
@@ -42,6 +42,4 @@ class DeviceTypePolicy
     {
         return $user->hasPermissionTo(DeviceTypePermission::FORCE_DELETE);
     }
-
-
 }

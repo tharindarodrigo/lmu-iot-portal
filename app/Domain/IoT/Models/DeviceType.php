@@ -13,6 +13,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property ProtocolConfigInterface|null $protocol_config
+ * @property ProtocolType $default_protocol
+ */
 class DeviceType extends Model
 {
     /** @use HasFactory<\Database\Factories\DeviceTypeFactory> */
@@ -79,8 +83,10 @@ class DeviceType extends Model
      * @param  \Illuminate\Database\Eloquent\Builder<self>  $query
      * @return \Illuminate\Database\Eloquent\Builder<self>
      */
-    public function scopeForOrganization($query, int $organizationId)
+    public function scopeForOrganization($query, int|Organization $organization)
     {
+        $organizationId = $organization instanceof Organization ? $organization->id : $organization;
+
         return $query->where('organization_id', $organizationId);
     }
 }

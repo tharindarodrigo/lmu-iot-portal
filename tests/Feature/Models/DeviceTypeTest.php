@@ -7,6 +7,9 @@ use App\Domain\IoT\Models\DeviceType;
 use App\Domain\IoT\ProtocolConfigs\HttpProtocolConfig;
 use App\Domain\IoT\ProtocolConfigs\MqttProtocolConfig;
 use App\Domain\Shared\Models\Organization;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
 
 test('device type can be created with MQTT protocol config', function (): void {
     $deviceType = DeviceType::factory()->mqtt()->create();

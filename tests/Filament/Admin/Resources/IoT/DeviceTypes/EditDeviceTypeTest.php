@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\IoT\Enums\ProtocolType;
+use App\Domain\IoT\Enums\HttpAuthType;
 use App\Domain\IoT\Models\DeviceType;
+use App\Domain\IoT\ProtocolConfigs\HttpProtocolConfig;
 use App\Domain\Shared\Models\User;
 use App\Filament\Admin\Resources\IoT\DeviceTypes\Pages\EditDeviceType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -53,7 +54,17 @@ it('can update MQTT protocol configuration', function (): void {
 });
 
 it('can update HTTP protocol configuration', function (): void {
-    $deviceType = DeviceType::factory()->http()->create();
+    $deviceType = DeviceType::factory()->create([
+        'default_protocol' => \App\Domain\IoT\Enums\ProtocolType::Http,
+        'protocol_config' => (new HttpProtocolConfig(
+            baseUrl: 'https://api.example.com',
+            telemetryEndpoint: '/telemetry',
+            controlEndpoint: '/commands',
+            method: 'POST',
+            authType: HttpAuthType::None,
+            timeout: 30,
+        ))->toArray(),
+    ]);
 
     livewire(EditDeviceType::class, ['record' => $deviceType->id])
         ->fillForm([

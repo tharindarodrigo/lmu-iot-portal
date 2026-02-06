@@ -121,7 +121,7 @@ class DeviceTypeSeeder extends Seeder
                 telemetryEndpoint: '/api/v2/devices/readings',
                 controlEndpoint: '/api/v2/devices/setpoint',
                 method: 'POST',
-               headers: ['X-Device-Type' => 'thermostat'],
+                headers: ['X-Device-Type' => 'thermostat'],
                 authType: HttpAuthType::Basic,
                 authUsername: 'thermostat_admin',
                 authPassword: 'basic_auth_password',

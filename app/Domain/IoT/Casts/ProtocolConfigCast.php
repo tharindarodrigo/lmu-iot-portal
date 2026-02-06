@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
 /**
- * @implements CastsAttributes<ProtocolConfigInterface, array<string, mixed>>
+ * @implements CastsAttributes<ProtocolConfigInterface|null, mixed>
  */
 class ProtocolConfigCast implements CastsAttributes
 {
@@ -28,16 +28,25 @@ class ProtocolConfigCast implements CastsAttributes
             return null;
         }
 
+        if (! is_string($value)) {
+            return null;
+        }
+
         $data = json_decode($value, true);
 
         if (! is_array($data)) {
             return null;
         }
 
+        /** @var array<string, mixed> $data */
         $protocol = $attributes['default_protocol'] ?? null;
 
         if ($protocol === null) {
             throw new InvalidArgumentException('default_protocol attribute is required for ProtocolConfigCast');
+        }
+
+        if (! $protocol instanceof ProtocolType && ! is_string($protocol) && ! is_int($protocol)) {
+            throw new InvalidArgumentException('default_protocol attribute must be a ProtocolType or scalar value');
         }
 
         $protocolType = $protocol instanceof ProtocolType ? $protocol : ProtocolType::from($protocol);
@@ -56,15 +65,15 @@ class ProtocolConfigCast implements CastsAttributes
     public function set(Model $model, string $key, mixed $value, array $attributes): string
     {
         if ($value === null) {
-            return json_encode([]);
+            return json_encode([], JSON_THROW_ON_ERROR);
         }
 
         if (is_array($value)) {
-            return json_encode($value);
+            return json_encode($value, JSON_THROW_ON_ERROR);
         }
 
         if ($value instanceof ProtocolConfigInterface) {
-            return json_encode($value->toArray());
+            return json_encode($value->toArray(), JSON_THROW_ON_ERROR);
         }
 
         throw new InvalidArgumentException('Value must be an instance of ProtocolConfigInterface or an array');

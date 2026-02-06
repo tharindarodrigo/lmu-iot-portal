@@ -46,9 +46,9 @@ class DeviceTypeInfolist
                         TextEntry::make('organization.name')
                             ->label('Organization')
                             ->placeholder('Global Catalog')
-                            ->icon(fn ($record): string => $record->organization_id
-                                ? Heroicon::OutlinedBuildingOffice->value
-                                : Heroicon::OutlinedGlobeAlt->value
+                            ->icon(fn ($record) => $record->organization_id
+                                ? Heroicon::OutlinedBuildingOffice
+                                : Heroicon::OutlinedGlobeAlt
                             ),
                     ])
                     ->columns(2)
@@ -171,8 +171,8 @@ class DeviceTypeInfolist
                         KeyValueEntry::make('protocol_config.headers')
                             ->label('Custom Headers')
                             ->columnSpanFull()
-                            ->state(fn ($record): array => $record->protocol_config?->headers ?? [])
-                            ->visible(fn ($record): bool => ! empty($record->protocol_config?->headers)),
+                            ->state(fn ($record): array => $record->protocol_config->headers)
+                            ->visible(fn ($record): bool => ! empty($record->protocol_config->headers)),
                     ])
                     ->columns(2)
                     ->columnSpanFull()

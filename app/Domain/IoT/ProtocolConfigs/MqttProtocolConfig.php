@@ -19,14 +19,18 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
         public int $qos = 1,
         public bool $retain = false,
     ) {
+        if ($this->brokerPort < 1 || $this->brokerPort > 65535) {
+            throw new \InvalidArgumentException('Broker port must be between 1 and 65535');
+        }
+
+        if (! in_array($this->qos, [0, 1, 2], true)) {
+            throw new \InvalidArgumentException('QoS must be 0, 1, or 2');
+        }
     }
 
     public function validate(): bool
     {
-        return !empty($this->brokerHost)
-            && $this->brokerPort > 0
-            && $this->brokerPort <= 65535
-            && in_array($this->qos, [0, 1, 2], true);
+        return $this->brokerHost !== '';
     }
 
     public function getTelemetryTopicTemplate(): string
@@ -34,7 +38,7 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
         return $this->telemetryTopicTemplate;
     }
 
-    public function getControlTopicTemplate(): ?string
+    public function getControlTopicTemplate(): string
     {
         return $this->controlTopicTemplate;
     }
@@ -62,16 +66,43 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
      */
     public static function fromArray(array $data): static
     {
+        $brokerHost = $data['broker_host'] ?? null;
+        if (! is_string($brokerHost) || $brokerHost === '') {
+            throw new \InvalidArgumentException('broker_host is required');
+        }
+
+        $brokerPortValue = $data['broker_port'] ?? 1883;
+        $brokerPort = is_numeric($brokerPortValue) ? (int) $brokerPortValue : 1883;
+
+        $username = isset($data['username']) && is_string($data['username']) ? $data['username'] : null;
+        $password = isset($data['password']) && is_string($data['password']) ? $data['password'] : null;
+        $useTls = (bool) ($data['use_tls'] ?? false);
+
+        $telemetryTopicTemplate = $data['telemetry_topic_template'] ?? null;
+        $telemetryTopicTemplate = is_string($telemetryTopicTemplate)
+            ? $telemetryTopicTemplate
+            : 'device/:device_uuid/data';
+
+        $controlTopicTemplate = $data['control_topic_template'] ?? null;
+        $controlTopicTemplate = is_string($controlTopicTemplate)
+            ? $controlTopicTemplate
+            : 'device/:device_uuid/ctrl';
+
+        $qosValue = $data['qos'] ?? 1;
+        $qos = is_numeric($qosValue) ? (int) $qosValue : 1;
+
+        $retain = (bool) ($data['retain'] ?? false);
+
         return new self(
-            brokerHost: $data['broker_host'] ?? throw new \InvalidArgumentException('broker_host is required'),
-            brokerPort: $data['broker_port'] ?? 1883,
-            username: $data['username'] ?? null,
-            password: $data['password'] ?? null,
-            useTls: $data['use_tls'] ?? false,
-            telemetryTopicTemplate: $data['telemetry_topic_template'] ?? 'device/:device_uuid/data',
-            controlTopicTemplate: $data['control_topic_template'] ?? 'device/:device_uuid/ctrl',
-            qos: $data['qos'] ?? 1,
-            retain: $data['retain'] ?? false,
+            brokerHost: $brokerHost,
+            brokerPort: $brokerPort,
+            username: $username,
+            password: $password,
+            useTls: $useTls,
+            telemetryTopicTemplate: $telemetryTopicTemplate,
+            controlTopicTemplate: $controlTopicTemplate,
+            qos: $qos,
+            retain: $retain,
         );
     }
 }

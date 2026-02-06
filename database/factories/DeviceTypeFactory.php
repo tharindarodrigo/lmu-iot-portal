@@ -108,6 +108,8 @@ class DeviceTypeFactory extends Factory
      */
     protected function httpConfig(): array
     {
+        $authType = $this->faker->randomElement([HttpAuthType::None, HttpAuthType::Bearer, HttpAuthType::Basic]);
+
         return (new HttpProtocolConfig(
             baseUrl: $this->faker->url,
             telemetryEndpoint: '/api/telemetry',
@@ -117,8 +119,10 @@ class DeviceTypeFactory extends Factory
                 'Content-Type' => 'application/json',
                 'X-API-Version' => 'v1',
             ],
-            authType: $this->faker->randomElement([HttpAuthType::None, HttpAuthType::Bearer, HttpAuthType::Basic]),
-            authToken: $this->faker->sha256,
+            authType: $authType,
+            authToken: $authType === HttpAuthType::Bearer ? $this->faker->sha256 : null,
+            authUsername: $authType === HttpAuthType::Basic ? $this->faker->userName : null,
+            authPassword: $authType === HttpAuthType::Basic ? $this->faker->password : null,
             timeout: $this->faker->randomElement([15, 30, 60]),
         ))->toArray();
     }
