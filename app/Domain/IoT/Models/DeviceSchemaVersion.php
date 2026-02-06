@@ -40,6 +40,14 @@ class DeviceSchemaVersion extends Model
         return $this->hasMany(DerivedParameterDefinition::class, 'device_schema_version_id');
     }
 
+    /**
+     * @return HasMany<DeviceTelemetryLog, $this>
+     */
+    public function telemetryLogs(): HasMany
+    {
+        return $this->hasMany(DeviceTelemetryLog::class, 'device_schema_version_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';
