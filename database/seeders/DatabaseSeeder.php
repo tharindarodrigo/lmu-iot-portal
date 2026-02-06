@@ -36,6 +36,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             OrganizationSeeder::class,
+            DeviceSchemaSeeder::class,
         ]);
     }
 }

@@ -7,11 +7,13 @@ namespace App\Domain\DeviceTypes\Models;
 use App\Domain\DeviceTypes\Casts\ProtocolConfigCast;
 use App\Domain\DeviceTypes\Enums\ProtocolType;
 use App\Domain\DeviceTypes\ValueObjects\Protocol\ProtocolConfigInterface;
+use App\Domain\IoT\Models\DeviceSchema;
 use App\Domain\Shared\Models\Organization;
 use Database\Factories\DeviceTypeFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property ProtocolConfigInterface|null $protocol_config
@@ -48,6 +50,14 @@ class DeviceType extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * @return HasMany<DeviceSchema, $this>
+     */
+    public function schemas(): HasMany
+    {
+        return $this->hasMany(DeviceSchema::class, 'device_type_id');
     }
 
     /**
