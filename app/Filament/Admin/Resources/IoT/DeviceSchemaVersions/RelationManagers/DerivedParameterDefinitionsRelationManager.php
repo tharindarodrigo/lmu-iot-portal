@@ -5,26 +5,28 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers;
 
 use App\Domain\IoT\Enums\ParameterDataType;
+use App\Domain\IoT\Models\DerivedParameterDefinition;
 use App\Domain\IoT\Models\DeviceSchemaVersion;
+use Closure;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\CodeEditor;
 use Filament\Forms\Components\CodeEditor\Enums\Language;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Validation\Rules\Unique;
 
-class ParameterDefinitionsRelationManager extends RelationManager
+class DerivedParameterDefinitionsRelationManager extends RelationManager
 {
-    protected static string $relationship = 'parameters';
+    protected static string $relationship = 'derivedParameters';
 
     public function getOwnerRecord(): DeviceSchemaVersion
     {
@@ -55,29 +57,57 @@ class ParameterDefinitionsRelationManager extends RelationManager
                     ->required()
                     ->maxLength(255),
 
-                TextInput::make('json_path')
-                    ->required()
-                    ->maxLength(255)
-                    ->helperText('Example: $.status.temp or temp'),
-
-                Select::make('type')
+                Select::make('data_type')
                     ->options(ParameterDataType::class)
                     ->required(),
 
                 TextInput::make('unit')
                     ->maxLength(50)
-                    ->placeholder('Celsius'),
+                    ->placeholder('Watts'),
 
-                Toggle::make('required')
-                    ->label('Required'),
-
-                Toggle::make('is_critical')
-                    ->label('Critical'),
-
-                CodeEditor::make('validation_rules')
-                    ->language(Language::Json)
+                CheckboxList::make('dependencies')
+                    ->helperText('Select parameters used in the expression')
                     ->columnSpanFull()
-                    ->helperText('JSON rules, e.g. {"min": -40, "max": 85}')
+                    ->options(fn (): array => $this->getOwnerRecord()
+                        ->parameters()
+                        ->orderBy('sequence')
+                        ->pluck('key', 'key')
+                        ->all())
+                    ->columns(4),
+
+                CodeEditor::make('expression')
+                    ->language(Language::Json)
+                    ->required()
+                    ->columnSpanFull()
+                    ->helperText('JsonLogic expression for derived values')
+                    ->rules([
+                        fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                            if ($value === null || $value === '') {
+                                return;
+                            }
+
+                            $expression = is_string($value) ? json_decode($value, true) : $value;
+
+                            if (! is_array($expression)) {
+                                $fail('Expression must be valid JSON.');
+
+                                return;
+                            }
+
+                            $variables = DerivedParameterDefinition::extractVariablesFromExpression($expression);
+                            $dependencies = $get('dependencies') ?? [];
+
+                            if (! is_array($dependencies)) {
+                                $dependencies = [];
+                            }
+
+                            $missing = array_values(array_diff($variables, $dependencies));
+
+                            if ($missing !== []) {
+                                $fail('Select dependencies for: '.implode(', ', $missing));
+                            }
+                        },
+                    ])
                     ->formatStateUsing(function (mixed $state): ?string {
                         if (is_array($state)) {
                             $encoded = json_encode($state, JSON_PRETTY_PRINT);
@@ -89,33 +119,10 @@ class ParameterDefinitionsRelationManager extends RelationManager
                     })
                     ->dehydrateStateUsing(fn (?string $state): mixed => $state ? json_decode($state, true) : null),
 
-                TextInput::make('validation_error_code')
-                    ->maxLength(100)
-                    ->placeholder('TEMP_RANGE'),
-
-                CodeEditor::make('mutation_expression')
-                    ->language(Language::Json)
-                    ->columnSpanFull()
-                    ->helperText('JsonLogic expression')
-                    ->formatStateUsing(function (mixed $state): ?string {
-                        if (is_array($state)) {
-                            $encoded = json_encode($state, JSON_PRETTY_PRINT);
-
-                            return $encoded === false ? null : $encoded;
-                        }
-
-                        return is_string($state) ? $state : null;
-                    })
-                    ->dehydrateStateUsing(fn (?string $state): mixed => $state ? json_decode($state, true) : null),
-
-                TextInput::make('sequence')
-                    ->integer()
-                    ->minValue(0)
-                    ->default(0),
-
-                Toggle::make('is_active')
-                    ->label('Active')
-                    ->default(true),
+                TextInput::make('json_path')
+                    ->label('JSON Path')
+                    ->maxLength(255)
+                    ->placeholder('computed.avg_voltage'),
             ])
             ->columns(2);
     }
@@ -131,23 +138,13 @@ class ParameterDefinitionsRelationManager extends RelationManager
                 TextColumn::make('label')
                     ->searchable(),
 
-                TextColumn::make('type')
-                    ->formatStateUsing(fn (ParameterDataType|string $state): string => $state instanceof ParameterDataType ? $state->label() : (string) $state)
-                    ->badge(),
+                TextColumn::make('data_type')
+                    ->badge()
+                    ->formatStateUsing(fn (ParameterDataType|string $state): string => $state instanceof ParameterDataType ? $state->label() : (string) $state),
 
-                IconColumn::make('required')
-                    ->boolean(),
-
-                IconColumn::make('is_critical')
-                    ->label('Critical')
-                    ->boolean(),
-
-                IconColumn::make('is_active')
-                    ->label('Active')
-                    ->boolean(),
-
-                TextColumn::make('sequence')
-                    ->sortable(),
+                TextColumn::make('dependencies')
+                    ->label('Dependencies')
+                    ->formatStateUsing(fn (mixed $state): string => is_array($state) ? implode(', ', $state) : ''),
             ])
             ->headerActions([
                 CreateAction::make(),

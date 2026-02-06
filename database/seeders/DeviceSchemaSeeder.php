@@ -8,6 +8,7 @@ use App\Domain\DeviceTypes\Enums\ProtocolType;
 use App\Domain\DeviceTypes\Models\DeviceType;
 use App\Domain\DeviceTypes\ValueObjects\Protocol\MqttProtocolConfig;
 use App\Domain\IoT\Enums\ParameterDataType;
+use App\Domain\IoT\Models\DerivedParameterDefinition;
 use App\Domain\IoT\Models\DeviceSchema;
 use App\Domain\IoT\Models\DeviceSchemaVersion;
 use App\Domain\IoT\Models\ParameterDefinition;
@@ -54,6 +55,26 @@ class DeviceSchemaSeeder extends Seeder
                     useTls: false,
                     telemetryTopicTemplate: 'network/:device_uuid/telemetry',
                     controlTopicTemplate: 'network/:device_uuid/control',
+                    qos: 1,
+                    retain: false,
+                ))->toArray(),
+            ]
+        );
+
+        $energyMeterType = DeviceType::firstOrCreate(
+            ['key' => 'energy_meter'],
+            [
+                'organization_id' => null,
+                'name' => 'Energy Meter',
+                'default_protocol' => ProtocolType::Mqtt,
+                'protocol_config' => (new MqttProtocolConfig(
+                    brokerHost: 'mqtt.iot-platform.local',
+                    brokerPort: 1883,
+                    username: 'energy_meter',
+                    password: 'energy_password',
+                    useTls: false,
+                    telemetryTopicTemplate: 'energy/:device_uuid/telemetry',
+                    controlTopicTemplate: 'energy/:device_uuid/control',
                     qos: 1,
                     retain: false,
                 ))->toArray(),
@@ -114,6 +135,26 @@ class DeviceSchemaSeeder extends Seeder
             'is_active' => true,
         ]);
 
+        DerivedParameterDefinition::firstOrCreate([
+            'device_schema_version_id' => $thermalVersion->id,
+            'key' => 'heat_index',
+        ], [
+            'label' => 'Heat Index',
+            'data_type' => ParameterDataType::Decimal,
+            'unit' => 'Celsius',
+            'expression' => [
+                '+' => [
+                    ['var' => 'temp_c'],
+                    ['/' => [
+                        ['var' => 'humidity'],
+                        10,
+                    ]],
+                ],
+            ],
+            'dependencies' => ['temp_c', 'humidity'],
+            'json_path' => 'computed.heat_index',
+        ]);
+
         $networkSchema = DeviceSchema::firstOrCreate([
             'device_type_id' => $networkDeviceType->id,
             'name' => 'Network Gateway Contract',
@@ -157,6 +198,94 @@ class DeviceSchemaSeeder extends Seeder
             'validation_error_code' => 'UPTIME_RANGE',
             'sequence' => 2,
             'is_active' => true,
+        ]);
+
+        $energySchema = DeviceSchema::firstOrCreate([
+            'device_type_id' => $energyMeterType->id,
+            'name' => 'Energy Meter Contract',
+        ]);
+
+        $energyVersion = DeviceSchemaVersion::firstOrCreate([
+            'device_schema_id' => $energySchema->id,
+            'version' => 1,
+        ], [
+            'status' => 'active',
+            'notes' => 'Initial energy meter contract',
+        ]);
+
+        foreach (['V1', 'V2', 'V3'] as $index => $key) {
+            ParameterDefinition::firstOrCreate([
+                'device_schema_version_id' => $energyVersion->id,
+                'key' => $key,
+            ], [
+                'label' => "Voltage {$key}",
+                'json_path' => "voltages.{$key}",
+                'type' => ParameterDataType::Decimal,
+                'unit' => 'Volts',
+                'required' => true,
+                'is_critical' => true,
+                'validation_rules' => ['min' => 0, 'max' => 480],
+                'validation_error_code' => 'VOLTAGE_RANGE',
+                'sequence' => $index + 1,
+                'is_active' => true,
+            ]);
+        }
+
+        foreach (['power_l1', 'power_l2', 'power_l3'] as $index => $key) {
+            ParameterDefinition::firstOrCreate([
+                'device_schema_version_id' => $energyVersion->id,
+                'key' => $key,
+            ], [
+                'label' => "Power {$key}",
+                'json_path' => "power.{$key}",
+                'type' => ParameterDataType::Decimal,
+                'unit' => 'Watts',
+                'required' => true,
+                'is_critical' => true,
+                'validation_rules' => ['min' => 0],
+                'validation_error_code' => 'POWER_RANGE',
+                'sequence' => $index + 4,
+                'is_active' => true,
+            ]);
+        }
+
+        DerivedParameterDefinition::firstOrCreate([
+            'device_schema_version_id' => $energyVersion->id,
+            'key' => 'avg_voltage',
+        ], [
+            'label' => 'Average Voltage',
+            'data_type' => ParameterDataType::Decimal,
+            'unit' => 'Volts',
+            'expression' => [
+                '/' => [
+                    ['+' => [
+                        ['var' => 'V1'],
+                        ['var' => 'V2'],
+                        ['var' => 'V3'],
+                    ]],
+                    3,
+                ],
+            ],
+            'dependencies' => ['V1', 'V2', 'V3'],
+            'json_path' => 'computed.avg_voltage',
+        ]);
+
+        DerivedParameterDefinition::firstOrCreate([
+            'device_schema_version_id' => $energyVersion->id,
+            'key' => 'total_power',
+        ], [
+            'label' => 'Total Power',
+            'data_type' => ParameterDataType::Decimal,
+            'unit' => 'Watts',
+            'expression' => [
+                '+' => [
+                    ['var' => 'power_l1'],
+                    ['var' => 'power_l2'],
+                    ['var' => 'power_l3'],
+                ],
+            ],
+            'dependencies' => ['power_l1', 'power_l2', 'power_l3'],
+            'json_path' => 'computed.total_power',
         ]);
     }
 }

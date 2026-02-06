@@ -10,6 +10,7 @@ enum ParameterDataType: string
     case Decimal = 'decimal';
     case Boolean = 'boolean';
     case String = 'string';
+    case Json = 'json';
 
     public function label(): string
     {
@@ -18,6 +19,7 @@ enum ParameterDataType: string
             self::Decimal => 'Decimal',
             self::Boolean => 'Boolean',
             self::String => 'String',
+            self::Json => 'JSON',
         };
     }
 }

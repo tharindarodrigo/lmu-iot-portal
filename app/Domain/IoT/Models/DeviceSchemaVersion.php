@@ -32,6 +32,14 @@ class DeviceSchemaVersion extends Model
         return $this->hasMany(ParameterDefinition::class, 'device_schema_version_id');
     }
 
+    /**
+     * @return HasMany<DerivedParameterDefinition, $this>
+     */
+    public function derivedParameters(): HasMany
+    {
+        return $this->hasMany(DerivedParameterDefinition::class, 'device_schema_version_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

@@ -68,6 +68,7 @@ class JsonLogicEvaluator
     private function applyNumericOperator(string $operator, mixed $values, array $data): mixed
     {
         $items = is_array($values) ? $values : [$values];
+
         $evaluated = array_map(fn (mixed $item) => $this->evaluate($item, $data), $items);
         $numbers = array_map([$this, 'toNumber'], $evaluated);
 

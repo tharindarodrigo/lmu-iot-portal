@@ -9,6 +9,7 @@ use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\CreateDeviceSche
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\EditDeviceSchemaVersion;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\ListDeviceSchemaVersions;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\ViewDeviceSchemaVersion;
+use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers\DerivedParameterDefinitionsRelationManager;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers\ParameterDefinitionsRelationManager;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Schemas\DeviceSchemaVersionForm;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Schemas\DeviceSchemaVersionInfolist;
@@ -56,6 +57,7 @@ class DeviceSchemaVersionResource extends Resource
     {
         return [
             ParameterDefinitionsRelationManager::class,
+            DerivedParameterDefinitionsRelationManager::class,
         ];
     }
 

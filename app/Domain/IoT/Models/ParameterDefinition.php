@@ -180,6 +180,7 @@ class ParameterDefinition extends Model
             ParameterDataType::Decimal => is_numeric($value),
             ParameterDataType::Boolean => is_bool($value) || in_array($value, ['true', 'false', 0, 1, '0', '1'], true),
             ParameterDataType::String => is_string($value),
+            ParameterDataType::Json => is_array($value) || is_object($value),
         };
     }
 
