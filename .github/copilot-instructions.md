@@ -68,6 +68,11 @@ This project has domain-specific skills available. You MUST activate the relevan
 
 - Laravel Boost is an MCP server that comes with powerful tools designed specifically for this application. Use them.
 
+## Verification & Static Analysis
+
+- ALWAYS run `composer x` before finalizing any changes. This command runs both Laravel Pint (code formatting) and Larastan (static analysis). You must fix any reported errors before completing the task.
+- If `composer x` reports errors you cannot fix easily, mention them to the user.
+
 ## Artisan
 
 - Use the `list-artisan-commands` tool when you need to call an Artisan command to double-check the available parameters.
