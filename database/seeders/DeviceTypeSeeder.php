@@ -44,10 +44,7 @@ class DeviceTypeSeeder extends Seeder
                 username: 'energy_meter_user',
                 password: 'secure_mqtt_password',
                 useTls: false,
-                telemetryTopicTemplate: 'energy/:device_uuid/metrics',
-                controlTopicTemplate: 'energy/:device_uuid/commands',
-                qos: 1,
-                retain: false,
+                baseTopic: 'energy',
             ))->toArray(),
         ]);
 
@@ -63,10 +60,7 @@ class DeviceTypeSeeder extends Seeder
                 username: 'led_user',
                 password: 'secure_mqtt_password',
                 useTls: false,
-                telemetryTopicTemplate: 'led/:device_uuid/status',
-                controlTopicTemplate: 'led/:device_uuid/control',
-                qos: 1,
-                retain: true,
+                baseTopic: 'led',
             ))->toArray(),
         ]);
 
@@ -79,7 +73,6 @@ class DeviceTypeSeeder extends Seeder
             'protocol_config' => (new HttpProtocolConfig(
                 baseUrl: 'https://api.iot-platform.local',
                 telemetryEndpoint: '/v1/sensors/telemetry',
-                controlEndpoint: null,
                 method: 'POST',
                 headers: [
                     'Content-Type' => 'application/json',
@@ -103,10 +96,7 @@ class DeviceTypeSeeder extends Seeder
                 username: 'temp_sensor_user',
                 password: 'secure_tls_password',
                 useTls: true,
-                telemetryTopicTemplate: 'industrial/:device_uuid/temperature',
-                controlTopicTemplate: 'industrial/:device_uuid/calibrate',
-                qos: 2,
-                retain: false,
+                baseTopic: 'industrial',
             ))->toArray(),
         ]);
 
@@ -119,7 +109,6 @@ class DeviceTypeSeeder extends Seeder
             'protocol_config' => (new HttpProtocolConfig(
                 baseUrl: 'https://thermostat-api.example.com',
                 telemetryEndpoint: '/api/v2/devices/readings',
-                controlEndpoint: '/api/v2/devices/setpoint',
                 method: 'POST',
                 headers: ['X-Device-Type' => 'thermostat'],
                 authType: HttpAuthType::Basic,
@@ -150,10 +139,7 @@ class DeviceTypeSeeder extends Seeder
                     username: 'custom_user',
                     password: 'custom_password',
                     useTls: false,
-                    telemetryTopicTemplate: 'org/energy/:device_uuid/data',
-                    controlTopicTemplate: 'org/energy/:device_uuid/ctrl',
-                    qos: 1,
-                    retain: false,
+                    baseTopic: 'org/energy',
                 ))->toArray(),
             ]);
         }

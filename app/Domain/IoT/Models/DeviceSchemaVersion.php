@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class DeviceSchemaVersion extends Model
 {
@@ -25,11 +26,24 @@ class DeviceSchemaVersion extends Model
     }
 
     /**
-     * @return HasMany<ParameterDefinition, $this>
+     * @return HasMany<SchemaVersionTopic, $this>
      */
-    public function parameters(): HasMany
+    public function topics(): HasMany
     {
-        return $this->hasMany(ParameterDefinition::class, 'device_schema_version_id');
+        return $this->hasMany(SchemaVersionTopic::class, 'device_schema_version_id');
+    }
+
+    /**
+     * @return HasManyThrough<ParameterDefinition, SchemaVersionTopic, $this>
+     */
+    public function parameters(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            ParameterDefinition::class,
+            SchemaVersionTopic::class,
+            'device_schema_version_id',
+            'schema_version_topic_id',
+        );
     }
 
     /**

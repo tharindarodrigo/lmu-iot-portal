@@ -14,28 +14,19 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
         public ?string $username = null,
         public ?string $password = null,
         public bool $useTls = false,
-        public string $telemetryTopicTemplate = 'device/:device_uuid/data',
-        public string $controlTopicTemplate = 'device/:device_uuid/ctrl',
-        public int $qos = 1,
-        public bool $retain = false,
+        public string $baseTopic = 'device',
     ) {}
 
     public function validate(): bool
     {
         return ! empty($this->brokerHost)
             && $this->brokerPort > 0
-            && $this->brokerPort <= 65535
-            && in_array($this->qos, [0, 1, 2], true);
+            && $this->brokerPort <= 65535;
     }
 
-    public function getTelemetryTopicTemplate(): string
+    public function getBaseTopic(): string
     {
-        return $this->telemetryTopicTemplate;
-    }
-
-    public function getControlTopicTemplate(): string
-    {
-        return $this->controlTopicTemplate;
+        return $this->baseTopic;
     }
 
     /**
@@ -49,10 +40,7 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
             'username' => $this->username,
             'password' => $this->password,
             'use_tls' => $this->useTls,
-            'telemetry_topic_template' => $this->telemetryTopicTemplate,
-            'control_topic_template' => $this->controlTopicTemplate,
-            'qos' => $this->qos,
-            'retain' => $this->retain,
+            'base_topic' => $this->baseTopic,
         ];
     }
 
@@ -66,10 +54,7 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
         $username = self::nullableStringValue($data, 'username');
         $password = self::nullableStringValue($data, 'password');
         $useTls = self::boolValue($data, 'use_tls', default: false);
-        $telemetryTopicTemplate = self::stringValue($data, 'telemetry_topic_template', default: 'device/:device_uuid/data');
-        $controlTopicTemplate = self::stringValue($data, 'control_topic_template', default: 'device/:device_uuid/ctrl');
-        $qos = self::intValue($data, 'qos', default: 1);
-        $retain = self::boolValue($data, 'retain', default: false);
+        $baseTopic = self::stringValue($data, 'base_topic', default: 'device');
 
         return new self(
             brokerHost: $brokerHost,
@@ -77,10 +62,7 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
             username: $username,
             password: $password,
             useTls: $useTls,
-            telemetryTopicTemplate: $telemetryTopicTemplate,
-            controlTopicTemplate: $controlTopicTemplate,
-            qos: $qos,
-            retain: $retain,
+            baseTopic: $baseTopic,
         );
     }
 

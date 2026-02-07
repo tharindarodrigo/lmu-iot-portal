@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('parameter_definitions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('device_schema_version_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('schema_version_topic_id')->constrained()->cascadeOnDelete();
             $table->string('key', 100);
             $table->string('label', 255);
             $table->string('json_path', 255);
@@ -28,8 +28,8 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 
-            $table->unique(['device_schema_version_id', 'key'], 'parameter_definitions_version_key_unique');
-            $table->index(['device_schema_version_id', 'is_active'], 'parameter_definitions_version_active_index');
+            $table->unique(['schema_version_topic_id', 'key'], 'parameter_definitions_topic_key_unique');
+            $table->index(['schema_version_topic_id', 'is_active'], 'parameter_definitions_topic_active_index');
         });
     }
 

@@ -12,14 +12,11 @@ interface ProtocolConfigInterface
     public function validate(): bool;
 
     /**
-     * Get the telemetry topic template for device data ingestion.
+     * Get the base MQTT topic prefix for this protocol.
+     *
+     * Returns null for protocols that don't use topics (e.g. HTTP).
      */
-    public function getTelemetryTopicTemplate(): string;
-
-    /**
-     * Get the control topic template for device commands (downlink).
-     */
-    public function getControlTopicTemplate(): ?string;
+    public function getBaseTopic(): ?string;
 
     /**
      * Convert the configuration to an array for storage.

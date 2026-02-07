@@ -12,28 +12,16 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
         public ?string $username = null,
         public ?string $password = null,
         public bool $useTls = false,
-        public string $telemetryTopicTemplate = 'device/:device_uuid/data',
-        public string $controlTopicTemplate = 'device/:device_uuid/ctrl',
-        public int $qos = 1,
-        public bool $retain = false,
+        public string $baseTopic = 'device',
     ) {
         if ($this->brokerPort < 1 || $this->brokerPort > 65535) {
             throw new \InvalidArgumentException('Broker port must be between 1 and 65535');
         }
-
-        if (! in_array($this->qos, [0, 1, 2], true)) {
-            throw new \InvalidArgumentException('QoS must be 0, 1, or 2');
-        }
     }
 
-    public function getTelemetryTopicTemplate(): string
+    public function getBaseTopic(): string
     {
-        return $this->telemetryTopicTemplate;
-    }
-
-    public function getControlTopicTemplate(): string
-    {
-        return $this->controlTopicTemplate;
+        return $this->baseTopic;
     }
 
     /**
@@ -47,10 +35,7 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
             'username' => $this->username,
             'password' => $this->password,
             'use_tls' => $this->useTls,
-            'telemetry_topic_template' => $this->telemetryTopicTemplate,
-            'control_topic_template' => $this->controlTopicTemplate,
-            'qos' => $this->qos,
-            'retain' => $this->retain,
+            'base_topic' => $this->baseTopic,
         ];
     }
 
@@ -71,20 +56,8 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
         $password = isset($data['password']) && is_string($data['password']) ? $data['password'] : null;
         $useTls = (bool) ($data['use_tls'] ?? false);
 
-        $telemetryTopicTemplate = $data['telemetry_topic_template'] ?? null;
-        $telemetryTopicTemplate = is_string($telemetryTopicTemplate)
-            ? $telemetryTopicTemplate
-            : 'device/:device_uuid/data';
-
-        $controlTopicTemplate = $data['control_topic_template'] ?? null;
-        $controlTopicTemplate = is_string($controlTopicTemplate)
-            ? $controlTopicTemplate
-            : 'device/:device_uuid/ctrl';
-
-        $qosValue = $data['qos'] ?? 1;
-        $qos = is_numeric($qosValue) ? (int) $qosValue : 1;
-
-        $retain = (bool) ($data['retain'] ?? false);
+        $baseTopic = $data['base_topic'] ?? null;
+        $baseTopic = is_string($baseTopic) && $baseTopic !== '' ? $baseTopic : 'device';
 
         return new self(
             brokerHost: $brokerHost,
@@ -92,10 +65,7 @@ final readonly class MqttProtocolConfig implements ProtocolConfigInterface
             username: $username,
             password: $password,
             useTls: $useTls,
-            telemetryTopicTemplate: $telemetryTopicTemplate,
-            controlTopicTemplate: $controlTopicTemplate,
-            qos: $qos,
-            retain: $retain,
+            baseTopic: $baseTopic,
         );
     }
 }

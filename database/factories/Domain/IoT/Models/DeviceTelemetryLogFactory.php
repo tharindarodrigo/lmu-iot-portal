@@ -8,6 +8,7 @@ use App\Domain\IoT\Enums\ValidationStatus;
 use App\Domain\IoT\Models\Device;
 use App\Domain\IoT\Models\DeviceSchemaVersion;
 use App\Domain\IoT\Models\DeviceTelemetryLog;
+use App\Domain\IoT\Models\SchemaVersionTopic;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -30,6 +31,7 @@ class DeviceTelemetryLogFactory extends Factory
         return [
             'device_id' => Device::factory(),
             'device_schema_version_id' => DeviceSchemaVersion::factory(),
+            'schema_version_topic_id' => SchemaVersionTopic::factory(),
             'raw_payload' => [
                 'temp' => $this->faker->randomFloat(2, -10, 40),
                 'voltage' => $this->faker->randomFloat(2, 100, 250),
@@ -49,6 +51,14 @@ class DeviceTelemetryLogFactory extends Factory
         return $this->state(fn () => [
             'device_id' => $device->id,
             'device_schema_version_id' => $device->device_schema_version_id,
+        ]);
+    }
+
+    public function forTopic(SchemaVersionTopic $topic): static
+    {
+        return $this->state(fn () => [
+            'schema_version_topic_id' => $topic->id,
+            'device_schema_version_id' => $topic->device_schema_version_id,
         ]);
     }
 }

@@ -11,6 +11,7 @@ use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\ListDeviceSchema
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\ViewDeviceSchemaVersion;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers\DerivedParameterDefinitionsRelationManager;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers\ParameterDefinitionsRelationManager;
+use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers\TopicsRelationManager;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Schemas\DeviceSchemaVersionForm;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Schemas\DeviceSchemaVersionInfolist;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Tables\DeviceSchemaVersionsTable;
@@ -56,6 +57,7 @@ class DeviceSchemaVersionResource extends Resource
     public static function getRelations(): array
     {
         return [
+            TopicsRelationManager::class,
             ParameterDefinitionsRelationManager::class,
             DerivedParameterDefinitionsRelationManager::class,
         ];

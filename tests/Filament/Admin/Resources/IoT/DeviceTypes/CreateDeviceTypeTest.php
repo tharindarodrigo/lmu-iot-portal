@@ -32,10 +32,7 @@ it('can create a new device type with MQTT protocol', function (): void {
             'protocol_config.username' => 'test_user',
             'protocol_config.password' => 'test_pass',
             'protocol_config.use_tls' => true,
-            'protocol_config.telemetry_topic_template' => 'devices/{device_id}/telemetry',
-            'protocol_config.command_topic_template' => 'devices/{device_id}/commands',
-            'protocol_config.qos' => 1,
-            'protocol_config.retain' => false,
+            'protocol_config.base_topic' => 'energy',
         ])
         ->call('create')
         ->assertHasNoFormErrors();
@@ -55,7 +52,6 @@ it('can create a new device type with HTTP protocol', function (): void {
             'name' => 'HTTP Temperature Sensor',
             'protocol_config.base_url' => 'https://api.example.com',
             'protocol_config.telemetry_endpoint' => '/telemetry/{device_id}',
-            'protocol_config.command_endpoint' => '/commands/{device_id}',
             'protocol_config.method' => 'POST',
             'protocol_config.auth_type' => HttpAuthType::None->value,
             'protocol_config.timeout' => 30,
@@ -136,10 +132,7 @@ it('validates MQTT broker port range', function (): void {
             'name' => 'MQTT Device',
             'protocol_config.broker_host' => 'mqtt.example.com',
             'protocol_config.broker_port' => 70000,
-            'protocol_config.telemetry_topic_template' => 'test',
-            'protocol_config.command_topic_template' => 'test',
-            'protocol_config.qos' => 1,
-            'protocol_config.retain' => false,
+            'protocol_config.base_topic' => 'device',
         ])
         ->call('create')
         ->assertHasFormErrors(['protocol_config.broker_port']);
@@ -153,7 +146,6 @@ it('validates HTTP base URL format', function (): void {
             'name' => 'HTTP Device',
             'protocol_config.base_url' => 'not-a-valid-url',
             'protocol_config.telemetry_endpoint' => '/telemetry',
-            'protocol_config.command_endpoint' => '/commands',
             'protocol_config.method' => 'POST',
             'protocol_config.auth_type' => HttpAuthType::None->value,
             'protocol_config.timeout' => 30,

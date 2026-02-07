@@ -15,7 +15,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
     public function __construct(
         public string $baseUrl,
         public string $telemetryEndpoint = '/telemetry',
-        public ?string $controlEndpoint = null,
         public string $method = 'POST',
         public array $headers = [],
         public HttpAuthType $authType = HttpAuthType::None,
@@ -51,18 +50,9 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         return true;
     }
 
-    public function getTelemetryTopicTemplate(): string
+    public function getBaseTopic(): null
     {
-        return rtrim($this->baseUrl, '/').'/'.$this->telemetryEndpoint;
-    }
-
-    public function getControlTopicTemplate(): ?string
-    {
-        if ($this->controlEndpoint === null) {
-            return null;
-        }
-
-        return rtrim($this->baseUrl, '/').'/'.$this->controlEndpoint;
+        return null;
     }
 
     /**
@@ -73,7 +63,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         return [
             'base_url' => $this->baseUrl,
             'telemetry_endpoint' => $this->telemetryEndpoint,
-            'control_endpoint' => $this->controlEndpoint,
             'method' => $this->method,
             'headers' => $this->headers,
             'auth_type' => $this->authType->value,
@@ -91,7 +80,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
     {
         $baseUrl = self::stringValue($data, 'base_url', required: true);
         $telemetryEndpoint = self::stringValue($data, 'telemetry_endpoint', default: '/telemetry');
-        $controlEndpoint = self::nullableStringValue($data, 'control_endpoint');
         $method = self::stringValue($data, 'method', default: 'POST');
         $headers = self::headersValue($data, 'headers');
         $authType = self::authTypeValue($data, 'auth_type');
@@ -103,7 +91,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         return new self(
             baseUrl: $baseUrl,
             telemetryEndpoint: $telemetryEndpoint,
-            controlEndpoint: $controlEndpoint,
             method: $method,
             headers: $headers,
             authType: $authType,

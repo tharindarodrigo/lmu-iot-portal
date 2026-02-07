@@ -24,14 +24,8 @@ class EditDeviceType extends EditRecord
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        if (isset($data['protocol_config']) && $data['protocol_config'] instanceof HttpProtocolConfig) {
+        if (isset($data['protocol_config']) && ($data['protocol_config'] instanceof HttpProtocolConfig || $data['protocol_config'] instanceof MqttProtocolConfig)) {
             $data['protocol_config'] = $data['protocol_config']->toArray();
-            $data['protocol_config']['command_endpoint'] = $data['protocol_config']['control_endpoint'] ?? null;
-        }
-
-        if (isset($data['protocol_config']) && $data['protocol_config'] instanceof MqttProtocolConfig) {
-            $data['protocol_config'] = $data['protocol_config']->toArray();
-            $data['protocol_config']['command_topic_template'] = $data['protocol_config']['control_topic_template'] ?? null;
         }
 
         return $data;

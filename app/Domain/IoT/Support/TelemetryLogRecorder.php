@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\IoT\Support;
 
+use App\Domain\IoT\Enums\TopicDirection;
 use App\Domain\IoT\Enums\ValidationStatus;
 use App\Domain\IoT\Models\DerivedParameterDefinition;
 use App\Domain\IoT\Models\Device;
 use App\Domain\IoT\Models\DeviceSchemaVersion;
 use App\Domain\IoT\Models\DeviceTelemetryLog;
 use App\Domain\IoT\Models\ParameterDefinition;
+use App\Domain\IoT\Models\SchemaVersionTopic;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -17,10 +19,17 @@ use RuntimeException;
 class TelemetryLogRecorder
 {
     /**
+     * Record a telemetry log entry for a device.
+     *
      * @param  array<string, mixed>  $payload
      */
-    public function record(Device $device, array $payload, ?Carbon $recordedAt = null, ?Carbon $receivedAt = null): DeviceTelemetryLog
-    {
+    public function record(
+        Device $device,
+        array $payload,
+        ?Carbon $recordedAt = null,
+        ?Carbon $receivedAt = null,
+        ?string $topicSuffix = null,
+    ): DeviceTelemetryLog {
         $device->loadMissing('schemaVersion');
 
         $schemaVersion = $device->schemaVersion;
@@ -29,10 +38,17 @@ class TelemetryLogRecorder
             throw new RuntimeException('Device schema version is required to record telemetry logs.');
         }
 
-        $parameters = $schemaVersion->parameters()
-            ->where('is_active', true)
-            ->orderBy('sequence')
-            ->get();
+        $topic = $this->resolveTopic($schemaVersion, $topicSuffix);
+
+        $parameters = $topic instanceof SchemaVersionTopic
+            ? $topic->parameters()
+                ->where('is_active', true)
+                ->orderBy('sequence')
+                ->get()
+            : $schemaVersion->parameters()
+                ->where('parameter_definitions.is_active', true)
+                ->orderBy('parameter_definitions.sequence')
+                ->get();
 
         $derivedParameters = $schemaVersion->derivedParameters()->get();
 
@@ -44,12 +60,28 @@ class TelemetryLogRecorder
         return DeviceTelemetryLog::create([
             'device_id' => $device->id,
             'device_schema_version_id' => $schemaVersion->id,
+            'schema_version_topic_id' => $topic?->id,
             'raw_payload' => $payload,
             'transformed_values' => $transformedValues,
             'validation_status' => $validationStatus,
             'recorded_at' => $resolvedRecordedAt,
             'received_at' => $resolvedReceivedAt,
         ]);
+    }
+
+    /**
+     * Resolve the topic for the given schema version and suffix.
+     */
+    private function resolveTopic(DeviceSchemaVersion $schemaVersion, ?string $topicSuffix): ?SchemaVersionTopic
+    {
+        if ($topicSuffix === null) {
+            return null;
+        }
+
+        return $schemaVersion->topics()
+            ->where('suffix', $topicSuffix)
+            ->where('direction', TopicDirection::Publish)
+            ->first();
     }
 
     /**

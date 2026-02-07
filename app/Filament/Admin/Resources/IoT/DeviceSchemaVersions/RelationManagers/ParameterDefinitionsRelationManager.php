@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers
 
 use App\Domain\IoT\Enums\ParameterDataType;
 use App\Domain\IoT\Models\DeviceSchemaVersion;
+use App\Domain\IoT\Models\ParameterDefinition;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteBulkAction;
@@ -38,17 +39,22 @@ class ParameterDefinitionsRelationManager extends RelationManager
     {
         return $schema
             ->components([
+                Select::make('schema_version_topic_id')
+                    ->label('Topic')
+                    ->options(fn (): array => $this->getOwnerRecord()
+                        ->topics()
+                        ->orderBy('sequence')
+                        ->pluck('label', 'id')
+                        ->all())
+                    ->required()
+                    ->helperText('Select the topic this parameter belongs to'),
+
                 TextInput::make('key')
                     ->required()
                     ->maxLength(100)
                     ->unique(
                         ignoreRecord: true,
-                        modifyRuleUsing: function (Unique $rule): Unique {
-                            /** @var int|string $ownerKey */
-                            $ownerKey = $this->getOwnerRecord()->getKey();
-
-                            return $rule->where('device_schema_version_id', $ownerKey);
-                        },
+                        modifyRuleUsing: fn (Unique $rule, callable $get): Unique => $rule->where('schema_version_topic_id', $get('schema_version_topic_id')),
                     ),
 
                 TextInput::make('label')
@@ -125,6 +131,10 @@ class ParameterDefinitionsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('key')
             ->columns([
+                TextColumn::make('topic.label')
+                    ->label('Topic')
+                    ->searchable(),
+
                 TextColumn::make('key')
                     ->searchable(),
 
@@ -150,7 +160,10 @@ class ParameterDefinitionsRelationManager extends RelationManager
                     ->sortable(),
             ])
             ->headerActions([
-                CreateAction::make(),
+                CreateAction::make()
+                    ->using(function (array $data): ParameterDefinition {
+                        return ParameterDefinition::create($data);
+                    }),
             ])
             ->recordActions([
                 EditAction::make(),

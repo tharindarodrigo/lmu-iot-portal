@@ -91,30 +91,11 @@ class DeviceTypeInfolist
                             ->falseColor(Color::Gray)
                             ->state(fn ($record): ?bool => $record->protocol_config?->useTls),
 
-                        TextEntry::make('protocol_config.telemetry_topic_template')
-                            ->label('Telemetry Topic')
+                        TextEntry::make('protocol_config.base_topic')
+                            ->label('Base Topic')
                             ->copyable()
-                            ->state(fn ($record): ?string => $record->protocol_config?->telemetryTopicTemplate),
-
-                        TextEntry::make('protocol_config.command_topic_template')
-                            ->label('Command Topic')
-                            ->copyable()
-                            ->state(fn ($record): ?string => $record->protocol_config?->controlTopicTemplate),
-
-                        TextEntry::make('protocol_config.qos')
-                            ->label('QoS Level')
-                            ->state(fn ($record): ?int => $record->protocol_config?->qos)
-                            ->formatStateUsing(fn ($state): string => match ($state) {
-                                0 => 'At most once (0)',
-                                1 => 'At least once (1)',
-                                2 => 'Exactly once (2)',
-                                default => (string) $state,
-                            }),
-
-                        IconEntry::make('protocol_config.retain')
-                            ->label('Retain Messages')
-                            ->boolean()
-                            ->state(fn ($record): ?bool => $record->protocol_config?->retain),
+                            ->state(fn ($record): ?string => $record->protocol_config?->baseTopic)
+                            ->helperText('Full topic: {base_topic}/{device_uuid}/{suffix}'),
                     ])
                     ->columns(2)
                     ->columnSpanFull()
@@ -134,11 +115,6 @@ class DeviceTypeInfolist
                             ->label('Telemetry Endpoint')
                             ->copyable()
                             ->state(fn ($record): ?string => $record->protocol_config?->telemetryEndpoint),
-
-                        TextEntry::make('protocol_config.command_endpoint')
-                            ->label('Command Endpoint')
-                            ->copyable()
-                            ->state(fn ($record): ?string => $record->protocol_config?->controlEndpoint),
 
                         TextEntry::make('protocol_config.method')
                             ->label('HTTP Method')

@@ -33,11 +33,11 @@ class ParameterDefinition extends Model
     }
 
     /**
-     * @return BelongsTo<DeviceSchemaVersion, $this>
+     * @return BelongsTo<SchemaVersionTopic, $this>
      */
-    public function schemaVersion(): BelongsTo
+    public function topic(): BelongsTo
     {
-        return $this->belongsTo(DeviceSchemaVersion::class, 'device_schema_version_id');
+        return $this->belongsTo(SchemaVersionTopic::class, 'schema_version_topic_id');
     }
 
     /**

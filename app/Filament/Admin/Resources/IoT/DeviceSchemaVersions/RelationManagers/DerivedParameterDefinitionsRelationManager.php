@@ -70,8 +70,8 @@ class DerivedParameterDefinitionsRelationManager extends RelationManager
                     ->columnSpanFull()
                     ->options(fn (): array => $this->getOwnerRecord()
                         ->parameters()
-                        ->orderBy('sequence')
-                        ->pluck('key', 'key')
+                        ->orderBy('parameter_definitions.sequence')
+                        ->pluck('parameter_definitions.key', 'parameter_definitions.key')
                         ->all())
                     ->columns(4),
 

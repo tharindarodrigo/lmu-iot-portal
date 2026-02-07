@@ -77,34 +77,12 @@ class DeviceTypeForm
                                     ->label('Use TLS/SSL')
                                     ->default(false),
 
-                                TextInput::make('protocol_config.telemetry_topic_template')
-                                    ->label('Telemetry Topic Template')
+                                TextInput::make('protocol_config.base_topic')
+                                    ->label('Base Topic')
                                     ->required()
                                     ->maxLength(255)
-                                    ->default('devices/{device_id}/telemetry')
-                                    ->helperText('Use {device_id} as placeholder'),
-
-                                TextInput::make('protocol_config.command_topic_template')
-                                    ->label('Command Topic Template')
-                                    ->required()
-                                    ->maxLength(255)
-                                    ->default('devices/{device_id}/commands')
-                                    ->helperText('Use {device_id} as placeholder'),
-
-                                Select::make('protocol_config.qos')
-                                    ->label('QoS Level')
-                                    ->options([
-                                        0 => 'At most once (0)',
-                                        1 => 'At least once (1)',
-                                        2 => 'Exactly once (2)',
-                                    ])
-                                    ->default(1)
-                                    ->required(),
-
-                                Checkbox::make('protocol_config.retain')
-                                    ->label('Retain Messages')
-                                    ->default(false)
-                                    ->helperText('Keep the last message on the broker'),
+                                    ->default('device')
+                                    ->helperText('Base topic prefix. Full topic: {base_topic}/{device_uuid}/{suffix}'),
                             ])
                             ->visible(function (Get $get): bool {
                                 $protocol = $get('default_protocol');
@@ -129,15 +107,8 @@ class DeviceTypeForm
                                     ->label('Telemetry Endpoint')
                                     ->required()
                                     ->maxLength(255)
-                                    ->default('/telemetry/{device_id}')
-                                    ->helperText('Use {device_id} as placeholder'),
-
-                                TextInput::make('protocol_config.command_endpoint')
-                                    ->label('Command Endpoint')
-                                    ->required()
-                                    ->maxLength(255)
-                                    ->default('/commands/{device_id}')
-                                    ->helperText('Use {device_id} as placeholder'),
+                                    ->default('/telemetry')
+                                    ->helperText('Endpoint path for telemetry data'),
 
                                 Select::make('protocol_config.method')
                                     ->label('HTTP Method')

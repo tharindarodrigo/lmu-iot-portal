@@ -58,4 +58,12 @@ class DeviceTelemetryLog extends Model
     {
         return $this->belongsTo(DeviceSchemaVersion::class, 'device_schema_version_id');
     }
+
+    /**
+     * @return BelongsTo<SchemaVersionTopic, $this>
+     */
+    public function topic(): BelongsTo
+    {
+        return $this->belongsTo(SchemaVersionTopic::class, 'schema_version_topic_id');
+    }
 }

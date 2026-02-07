@@ -16,6 +16,7 @@ return new class extends Migration
             $table->uuid('id');
             $table->foreignId('device_id')->constrained()->cascadeOnDelete();
             $table->foreignId('device_schema_version_id')->constrained('device_schema_versions');
+            $table->foreignId('schema_version_topic_id')->nullable()->constrained('schema_version_topics');
             $table->string('validation_status', 50);
             $table->jsonb('raw_payload');
             $table->jsonb('transformed_values');

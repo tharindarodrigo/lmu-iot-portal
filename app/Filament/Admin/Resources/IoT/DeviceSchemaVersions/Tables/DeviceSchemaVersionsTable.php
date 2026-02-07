@@ -31,9 +31,9 @@ class DeviceSchemaVersionsTable
                     })
                     ->sortable(),
 
-                TextColumn::make('parameters_count')
-                    ->label('Parameters')
-                    ->counts('parameters')
+                TextColumn::make('topics_count')
+                    ->label('Topics')
+                    ->counts('topics')
                     ->sortable(),
 
                 TextColumn::make('created_at')

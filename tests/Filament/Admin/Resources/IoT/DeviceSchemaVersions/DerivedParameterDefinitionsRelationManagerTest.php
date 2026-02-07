@@ -7,6 +7,7 @@ use App\Domain\IoT\Enums\ParameterDataType;
 use App\Domain\IoT\Models\DeviceSchema;
 use App\Domain\IoT\Models\DeviceSchemaVersion;
 use App\Domain\IoT\Models\ParameterDefinition;
+use App\Domain\IoT\Models\SchemaVersionTopic;
 use App\Domain\Shared\Models\User;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\Pages\EditDeviceSchemaVersion;
 use App\Filament\Admin\Resources\IoT\DeviceSchemaVersions\RelationManagers\DerivedParameterDefinitionsRelationManager;
@@ -32,14 +33,18 @@ it('validates dependencies against expression variables', function (): void {
         'device_schema_id' => $schema->id,
     ]);
 
-    ParameterDefinition::factory()->create([
+    $topic = SchemaVersionTopic::factory()->publish()->create([
         'device_schema_version_id' => $version->id,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
         'key' => 'temp_c',
         'type' => ParameterDataType::Decimal,
     ]);
 
     ParameterDefinition::factory()->create([
-        'device_schema_version_id' => $version->id,
+        'schema_version_topic_id' => $topic->id,
         'key' => 'humidity',
         'type' => ParameterDataType::Decimal,
     ]);

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Database\Factories\Domain\IoT\Models;
 
 use App\Domain\IoT\Enums\ParameterDataType;
-use App\Domain\IoT\Models\DeviceSchemaVersion;
 use App\Domain\IoT\Models\ParameterDefinition;
+use App\Domain\IoT\Models\SchemaVersionTopic;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -26,7 +26,7 @@ class ParameterDefinitionFactory extends Factory
         $dataType = $this->faker->randomElement(ParameterDataType::cases());
 
         return [
-            'device_schema_version_id' => DeviceSchemaVersion::factory(),
+            'schema_version_topic_id' => SchemaVersionTopic::factory(),
             'key' => $this->faker->unique()->slug(2),
             'label' => $this->faker->words(2, true),
             'json_path' => $this->faker->randomElement(['temp', 'status.temp', '$.status.temp']),

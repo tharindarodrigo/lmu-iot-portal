@@ -36,10 +36,7 @@ test('protocol config is correctly serialized and deserialized', function (): vo
         username: 'test_user',
         password: 'test_pass',
         useTls: true,
-        telemetryTopicTemplate: 'devices/{device_id}/telemetry',
-        controlTopicTemplate: 'devices/{device_id}/commands',
-        qos: 1,
-        retain: false
+        baseTopic: 'sensors',
     );
 
     $deviceType = DeviceType::factory()->create([
@@ -55,7 +52,7 @@ test('protocol config is correctly serialized and deserialized', function (): vo
         ->brokerPort->toBe(1883)
         ->username->toBe('test_user')
         ->useTls->toBeTrue()
-        ->qos->toBe(1);
+        ->baseTopic->toBe('sensors');
 });
 
 test('global device types can be retrieved with global scope', function (): void {
@@ -111,29 +108,13 @@ test('mqtt protocol config validates broker port range', function (): void {
     expect(fn () => new MqttProtocolConfig(
         brokerHost: 'mqtt.example.com',
         brokerPort: 70000,
-        telemetryTopicTemplate: 'test',
-        controlTopicTemplate: 'test',
-        qos: 1,
-        retain: false
     ))->toThrow(\InvalidArgumentException::class, 'Broker port must be between 1 and 65535');
-});
-
-test('mqtt protocol config validates qos values', function (): void {
-    expect(fn () => new MqttProtocolConfig(
-        brokerHost: 'mqtt.example.com',
-        brokerPort: 1883,
-        telemetryTopicTemplate: 'test',
-        controlTopicTemplate: 'test',
-        qos: 5, // Invalid QoS
-        retain: false
-    ))->toThrow(\InvalidArgumentException::class, 'QoS must be 0, 1, or 2');
 });
 
 test('http protocol config validates url format', function (): void {
     expect(fn () => new HttpProtocolConfig(
         baseUrl: 'not-a-valid-url',
         telemetryEndpoint: '/telemetry',
-        controlEndpoint: '/commands',
         method: 'POST',
         authType: \App\Domain\DeviceTypes\Enums\HttpAuthType::None,
         timeout: 30

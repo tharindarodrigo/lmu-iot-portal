@@ -94,10 +94,7 @@ class DeviceTypeFactory extends Factory
             username: $this->faker->userName,
             password: $this->faker->password,
             useTls: $this->faker->boolean(30),
-            telemetryTopicTemplate: 'device/:device_uuid/data',
-            controlTopicTemplate: 'device/:device_uuid/ctrl',
-            qos: $this->faker->randomElement([0, 1, 2]),
-            retain: $this->faker->boolean(20),
+            baseTopic: 'device',
         ))->toArray();
     }
 
@@ -113,7 +110,6 @@ class DeviceTypeFactory extends Factory
         return (new HttpProtocolConfig(
             baseUrl: $this->faker->url,
             telemetryEndpoint: '/api/telemetry',
-            controlEndpoint: '/api/command',
             method: $this->faker->randomElement(['POST', 'PUT']),
             headers: [
                 'Content-Type' => 'application/json',

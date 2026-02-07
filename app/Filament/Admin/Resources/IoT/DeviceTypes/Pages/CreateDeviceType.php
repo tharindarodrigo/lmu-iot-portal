@@ -44,17 +44,12 @@ class CreateDeviceType extends CreateRecord
             return $data;
         }
 
-        /** @var array<string, mixed> $config */
-        $config = $data['protocol_config'];
-
-        // Map form field names to domain field names
-        $config['control_topic_template'] = $config['command_topic_template'] ?? null;
-        $config['control_endpoint'] = $config['command_endpoint'] ?? null;
-        unset($config['command_topic_template'], $config['command_endpoint']);
+        /** @var array<string, mixed> $protocolConfig */
+        $protocolConfig = $data['protocol_config'];
 
         $data['protocol_config'] = match ($protocol) {
-            ProtocolType::Mqtt => MqttProtocolConfig::fromArray($config),
-            ProtocolType::Http => HttpProtocolConfig::fromArray($config),
+            ProtocolType::Mqtt => MqttProtocolConfig::fromArray($protocolConfig),
+            ProtocolType::Http => HttpProtocolConfig::fromArray($protocolConfig),
         };
 
         return $data;

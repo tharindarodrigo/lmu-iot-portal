@@ -59,7 +59,6 @@ it('can update HTTP protocol configuration', function (): void {
         'protocol_config' => (new HttpProtocolConfig(
             baseUrl: 'https://api.example.com',
             telemetryEndpoint: '/telemetry',
-            controlEndpoint: '/commands',
             method: 'POST',
             authType: HttpAuthType::None,
             timeout: 30,

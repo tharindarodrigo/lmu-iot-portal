@@ -82,4 +82,20 @@ class Device extends Model
     {
         return $this->hasMany(DeviceTelemetryLog::class);
     }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne<DeviceDesiredState, $this>
+     */
+    public function desiredState(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(DeviceDesiredState::class);
+    }
+
+    /**
+     * @return HasMany<DeviceCommandLog, $this>
+     */
+    public function commandLogs(): HasMany
+    {
+        return $this->hasMany(DeviceCommandLog::class);
+    }
 }

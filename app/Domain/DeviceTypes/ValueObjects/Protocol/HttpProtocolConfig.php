@@ -14,7 +14,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
     public function __construct(
         public string $baseUrl,
         public string $telemetryEndpoint = '/telemetry',
-        public ?string $controlEndpoint = null,
         public string $method = 'POST',
         public array $headers = [],
         public HttpAuthType $authType = HttpAuthType::None,
@@ -44,18 +43,9 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         }
     }
 
-    public function getTelemetryTopicTemplate(): string
+    public function getBaseTopic(): ?string
     {
-        return rtrim($this->baseUrl, '/').'/'.$this->telemetryEndpoint;
-    }
-
-    public function getControlTopicTemplate(): ?string
-    {
-        if ($this->controlEndpoint === null) {
-            return null;
-        }
-
-        return rtrim($this->baseUrl, '/').'/'.$this->controlEndpoint;
+        return null;
     }
 
     /**
@@ -66,7 +56,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         return [
             'base_url' => $this->baseUrl,
             'telemetry_endpoint' => $this->telemetryEndpoint,
-            'control_endpoint' => $this->controlEndpoint,
             'method' => $this->method,
             'headers' => $this->headers,
             'auth_type' => $this->authType->value,
@@ -89,9 +78,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
 
         $telemetryEndpoint = $data['telemetry_endpoint'] ?? null;
         $telemetryEndpoint = is_string($telemetryEndpoint) ? $telemetryEndpoint : '/telemetry';
-
-        $controlEndpoint = $data['control_endpoint'] ?? null;
-        $controlEndpoint = is_string($controlEndpoint) ? $controlEndpoint : null;
 
         $method = $data['method'] ?? null;
         $method = is_string($method) ? $method : 'POST';
@@ -117,7 +103,6 @@ final readonly class HttpProtocolConfig implements ProtocolConfigInterface
         return new self(
             baseUrl: $baseUrl,
             telemetryEndpoint: $telemetryEndpoint,
-            controlEndpoint: $controlEndpoint,
             method: $method,
             headers: $headers,
             authType: $authType,

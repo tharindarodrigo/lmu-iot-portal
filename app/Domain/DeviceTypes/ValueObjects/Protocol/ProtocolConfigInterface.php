@@ -7,14 +7,11 @@ namespace App\Domain\DeviceTypes\ValueObjects\Protocol;
 interface ProtocolConfigInterface
 {
     /**
-     * Get the telemetry topic template for device data ingestion.
+     * Get the base topic prefix for MQTT topics.
+     *
+     * Full topic is: {baseTopic}/{device_uuid}/{suffix}
      */
-    public function getTelemetryTopicTemplate(): string;
-
-    /**
-     * Get the control topic template for device commands (downlink).
-     */
-    public function getControlTopicTemplate(): ?string;
+    public function getBaseTopic(): ?string;
 
     /**
      * Convert the configuration to an array for storage.
