@@ -6,6 +6,7 @@ use App\Domain\DeviceManagement\Enums\ProtocolType;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceManagement\ValueObjects\Protocol\MqttProtocolConfig;
+use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
@@ -165,4 +166,139 @@ test('qos defaults to 1 and retain defaults to false', function (): void {
 
     expect($topic->qos)->toBe(1)
         ->and($topic->retain)->toBeFalse();
+});
+
+test('buildCommandPayloadTemplate creates flat payload from subscribe parameters', function (): void {
+    $topic = SchemaVersionTopic::factory()->subscribe()->create();
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'fan_speed',
+        'json_path' => 'fan_speed',
+        'type' => ParameterDataType::Integer,
+        'default_value' => 50,
+        'is_active' => true,
+        'sequence' => 1,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'light_state',
+        'json_path' => 'light_state',
+        'type' => ParameterDataType::Boolean,
+        'default_value' => true,
+        'is_active' => true,
+        'sequence' => 2,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'mode',
+        'json_path' => 'mode',
+        'type' => ParameterDataType::String,
+        'default_value' => 'cooling',
+        'is_active' => true,
+        'sequence' => 3,
+    ]);
+
+    $template = $topic->buildCommandPayloadTemplate();
+
+    expect($template)->toBe([
+        'fan_speed' => 50,
+        'light_state' => true,
+        'mode' => 'cooling',
+    ]);
+});
+
+test('buildCommandPayloadTemplate creates nested payload using json_path', function (): void {
+    $topic = SchemaVersionTopic::factory()->subscribe()->create();
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'fan_speed',
+        'json_path' => 'control.fan_speed',
+        'type' => ParameterDataType::Integer,
+        'default_value' => 75,
+        'is_active' => true,
+        'sequence' => 1,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'light',
+        'json_path' => 'control.light',
+        'type' => ParameterDataType::Boolean,
+        'default_value' => false,
+        'is_active' => true,
+        'sequence' => 2,
+    ]);
+
+    $template = $topic->buildCommandPayloadTemplate();
+
+    expect($template)->toBe([
+        'control' => [
+            'fan_speed' => 75,
+            'light' => false,
+        ],
+    ]);
+});
+
+test('buildCommandPayloadTemplate uses type defaults when no default_value set', function (): void {
+    $topic = SchemaVersionTopic::factory()->subscribe()->create();
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'speed',
+        'json_path' => 'speed',
+        'type' => ParameterDataType::Integer,
+        'default_value' => null,
+        'is_active' => true,
+        'sequence' => 1,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'enabled',
+        'json_path' => 'enabled',
+        'type' => ParameterDataType::Boolean,
+        'default_value' => null,
+        'is_active' => true,
+        'sequence' => 2,
+    ]);
+
+    $template = $topic->buildCommandPayloadTemplate();
+
+    expect($template)->toBe([
+        'speed' => 0,
+        'enabled' => false,
+    ]);
+});
+
+test('buildCommandPayloadTemplate excludes inactive parameters', function (): void {
+    $topic = SchemaVersionTopic::factory()->subscribe()->create();
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'active_param',
+        'json_path' => 'active_param',
+        'type' => ParameterDataType::Integer,
+        'default_value' => 10,
+        'is_active' => true,
+        'sequence' => 1,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'inactive_param',
+        'json_path' => 'inactive_param',
+        'type' => ParameterDataType::Integer,
+        'default_value' => 20,
+        'is_active' => false,
+        'sequence' => 2,
+    ]);
+
+    $template = $topic->buildCommandPayloadTemplate();
+
+    expect($template)->toBe(['active_param' => 10])
+        ->and($template)->not->toHaveKey('inactive_param');
 });
