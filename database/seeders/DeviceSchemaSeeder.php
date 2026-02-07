@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
-use App\Domain\DeviceTypes\Enums\ProtocolType;
-use App\Domain\DeviceTypes\Models\DeviceType;
-use App\Domain\DeviceTypes\ValueObjects\Protocol\MqttProtocolConfig;
-use App\Domain\IoT\Enums\ParameterDataType;
-use App\Domain\IoT\Models\DerivedParameterDefinition;
-use App\Domain\IoT\Models\DeviceSchema;
-use App\Domain\IoT\Models\DeviceSchemaVersion;
-use App\Domain\IoT\Models\ParameterDefinition;
+use App\Domain\DeviceManagement\Enums\ProtocolType;
+use App\Domain\DeviceManagement\Models\DeviceType;
+use App\Domain\DeviceManagement\ValueObjects\Protocol\MqttProtocolConfig;
+use App\Domain\DeviceSchema\Enums\ParameterDataType;
+use App\Domain\DeviceSchema\Enums\TopicDirection;
+use App\Domain\DeviceSchema\Models\DerivedParameterDefinition;
+use App\Domain\DeviceSchema\Models\DeviceSchema;
+use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Domain\DeviceSchema\Models\ParameterDefinition;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use Illuminate\Database\Seeder;
 
 class DeviceSchemaSeeder extends Seeder
@@ -33,10 +35,7 @@ class DeviceSchemaSeeder extends Seeder
                     username: 'thermal_sensor',
                     password: 'thermal_password',
                     useTls: false,
-                    telemetryTopicTemplate: 'thermal/:device_uuid/telemetry',
-                    controlTopicTemplate: 'thermal/:device_uuid/control',
-                    qos: 1,
-                    retain: false,
+                    baseTopic: 'thermal',
                 ))->toArray(),
             ]
         );
@@ -53,10 +52,7 @@ class DeviceSchemaSeeder extends Seeder
                     username: 'network_gateway',
                     password: 'network_password',
                     useTls: false,
-                    telemetryTopicTemplate: 'network/:device_uuid/telemetry',
-                    controlTopicTemplate: 'network/:device_uuid/control',
-                    qos: 1,
-                    retain: false,
+                    baseTopic: 'network',
                 ))->toArray(),
             ]
         );
@@ -73,10 +69,7 @@ class DeviceSchemaSeeder extends Seeder
                     username: 'energy_meter',
                     password: 'energy_password',
                     useTls: false,
-                    telemetryTopicTemplate: 'energy/:device_uuid/telemetry',
-                    controlTopicTemplate: 'energy/:device_uuid/control',
-                    qos: 1,
-                    retain: false,
+                    baseTopic: 'energy',
                 ))->toArray(),
             ]
         );
@@ -94,8 +87,21 @@ class DeviceSchemaSeeder extends Seeder
             'notes' => 'Initial thermal sensor contract',
         ]);
 
-        ParameterDefinition::firstOrCreate([
+        $thermalTelemetryTopic = SchemaVersionTopic::firstOrCreate([
             'device_schema_version_id' => $thermalVersion->id,
+            'key' => 'telemetry',
+        ], [
+            'label' => 'Telemetry',
+            'direction' => TopicDirection::Publish,
+            'suffix' => 'telemetry',
+            'description' => 'Temperature and humidity readings',
+            'qos' => 1,
+            'retain' => false,
+            'sequence' => 0,
+        ]);
+
+        ParameterDefinition::firstOrCreate([
+            'schema_version_topic_id' => $thermalTelemetryTopic->id,
             'key' => 'temp_c',
         ], [
             'label' => 'Temperature (°C)',
@@ -120,7 +126,7 @@ class DeviceSchemaSeeder extends Seeder
         ]);
 
         ParameterDefinition::firstOrCreate([
-            'device_schema_version_id' => $thermalVersion->id,
+            'schema_version_topic_id' => $thermalTelemetryTopic->id,
             'key' => 'humidity',
         ], [
             'label' => 'Humidity',
@@ -168,8 +174,21 @@ class DeviceSchemaSeeder extends Seeder
             'notes' => 'Initial network telemetry contract',
         ]);
 
-        ParameterDefinition::firstOrCreate([
+        $networkTelemetryTopic = SchemaVersionTopic::firstOrCreate([
             'device_schema_version_id' => $networkVersion->id,
+            'key' => 'telemetry',
+        ], [
+            'label' => 'Telemetry',
+            'direction' => TopicDirection::Publish,
+            'suffix' => 'telemetry',
+            'description' => 'Network signal and uptime data',
+            'qos' => 1,
+            'retain' => false,
+            'sequence' => 0,
+        ]);
+
+        ParameterDefinition::firstOrCreate([
+            'schema_version_topic_id' => $networkTelemetryTopic->id,
             'key' => 'signal_strength',
         ], [
             'label' => 'Signal Strength',
@@ -185,7 +204,7 @@ class DeviceSchemaSeeder extends Seeder
         ]);
 
         ParameterDefinition::firstOrCreate([
-            'device_schema_version_id' => $networkVersion->id,
+            'schema_version_topic_id' => $networkTelemetryTopic->id,
             'key' => 'uptime_seconds',
         ], [
             'label' => 'Uptime (seconds)',
@@ -213,9 +232,22 @@ class DeviceSchemaSeeder extends Seeder
             'notes' => 'Initial energy meter contract',
         ]);
 
+        $energyTelemetryTopic = SchemaVersionTopic::firstOrCreate([
+            'device_schema_version_id' => $energyVersion->id,
+            'key' => 'telemetry',
+        ], [
+            'label' => 'Telemetry',
+            'direction' => TopicDirection::Publish,
+            'suffix' => 'telemetry',
+            'description' => 'Voltage and power readings',
+            'qos' => 1,
+            'retain' => false,
+            'sequence' => 0,
+        ]);
+
         foreach (['V1', 'V2', 'V3'] as $index => $key) {
             ParameterDefinition::firstOrCreate([
-                'device_schema_version_id' => $energyVersion->id,
+                'schema_version_topic_id' => $energyTelemetryTopic->id,
                 'key' => $key,
             ], [
                 'label' => "Voltage {$key}",
@@ -233,7 +265,7 @@ class DeviceSchemaSeeder extends Seeder
 
         foreach (['power_l1', 'power_l2', 'power_l3'] as $index => $key) {
             ParameterDefinition::firstOrCreate([
-                'device_schema_version_id' => $energyVersion->id,
+                'schema_version_topic_id' => $energyTelemetryTopic->id,
                 'key' => $key,
             ], [
                 'label' => "Power {$key}",

@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Domain\IoT\Enums\ParameterDataType;
-use App\Domain\IoT\Enums\ValidationStatus;
-use App\Domain\IoT\Models\DerivedParameterDefinition;
-use App\Domain\IoT\Models\Device;
-use App\Domain\IoT\Models\DeviceSchemaVersion;
-use App\Domain\IoT\Models\DeviceTelemetryLog;
-use App\Domain\IoT\Models\ParameterDefinition;
-use App\Domain\IoT\Support\TelemetryLogRecorder;
+use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceSchema\Enums\ParameterDataType;
+use App\Domain\DeviceSchema\Models\DerivedParameterDefinition;
+use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Domain\DeviceSchema\Models\ParameterDefinition;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Domain\Telemetry\Enums\ValidationStatus;
+use App\Domain\Telemetry\Models\DeviceTelemetryLog;
+use App\Domain\Telemetry\Services\TelemetryLogRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 
@@ -18,8 +19,14 @@ uses(RefreshDatabase::class);
 it('persists raw and transformed telemetry payloads', function (): void {
     $schemaVersion = DeviceSchemaVersion::factory()->create();
 
-    ParameterDefinition::factory()->create([
+    $topic = SchemaVersionTopic::factory()->publish()->create([
         'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'telemetry',
+        'suffix' => 'telemetry',
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
         'key' => 'temp_c',
         'json_path' => 'temp_c',
         'type' => ParameterDataType::Decimal,
@@ -60,21 +67,28 @@ it('persists raw and transformed telemetry payloads', function (): void {
     $payload = ['temp_c' => 10];
     $recorder = new TelemetryLogRecorder;
 
-    $log = $recorder->record($device, $payload);
+    $log = $recorder->record($device, $payload, topicSuffix: 'telemetry');
 
     expect($log->raw_payload)->toBe($payload)
         ->and($log->transformed_values)->toMatchArray([
             'temp_c' => 11.0,
             'temp_f' => 51.8,
         ])
-        ->and($log->validation_status)->toBe(ValidationStatus::Valid);
+        ->and($log->validation_status)->toBe(ValidationStatus::Valid)
+        ->and($log->schema_version_topic_id)->toBe($topic->id);
 });
 
 it('marks telemetry as invalid when critical validation fails', function (): void {
     $schemaVersion = DeviceSchemaVersion::factory()->create();
 
-    ParameterDefinition::factory()->create([
+    $topic = SchemaVersionTopic::factory()->publish()->create([
         'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'telemetry',
+        'suffix' => 'telemetry',
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
         'key' => 'humidity',
         'json_path' => 'humidity',
         'type' => ParameterDataType::Decimal,
@@ -91,7 +105,7 @@ it('marks telemetry as invalid when critical validation fails', function (): voi
 
     $recorder = new TelemetryLogRecorder;
 
-    $log = $recorder->record($device, []);
+    $log = $recorder->record($device, [], topicSuffix: 'telemetry');
 
     expect($log->validation_status)->toBe(ValidationStatus::Invalid);
 });
