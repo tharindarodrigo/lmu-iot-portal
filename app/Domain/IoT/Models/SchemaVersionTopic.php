@@ -2,11 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\DeviceSchema\Models;
+namespace App\Domain\IoT\Models;
 
-use App\Domain\DeviceControl\Models\DeviceCommandLog;
-use App\Domain\DeviceManagement\Models\Device;
-use App\Domain\DeviceSchema\Enums\TopicDirection;
+use App\Domain\IoT\Enums\TopicDirection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class SchemaVersionTopic extends Model
 {
-    /** @use HasFactory<\Database\Factories\Domain\DeviceSchema\Models\SchemaVersionTopicFactory> */
+    /** @use HasFactory<\Database\Factories\Domain\IoT\Models\SchemaVersionTopicFactory> */
     use HasFactory;
 
     protected $guarded = ['id'];
@@ -83,54 +81,5 @@ class SchemaVersionTopic extends Model
     public function isSubscribe(): bool
     {
         return $this->direction === TopicDirection::Subscribe;
-    }
-
-    /**
-     * Build a JSON payload template from this topic's active subscribe parameters.
-     *
-     * Each parameter's json_path determines where its default value is placed
-     * in the resulting nested array structure.
-     *
-     * @return array<string, mixed>
-     */
-    public function buildCommandPayloadTemplate(): array
-    {
-        $this->loadMissing('parameters');
-
-        $payload = [];
-
-        $this->parameters
-            ->where('is_active', true)
-            ->sortBy('sequence')
-            ->each(function (ParameterDefinition $parameter) use (&$payload): void {
-                $payload = $parameter->placeValue($payload, $parameter->resolvedDefaultValue());
-            });
-
-        return $payload;
-    }
-
-    /**
-     * Build an example JSON payload template for publish topics (Device → Platform).
-     *
-     * Publish parameters generally use JSONPath-like `json_path` values (e.g. `$.status.temp`).
-     * We normalize those paths and place type-appropriate defaults to produce a nested JSON
-     * structure that matches what the platform expects to receive.
-     *
-     * @return array<string, mixed>
-     */
-    public function buildPublishPayloadTemplate(): array
-    {
-        $this->loadMissing('parameters');
-
-        $payload = [];
-
-        $this->parameters
-            ->where('is_active', true)
-            ->sortBy('sequence')
-            ->each(function (ParameterDefinition $parameter) use (&$payload): void {
-                $payload = $parameter->placeValue($payload, $parameter->resolvedDefaultValue());
-            });
-
-        return $payload;
     }
 }
