@@ -26,7 +26,7 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->default()
             ->id('admin')
             ->path('admin')
@@ -40,9 +40,6 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Admin/Pages'), for: 'App\\Filament\\Admin\\Pages')
             ->pages([
                 Dashboard::class,
-            ])
-            ->assets([
-                Js::make('app', Vite::asset('resources/js/app.js'))->module(),
             ])
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\\Filament\\Admin\\Widgets')
             ->widgets([
@@ -66,5 +63,13 @@ class AdminPanelProvider extends PanelProvider
             ->maxContentWidth('full')
             ->sidebarCollapsibleOnDesktop(true)
             ->collapsedSidebarWidth('w/2');
+
+        if (! app()->runningInConsole()) {
+            $panel = $panel->assets([
+                Js::make('app', Vite::asset('resources/js/app.js'))->module(),
+            ]);
+        }
+
+        return $panel;
     }
 }
