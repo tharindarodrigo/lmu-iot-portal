@@ -100,6 +100,7 @@ function bindFakeStateStore(): void
 }
 
 it('completes command logs using correlation id and reconciles desired topic state', function (): void {
+    config(['broadcasting.default' => 'null']);
     Event::fake([CommandCompleted::class]);
     bindFakeStateStore();
 
@@ -150,6 +151,7 @@ it('completes command logs using correlation id and reconciles desired topic sta
 });
 
 it('falls back to linked topic matching when command correlation id is absent', function (): void {
+    config(['broadcasting.default' => 'null']);
     bindFakeStateStore();
 
     [$device, $commandTopic, $stateTopic] = createDeviceWithLinkedFeedbackTopics();

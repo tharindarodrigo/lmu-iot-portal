@@ -694,7 +694,7 @@ class DeviceSchemaSeeder extends Seeder
             'type' => ParameterDataType::String,
             'required' => false,
             'is_critical' => false,
-            'validation_rules' => ['enum' => ['solid', 'pulse', 'rainbow', 'strobe']],
+            'validation_rules' => ['enum' => ['solid', 'blink', 'breathe', 'rainbow']],
             'sequence' => 4,
             'is_active' => true,
         ]);
@@ -770,7 +770,7 @@ class DeviceSchemaSeeder extends Seeder
             'required' => false,
             'is_critical' => false,
             'default_value' => 'solid',
-            'validation_rules' => ['enum' => ['solid', 'pulse', 'rainbow', 'strobe']],
+            'validation_rules' => ['enum' => ['solid', 'blink', 'breathe', 'rainbow']],
             'control_ui' => ['widget' => 'select'],
             'sequence' => 4,
             'is_active' => true,
