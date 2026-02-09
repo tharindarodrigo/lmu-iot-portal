@@ -69,7 +69,6 @@ it('can replicate a device from the list table', function (): void {
             'device_type_id' => $device->device_type_id,
             'device_schema_version_id' => $device->device_schema_version_id,
             'is_active' => false,
-            'is_simulated' => $device->is_simulated,
         ])
         ->assertHasNoFormErrors();
 
@@ -98,7 +97,6 @@ it('allows overriding fields when replicating a device from the modal form', fun
         'name' => 'Fan Controller',
         'external_id' => 'fan-01',
         'is_active' => true,
-        'is_simulated' => false,
     ]);
 
     livewire(ListDevices::class)
@@ -109,7 +107,6 @@ it('allows overriding fields when replicating a device from the modal form', fun
             'device_type_id' => $device->device_type_id,
             'device_schema_version_id' => $device->device_schema_version_id,
             'is_active' => true,
-            'is_simulated' => true,
         ])
         ->assertHasNoFormErrors();
 
@@ -122,6 +119,5 @@ it('allows overriding fields when replicating a device from the modal form', fun
         ->and($replica?->name)->toBe('Fan Controller Clone A')
         ->and($replica?->external_id)->toBe('fan-01-clone-a')
         ->and($replica?->is_active)->toBeTrue()
-        ->and($replica?->is_simulated)->toBeTrue()
         ->and($replica?->device_schema_version_id)->toBe($device->device_schema_version_id);
 });

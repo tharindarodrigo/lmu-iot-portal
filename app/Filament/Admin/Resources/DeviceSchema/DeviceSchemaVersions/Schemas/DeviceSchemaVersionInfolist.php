@@ -6,11 +6,12 @@ namespace App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\Schemas
 
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\DeviceSchemaResource;
-use Filament\Forms\Components\CodeEditor;
+use Filament\Infolists\Components\CodeEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Phiki\Grammar\Grammar;
 
 class DeviceSchemaVersionInfolist
 {
@@ -48,14 +49,14 @@ class DeviceSchemaVersionInfolist
                     ->columns(2),
 
                 Section::make('Firmware')
+                    ->collapsible()
+                    ->collapsed()
                     ->schema([
-                        TextEntry::make('firmware_filename')
-                            ->label('File Name')
-                            ->placeholder('—'),
-
-                        CodeEditor::make('firmware_template')
-                            ->label('Template')
+                        CodeEntry::make('firmware_template')
+                            ->grammar(Grammar::Cpp)                            
+                            ->copyable()
                             ->extraAttributes(['class' => 'font-mono whitespace-pre-wrap'])
+                            ->placeholder('No firmware template configured.')
                             ->columnSpanFull(),
                     ])
                     ->columns(1),

@@ -25,7 +25,6 @@ class DeviceSchemaVersion extends Model
     protected function casts(): array
     {
         return [
-            'firmware_filename' => 'string',
             'firmware_template' => 'string',
         ];
     }

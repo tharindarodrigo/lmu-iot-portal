@@ -25,7 +25,9 @@ uses(RefreshDatabase::class);
 
 function createTestDeviceForDashboard(): Device
 {
-    $schemaVersion = DeviceSchemaVersion::factory()->create();
+    $schemaVersion = DeviceSchemaVersion::factory()->create([
+        'firmware_template' => 'const char* DEVICE_ID = "{{DEVICE_ID}}";',
+    ]);
 
     $subscribeTopic = SchemaVersionTopic::factory()->subscribe()->create([
         'device_schema_version_id' => $schemaVersion->id,
@@ -175,6 +177,26 @@ it('shows subscribe topic options', function (): void {
 
     livewire(DeviceControlDashboard::class, ['record' => $device->id])
         ->assertSee('Control (control)');
+});
+
+it('shows firmware viewer action on the control dashboard page', function (): void {
+    $device = createTestDeviceForDashboard();
+
+    livewire(DeviceControlDashboard::class, ['record' => $device->id])
+        ->assertActionExists('viewFirmware');
+});
+
+it('can open firmware modal from control dashboard and see rendered firmware', function (): void {
+    $device = createTestDeviceForDashboard();
+
+    livewire(DeviceControlDashboard::class, ['record' => $device->id])
+        ->mountAction('viewFirmware')
+        ->assertActionMounted('viewFirmware')
+        ->assertActionDataSet(function (array $data): bool {
+            $firmware = $data['firmware'] ?? null;
+
+            return is_string($firmware) && str_contains($firmware, 'const char* DEVICE_ID = "pump-42";');
+        });
 });
 
 it('loads default payload JSON for the selected topic', function (): void {

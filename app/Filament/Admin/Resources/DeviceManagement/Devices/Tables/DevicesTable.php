@@ -7,13 +7,11 @@ namespace App\Filament\Admin\Resources\DeviceManagement\Devices\Tables;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Filament\Actions\DeviceManagement\ReplicateDeviceActions;
 use App\Filament\Actions\DeviceManagement\SimulatePublishingActions;
+use App\Filament\Actions\DeviceManagement\ViewFirmwareAction;
 use App\Filament\Admin\Resources\DeviceManagement\Devices\DeviceResource;
 use App\Filament\Admin\Resources\DeviceManagement\DeviceTypes\DeviceTypeResource;
 use App\Filament\Admin\Resources\Shared\Organizations\OrganizationResource;
 use Filament\Actions;
-use Filament\Forms\Components\CodeEditor;
-use Filament\Forms\Components\CodeEditor\Enums\Language;
-use Filament\Forms\Components\TextInput;
 use Filament\Support\Colors\Color;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -59,12 +57,6 @@ class DevicesTable
                     ->boolean()
                     ->sortable(),
 
-                IconColumn::make('is_simulated')
-                    ->label('Simulated')
-                    ->boolean()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
                 TextColumn::make('connection_state')
                     ->label('Status')
                     ->badge()
@@ -108,40 +100,22 @@ class DevicesTable
                     ]),
             ])
             ->recordActions([
-                Actions\ViewAction::make(),
-                Actions\Action::make('viewFirmware')
-                    ->label('Firmware')
-                    ->icon(Heroicon::OutlinedCodeBracketSquare)
-                    ->modalHeading('Rendered Firmware')
-                    ->modalWidth('7xl')
-                    ->slideOver()
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Close')
-                    ->fillForm(fn (Device $record): array => [
-                        'filename' => $record->schemaVersion?->firmware_filename ?: 'firmware.ino',
-                        'firmware' => $record->schemaVersion?->renderFirmwareForDevice($record)
-                            ?? '// No firmware template is configured for this device schema version.',
-                    ])
-                    ->form([
-                        TextInput::make('filename')
-                            ->label('File Name')
-                            ->disabled()
-                            ->dehydrated(false),
-                        CodeEditor::make('firmware')
-                            ->label('Firmware')
-                            ->language(Language::Cpp)
-                            ->disabled()
-                            ->dehydrated(false)
-                            ->columnSpanFull(),
-                    ]),
-                Actions\Action::make('controlDashboard')
-                    ->label('Control')
-                    ->icon(Heroicon::OutlinedCommandLine)
-                    ->url(fn (Device $record): string => DeviceResource::getUrl('control-dashboard', ['record' => $record])),
-                SimulatePublishingActions::recordAction(),
-                Actions\EditAction::make(),
-                ReplicateDeviceActions::make(),
-                Actions\DeleteAction::make(),
+                Actions\ActionGroup::make([
+                    Actions\ViewAction::make(),
+                    ViewFirmwareAction::make(),
+                    Actions\Action::make('controlDashboard')
+                        ->label('Control')
+                        ->icon(Heroicon::OutlinedCommandLine)
+                        ->url(fn (Device $record): string => DeviceResource::getUrl('control-dashboard', ['record' => $record]))
+                        ->visible(fn (Device $record): bool => $record->canBeControlled()),
+                    SimulatePublishingActions::recordAction()
+                        ->visible(fn (Device $record): bool => $record->canBeSimulated()),
+                    Actions\EditAction::make(),
+                    ReplicateDeviceActions::make(),
+                    Actions\DeleteAction::make(),
+                ])
+                    ->label('Actions')
+                    ->icon(Heroicon::OutlinedEllipsisVertical),
             ])
             ->toolbarActions([
                 Actions\BulkActionGroup::make([

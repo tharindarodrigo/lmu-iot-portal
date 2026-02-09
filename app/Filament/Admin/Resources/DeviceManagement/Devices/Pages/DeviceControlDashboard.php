@@ -12,7 +12,9 @@ use App\Domain\DeviceControl\Services\DeviceCommandDispatcher;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsDeviceStateStore;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Filament\Actions\DeviceManagement\ViewFirmwareAction;
 use App\Filament\Admin\Resources\DeviceManagement\Devices\DeviceResource;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CodeEditor;
 use Filament\Forms\Components\CodeEditor\Enums\Language;
@@ -89,6 +91,16 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
     public static function getNavigationLabel(): string
     {
         return 'Control Dashboard';
+    }
+
+    public function getHeaderActions(): array
+    {
+        return [
+            Action::make('viewDevice')
+                ->label('View Device')
+                ->url(fn (): string => DeviceResource::getUrl('view', ['record' => $this->getRecord()])),
+            ViewFirmwareAction::make(),
+        ];
     }
 
     public function form(Schema $schema): Schema

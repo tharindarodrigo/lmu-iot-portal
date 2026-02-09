@@ -6,6 +6,7 @@ use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Shared\Models\User;
 use App\Filament\Admin\Resources\DeviceManagement\Devices\Pages\ViewDevice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,7 +30,6 @@ it('shows the firmware viewer action on the device view page', function (): void
     $schema = DeviceSchema::factory()->forDeviceType($deviceType)->create();
     $schemaVersion = DeviceSchemaVersion::factory()->create([
         'device_schema_id' => $schema->id,
-        'firmware_filename' => 'esp32-device.ino',
         'firmware_template' => 'const char* DEVICE_ID = "{{DEVICE_ID}}";',
     ]);
 
@@ -41,5 +41,49 @@ it('shows the firmware viewer action on the device view page', function (): void
 
     livewire(ViewDevice::class, ['record' => $device->id])
         ->assertActionExists('viewFirmware')
-        ->assertActionExists('controlDashboard');
+        ->assertActionHidden('controlDashboard');
+});
+
+it('can open firmware modal and see rendered firmware', function (): void {
+    $deviceType = DeviceType::factory()->mqtt()->create();
+    $schema = DeviceSchema::factory()->forDeviceType($deviceType)->create();
+    $schemaVersion = DeviceSchemaVersion::factory()->create([
+        'device_schema_id' => $schema->id,
+        'firmware_template' => 'const char* DEVICE_ID = "{{DEVICE_ID}}";',
+    ]);
+
+    $device = Device::factory()->create([
+        'device_type_id' => $deviceType->id,
+        'device_schema_version_id' => $schemaVersion->id,
+        'external_id' => 'device-xyz',
+    ]);
+
+    livewire(ViewDevice::class, ['record' => $device->id])
+        ->mountAction('viewFirmware')
+        ->assertActionMounted('viewFirmware')
+        ->assertActionDataSet(function (array $data): bool {
+            $firmware = $data['firmware'] ?? null;
+
+            return is_string($firmware) && str_contains($firmware, 'const char* DEVICE_ID = "device-xyz";');
+        });
+});
+
+it('shows control dashboard action when the device has command topics', function (): void {
+    $deviceType = DeviceType::factory()->mqtt()->create();
+    $schema = DeviceSchema::factory()->forDeviceType($deviceType)->create();
+    $schemaVersion = DeviceSchemaVersion::factory()->create([
+        'device_schema_id' => $schema->id,
+    ]);
+
+    SchemaVersionTopic::factory()->subscribe()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+    ]);
+
+    $device = Device::factory()->create([
+        'device_type_id' => $deviceType->id,
+        'device_schema_version_id' => $schemaVersion->id,
+    ]);
+
+    livewire(ViewDevice::class, ['record' => $device->id])
+        ->assertActionVisible('controlDashboard');
 });

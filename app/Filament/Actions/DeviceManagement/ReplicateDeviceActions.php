@@ -29,7 +29,6 @@ final class ReplicateDeviceActions
                 $data['name'] = Str::limit("{$name} Copy", 255, '');
                 $data['external_id'] = null;
                 $data['is_active'] = false;
-                $data['is_simulated'] = (bool) ($data['is_simulated'] ?? false);
                 $data['connection_state'] = null;
                 $data['last_seen_at'] = null;
 
@@ -77,9 +76,6 @@ final class ReplicateDeviceActions
 
                 Toggle::make('is_active')
                     ->label('Active'),
-
-                Toggle::make('is_simulated')
-                    ->label('Simulated'),
             ]);
     }
 

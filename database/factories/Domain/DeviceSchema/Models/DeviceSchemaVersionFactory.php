@@ -27,7 +27,6 @@ class DeviceSchemaVersionFactory extends Factory
             'version' => 1,
             'status' => 'draft',
             'notes' => null,
-            'firmware_filename' => null,
             'firmware_template' => null,
         ];
     }

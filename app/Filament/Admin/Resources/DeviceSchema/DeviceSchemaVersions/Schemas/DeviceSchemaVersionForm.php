@@ -48,17 +48,15 @@ class DeviceSchemaVersionForm
                     ->columns(2),
 
                 Section::make('Firmware Template')
+                    ->collapsible()
                     ->description('Store device firmware with placeholders like {{DEVICE_ID}}, {{CONTROL_TOPIC}}, and {{STATE_TOPIC}}.')
                     ->schema([
-                        TextInput::make('firmware_filename')
-                            ->label('Firmware File Name')
-                            ->maxLength(255)
-                            ->placeholder('esp32-device.ino')
-                            ->default('firmware.ino'),
-
                         CodeEditor::make('firmware_template')
                             ->label('Firmware Template')
                             ->language(Language::Cpp)
+                            ->afterStateHydrated(function (CodeEditor $component, mixed $state): void {
+                                $component->state(is_string($state) ? $state : '');
+                            })
                             ->columnSpanFull()
                             ->helperText('This template is rendered per device from the Device resource with placeholders replaced automatically.'),
                     ])

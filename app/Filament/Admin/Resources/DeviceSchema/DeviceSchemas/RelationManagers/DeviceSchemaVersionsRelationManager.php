@@ -44,11 +44,6 @@ class DeviceSchemaVersionsRelationManager extends RelationManager
                     ->rows(3)
                     ->columnSpanFull(),
 
-                TextInput::make('firmware_filename')
-                    ->maxLength(255)
-                    ->placeholder('esp32-device.ino')
-                    ->columnSpanFull(),
-
                 CodeEditor::make('firmware_template')
                     ->language(Language::Cpp)
                     ->columnSpanFull()

@@ -41,11 +41,6 @@ class DeviceSchemaVersionsTable
                     ->counts('topics')
                     ->sortable(),
 
-                TextColumn::make('firmware_filename')
-                    ->label('Firmware')
-                    ->placeholder('—')
-                    ->toggleable(),
-
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

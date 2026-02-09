@@ -8,6 +8,7 @@ use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceControl\Models\DeviceDesiredState;
 use App\Domain\DeviceControl\Models\DeviceDesiredTopicState;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Shared\Models\Organization;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use Database\Factories\Domain\DeviceManagement\Models\DeviceFactory;
@@ -50,7 +51,6 @@ class Device extends Model
     {
         return [
             'is_active' => 'bool',
-            'is_simulated' => 'bool',
             'last_seen_at' => 'datetime',
             'metadata' => 'array',
         ];
@@ -110,5 +110,31 @@ class Device extends Model
     public function desiredTopicStates(): HasMany
     {
         return $this->hasMany(DeviceDesiredTopicState::class);
+    }
+
+    public function canBeControlled(): bool
+    {
+        if ($this->getAttribute('device_schema_version_id') === null) {
+            return false;
+        }
+
+        $this->loadMissing('schemaVersion.topics');
+
+        return $this->schemaVersion?->topics
+            ?->contains(fn (SchemaVersionTopic $topic): bool => $topic->isPurposeCommand() || $topic->isSubscribe())
+            ?? false;
+    }
+
+    public function canBeSimulated(): bool
+    {
+        if ($this->getAttribute('device_schema_version_id') === null) {
+            return false;
+        }
+
+        $this->loadMissing('schemaVersion.topics');
+
+        return $this->schemaVersion?->topics
+            ?->contains(fn (SchemaVersionTopic $topic): bool => $topic->isPublish())
+            ?? false;
     }
 }

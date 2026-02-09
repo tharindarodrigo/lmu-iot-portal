@@ -121,15 +121,11 @@ class DeviceForm
                     ])
                     ->columns(2),
 
-                Section::make('Status & Simulation')
+                Section::make('Status')
                     ->schema([
                         Toggle::make('is_active')
                             ->label('Is Active')
                             ->default(true),
-
-                        Toggle::make('is_simulated')
-                            ->label('Is Simulated')
-                            ->default(false),
 
                         TextInput::make('connection_state')
                             ->label('Connection State')

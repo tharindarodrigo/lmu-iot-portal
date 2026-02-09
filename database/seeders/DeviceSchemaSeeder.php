@@ -521,7 +521,6 @@ class DeviceSchemaSeeder extends Seeder
 
         $this->upsertFirmwareTemplate(
             version: $lightVersion,
-            filename: 'esp32-dimmable-light.ino',
             template: $this->replaceDeviceIdPlaceholder(
                 $this->loadFirmwareTemplate('plan/DeviceControlArchitecture/esp32-dimmable-light/esp32-dimmable-light.ino'),
                 'dimmable-light-01',
@@ -628,7 +627,6 @@ class DeviceSchemaSeeder extends Seeder
 
         $this->upsertFirmwareTemplate(
             version: $rgbVersion,
-            filename: 'esp32-rgb-light.ino',
             template: $this->loadFirmwareTemplate('plan/DeviceControlArchitecture/esp32-rgb-light/esp32-rgb-light.ino'),
         );
 
@@ -794,14 +792,13 @@ class DeviceSchemaSeeder extends Seeder
         ]);
     }
 
-    private function upsertFirmwareTemplate(DeviceSchemaVersion $version, string $filename, ?string $template): void
+    private function upsertFirmwareTemplate(DeviceSchemaVersion $version, ?string $template): void
     {
         if (! is_string($template) || trim($template) === '') {
             return;
         }
 
         $version->update([
-            'firmware_filename' => $filename,
             'firmware_template' => $template,
         ]);
     }

@@ -32,7 +32,6 @@ const char* DEVICE_ID = "{{DEVICE_ID}}";
 const char* CONTROL_TOPIC = "{{CONTROL_TOPIC}}";
 const char* STATE_TOPIC = "{{STATE_TOPIC}}";
 CPP,
-        'firmware_filename' => 'esp32-rgb-light.ino',
     ]);
 
     SchemaVersionTopic::factory()->subscribe()->create([
