@@ -53,7 +53,7 @@ class DeviceSchemaVersionInfolist
                     ->collapsed()
                     ->schema([
                         CodeEntry::make('firmware_template')
-                            ->grammar(Grammar::Cpp)                            
+                            ->grammar(Grammar::Cpp)
                             ->copyable()
                             ->extraAttributes(['class' => 'font-mono whitespace-pre-wrap'])
                             ->placeholder('No firmware template configured.')
