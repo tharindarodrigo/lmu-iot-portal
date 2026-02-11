@@ -1,5 +1,59 @@
 <x-filament-panels::page>
     <style>
+        .dc-status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .dc-status-indicator[data-state="online"] {
+            background: rgba(16, 185, 129, 0.1);
+            color: rgb(5, 150, 105);
+        }
+        .dc-status-indicator[data-state="offline"] {
+            background: rgba(239, 68, 68, 0.1);
+            color: rgb(220, 38, 38);
+        }
+        .dc-status-indicator[data-state="unknown"] {
+            background: rgba(107, 114, 128, 0.1);
+            color: rgb(107, 114, 128);
+        }
+        .dark .dc-status-indicator[data-state="online"] {
+            background: rgba(52, 211, 153, 0.15);
+            color: rgb(167, 243, 208);
+        }
+        .dark .dc-status-indicator[data-state="offline"] {
+            background: rgba(248, 113, 113, 0.15);
+            color: rgb(252, 165, 165);
+        }
+        .dark .dc-status-indicator[data-state="unknown"] {
+            background: rgba(156, 163, 175, 0.12);
+            color: rgb(209, 213, 219);
+        }
+        .dc-status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 9999px;
+            flex-shrink: 0;
+        }
+        .dc-status-dot[data-state="online"] {
+            background: rgb(16, 185, 129);
+            animation: dc-pulse 2s infinite;
+        }
+        .dc-status-dot[data-state="offline"] {
+            background: rgb(239, 68, 68);
+        }
+        .dc-status-dot[data-state="unknown"] {
+            background: rgb(156, 163, 175);
+        }
+        @keyframes dc-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
         .dc-control-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -230,6 +284,19 @@
 
     <x-filament::section>
         <x-slot name="heading">Send Command</x-slot>
+
+        <x-slot name="afterHeader">
+            <div
+                x-data="{ connectionState: @js($this->deviceConnectionState ?? 'unknown') }"
+                x-on:device-connection-changed.window="connectionState = $event.detail.state"
+            >
+                <div class="dc-status-indicator" :data-state="connectionState">
+                    <div class="dc-status-dot" :data-state="connectionState"></div>
+                    <span x-text="connectionState === 'online' ? 'Device Online' : (connectionState === 'offline' ? 'Device Offline' : 'Status Unknown')"></span>
+                </div>
+            </div>
+        </x-slot>
+
         <x-slot name="description">Select a command topic and control parameters. Enable advanced mode to send raw JSON.</x-slot>
 
         @if(count($this->subscribeTopicOptions) > 0)
@@ -440,6 +507,21 @@
                                     detail: { type: evt, deviceUuid, data },
                                 }));
                             });
+                        });
+
+                        window.__deviceControlChannel.bind('device.connection.changed', (data) => {
+                            window.dispatchEvent(new CustomEvent('device-connection-changed', {
+                                detail: { state: data.connection_state, deviceUuid: data.device_uuid },
+                            }));
+
+                            this.$wire.call('updateDeviceConnectionState', data.connection_state);
+
+                            const label = data.connection_state === 'online' ? 'Online' : 'Offline';
+                            this.addEvent(
+                                data.connection_state === 'online' ? 'info' : 'error',
+                                label,
+                                `Device is now ${data.connection_state} (${data.last_seen_at ?? '—'})`
+                            );
                         });
                     },
 

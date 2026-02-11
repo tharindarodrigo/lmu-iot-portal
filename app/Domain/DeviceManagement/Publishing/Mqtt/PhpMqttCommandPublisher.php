@@ -13,15 +13,35 @@ use RuntimeException;
  * This bypasses the native NATS PUB mechanism so that messages are stored
  * in the NATS MQTT bridge's JetStream stream ($MQTT_msgs) and properly
  * delivered to MQTT devices that subscribe with QoS 1.
+ *
+ * Uses a fixed client ID with clean_session=0 (persistent session) to avoid
+ * corrupting the NATS MQTT bridge's $MQTT_sess JetStream stream. Random
+ * client IDs with clean_session=1 caused rapid session record create/delete
+ * cycles that produced invalid JSON in the stream, breaking other MQTT
+ * clients' subscription restoration.
  */
 final class PhpMqttCommandPublisher implements MqttCommandPublisher
 {
+    private const string CLIENT_ID = 'lmu-iot-portal-cmd';
+
+    private const string LOCK_FILE = 'lmu-iot-portal-mqtt-cmd.lock';
+
     private const int CONNECT_TIMEOUT_SECONDS = 5;
 
     private const int KEEPALIVE_SECONDS = 60;
 
     public function publish(string $mqttTopic, string $payload, string $host, int $port): void
     {
+        $lockHandle = $this->acquireLock();
+
+        if ($lockHandle === null) {
+            Log::channel('device_control')->warning('MQTT publish lock unavailable, proceeding without lock', [
+                'topic' => $mqttTopic,
+                'host' => $host,
+                'port' => $port,
+            ]);
+        }
+
         Log::channel('device_control')->debug('MQTT TCP connect attempt', [
             'host' => $host,
             'port' => $port,
@@ -79,6 +99,7 @@ final class PhpMqttCommandPublisher implements MqttCommandPublisher
             throw $exception;
         } finally {
             fclose($socket);
+            $this->releaseLock($lockHandle);
         }
     }
 
@@ -87,14 +108,12 @@ final class PhpMqttCommandPublisher implements MqttCommandPublisher
      */
     private function sendConnect($socket): void
     {
-        $clientId = 'lmu-iot-cmd-'.bin2hex(random_bytes(4));
-
         $variableHeader = $this->encodeUtf8String('MQTT')
             ."\x04"
-            ."\x02"
+            ."\x00"
             .pack('n', self::KEEPALIVE_SECONDS);
 
-        $packetPayload = $this->encodeUtf8String($clientId);
+        $packetPayload = $this->encodeUtf8String(self::CLIENT_ID);
 
         $this->writePacket($socket, 0x10, $variableHeader.$packetPayload);
     }
@@ -191,6 +210,47 @@ final class PhpMqttCommandPublisher implements MqttCommandPublisher
         } while ($length > 0);
 
         return $encoded;
+    }
+
+    /**
+     * @return resource|null
+     */
+    private function acquireLock()
+    {
+        $lockPath = $this->lockFilePath();
+        $handle = @fopen($lockPath, 'c');
+
+        if ($handle === false) {
+            return null;
+        }
+
+        if (! flock($handle, LOCK_EX)) {
+            fclose($handle);
+
+            return null;
+        }
+
+        return $handle;
+    }
+
+    /**
+     * @param  resource|null  $handle
+     */
+    private function releaseLock($handle): void
+    {
+        if (! is_resource($handle)) {
+            return;
+        }
+
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    }
+
+    private function lockFilePath(): string
+    {
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            .DIRECTORY_SEPARATOR
+            .self::LOCK_FILE;
     }
 
     /**

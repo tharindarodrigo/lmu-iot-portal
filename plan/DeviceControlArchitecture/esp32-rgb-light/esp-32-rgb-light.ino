@@ -7,6 +7,7 @@
  *   - {{MQTT_CLIENT_ID}}
  *   - {{CONTROL_TOPIC}}
  *   - {{STATE_TOPIC}}
+ *   - {{PRESENCE_TOPIC}} (defaults to devices/{{DEVICE_ID}}/presence)
  *
  * Payload example:
  * {
@@ -25,8 +26,8 @@
 /* ----------------------- Configuration ----------------------- */
 
 // WiFi credentials — change to match your network
-const char* WIFI_SSID     = "SPSETUP-75A8";
-const char* WIFI_PASSWORD = "called3820brick";
+const char* WIFI_SSID     = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 const char* MQTT_HOST     = "10.0.0.42";
 const uint16_t MQTT_PORT  = 1883;
@@ -37,6 +38,7 @@ const char* MQTT_CLIENT   = "{{MQTT_CLIENT_ID}}";
 const char* DEVICE_ID     = "{{DEVICE_ID}}";
 const char* TOPIC_CONTROL = "{{CONTROL_TOPIC}}";
 const char* TOPIC_STATE   = "{{STATE_TOPIC}}";
+const char* TOPIC_PRESENCE = "devices/{{DEVICE_ID}}/presence";
 
 // NOTE (ESP32-S3 LEDC):
 // We'll use LEDC channels 0,1,2 and attach pins to those channels.
@@ -361,12 +363,19 @@ void connectMQTT() {
   while (!mqttClient.connected()) {
     Serial.printf("[MQTT] Connecting to %s:%d as %s\n", MQTT_HOST, MQTT_PORT, MQTT_CLIENT);
 
+    // Configure Last Will and Testament (LWT):
+    // If the broker loses contact, it publishes "offline" to the presence topic.
     bool connected = (MQTT_USER[0] == '\0')
-      ? mqttClient.connect(MQTT_CLIENT)
-      : mqttClient.connect(MQTT_CLIENT, MQTT_USER, MQTT_PASS);
+      ? mqttClient.connect(MQTT_CLIENT, nullptr, nullptr, TOPIC_PRESENCE, 1, true, "offline")
+      : mqttClient.connect(MQTT_CLIENT, MQTT_USER, MQTT_PASS, TOPIC_PRESENCE, 1, true, "offline");
 
     if (connected) {
       Serial.println("[MQTT] Connected");
+
+      // Announce online presence (retained so new subscribers see it immediately)
+      mqttClient.publish(TOPIC_PRESENCE, "online", true);
+      Serial.printf("[MQTT] Published presence -> %s payload=online\n", TOPIC_PRESENCE);
+
       mqttClient.subscribe(TOPIC_CONTROL, 1);
       Serial.printf("[MQTT] Subscribed -> %s\n", TOPIC_CONTROL);
       publishState();

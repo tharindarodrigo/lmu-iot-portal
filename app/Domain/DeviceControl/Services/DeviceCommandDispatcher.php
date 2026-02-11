@@ -87,7 +87,14 @@ final readonly class DeviceCommandDispatcher
             'correlation_id' => $correlationId,
         ]);
 
-        event(new CommandDispatched($commandLog));
+        try {
+            event(new CommandDispatched($commandLog));
+        } catch (\Throwable $broadcastException) {
+            $this->log()->warning('CommandDispatched broadcast failed (non-fatal)', [
+                'command_log_id' => $commandLog->id,
+                'error' => $broadcastException->getMessage(),
+            ]);
+        }
 
         $natsSubject = str_replace('/', '.', $mqttTopic);
 
@@ -124,7 +131,14 @@ final readonly class DeviceCommandDispatcher
                 'nats_subject' => $natsSubject,
             ]);
 
-            event(new CommandSent($commandLog, $natsSubject));
+            try {
+                event(new CommandSent($commandLog, $natsSubject));
+            } catch (\Throwable $broadcastException) {
+                $this->log()->warning('CommandSent broadcast failed (non-fatal)', [
+                    'command_log_id' => $commandLog->id,
+                    'error' => $broadcastException->getMessage(),
+                ]);
+            }
         } catch (\Throwable $exception) {
             $this->log()->error('Command publish failed', [
                 'command_log_id' => $commandLog->id,

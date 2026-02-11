@@ -89,6 +89,8 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
      */
     public array $initialDeviceStates = [];
 
+    public ?string $deviceConnectionState = null;
+
     public static function getNavigationLabel(): string
     {
         return 'Control Dashboard';
@@ -164,6 +166,7 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
                         Placeholder::make('send_button')
                             ->hiddenLabel()
                             ->view('filament.admin.resources.device-management.devices.partials.send-button'),
+                        // ->visible(fn (): bool => $this->useAdvancedJson),
                     ])->columnSpan(2),
                 ]),
             ]);
@@ -181,7 +184,12 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
     {
         $this->record = $this->resolveRecord($record);
 
-        $this->getRecord()->loadMissing('deviceType', 'schemaVersion.topics.parameters');
+        /** @var Device $device */
+        $device = $this->getRecord();
+
+        $device->loadMissing('deviceType', 'schemaVersion.topics.parameters');
+
+        $this->deviceConnectionState = $device->connection_state;
 
         $this->loadDefaultPayload();
         $this->loadInitialDeviceState();
@@ -335,6 +343,11 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
             ->body("Published to {$topic->suffix}")
             ->success()
             ->send();
+    }
+
+    public function updateDeviceConnectionState(string $state): void
+    {
+        $this->deviceConnectionState = $state;
     }
 
     public function table(Table $table): Table

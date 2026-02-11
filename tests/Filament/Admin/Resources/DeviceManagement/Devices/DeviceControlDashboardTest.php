@@ -6,9 +6,8 @@ use App\Domain\DeviceControl\Enums\CommandStatus;
 use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
+use App\Domain\DeviceManagement\Publishing\Mqtt\MqttCommandPublisher;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsDeviceStateStore;
-use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisher;
-use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
@@ -80,22 +79,12 @@ function createTestDeviceForDashboard(): Device
 
 function bindDashboardFakeNats(): void
 {
-    $fakePublisher = new class implements NatsPublisher
+    $fakePublisher = new class implements MqttCommandPublisher
     {
-        public function publish(string $subject, string $payload): void {}
+        public function publish(string $mqttTopic, string $payload, string $host, int $port): void {}
     };
 
-    $fakeFactory = new class($fakePublisher) implements NatsPublisherFactory
-    {
-        public function __construct(private NatsPublisher $publisher) {}
-
-        public function make(string $host, int $port): NatsPublisher
-        {
-            return $this->publisher;
-        }
-    };
-
-    app()->instance(NatsPublisherFactory::class, $fakeFactory);
+    app()->instance(MqttCommandPublisher::class, $fakePublisher);
 }
 
 function bindFakeDeviceStateStoreForDashboard(?array $returnState = null): void

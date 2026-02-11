@@ -6,6 +6,7 @@ namespace App\Domain\DataIngestion\Services;
 
 use App\Domain\DataIngestion\Models\IngestionMessage;
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceManagement\Services\DevicePresenceService;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Telemetry\Enums\ValidationStatus;
@@ -15,6 +16,10 @@ use Illuminate\Support\Carbon;
 
 class TelemetryPersistenceService
 {
+    public function __construct(
+        private DevicePresenceService $presenceService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $rawPayload
      * @param  array<string, mixed>  $finalValues
@@ -52,6 +57,8 @@ class TelemetryPersistenceService
             'recorded_at' => $resolvedRecordedAt,
             'received_at' => $resolvedReceivedAt,
         ]);
+
+        $this->presenceService->markOnline($device, $resolvedReceivedAt);
 
         $telemetryLog->loadMissing('device');
         event(new TelemetryReceived($telemetryLog));
