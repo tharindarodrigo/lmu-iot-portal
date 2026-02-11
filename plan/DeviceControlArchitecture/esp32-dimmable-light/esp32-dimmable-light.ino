@@ -41,8 +41,9 @@ const char* MQTT_CLIENT   = "dimmable-light-01";
 const char* DEVICE_ID     = "dimmable-light-01";
 
 // MQTT topics (built from the schema: baseTopic/identifier/suffix)
-const char* TOPIC_CONTROL = "devices/dimmable-light/dimmable-light-01/control";
-const char* TOPIC_STATE   = "devices/dimmable-light/dimmable-light-01/state";
+const char* TOPIC_CONTROL  = "devices/dimmable-light/dimmable-light-01/control";
+const char* TOPIC_STATE    = "devices/dimmable-light/dimmable-light-01/state";
+const char* TOPIC_PRESENCE = "devices/dimmable-light-01/presence";
 
 // Hardware pins
 const uint8_t PIN_LED    = 15;
@@ -165,16 +166,22 @@ void connectMQTT() {
   while (!mqttClient.connected()) {
     Serial.printf("[MQTT] Connecting to %s:%d as %s...\n", MQTT_HOST, MQTT_PORT, MQTT_CLIENT);
 
+    // Configure Last Will and Testament (LWT):
+    // If the broker loses contact, it publishes "offline" to the presence topic.
     bool connected = false;
 
     if (MQTT_USER[0] == '\0') {
-      connected = mqttClient.connect(MQTT_CLIENT);
+      connected = mqttClient.connect(MQTT_CLIENT, nullptr, nullptr, TOPIC_PRESENCE, 1, true, "offline");
     } else {
-      connected = mqttClient.connect(MQTT_CLIENT, MQTT_USER, MQTT_PASS);
+      connected = mqttClient.connect(MQTT_CLIENT, MQTT_USER, MQTT_PASS, TOPIC_PRESENCE, 1, true, "offline");
     }
 
     if (connected) {
       Serial.println("[MQTT] Connected");
+
+      // Announce online presence (retained so new subscribers see it immediately)
+      mqttClient.publish(TOPIC_PRESENCE, "online", true);
+      Serial.printf("[MQTT] Published presence → %s payload=online\n", TOPIC_PRESENCE);
 
       // Subscribe to the control topic (QoS 1)
       mqttClient.subscribe(TOPIC_CONTROL, 1);

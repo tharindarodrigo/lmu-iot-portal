@@ -13,9 +13,17 @@ use RuntimeException;
  * This bypasses the native NATS PUB mechanism so that messages are stored
  * in the NATS MQTT bridge's JetStream stream ($MQTT_msgs) and properly
  * delivered to MQTT devices that subscribe with QoS 1.
+ *
+ * Uses a fixed client ID with clean_session=0 (persistent session) to avoid
+ * corrupting the NATS MQTT bridge's $MQTT_sess JetStream stream. Random
+ * client IDs with clean_session=1 caused rapid session record create/delete
+ * cycles that produced invalid JSON in the stream, breaking other MQTT
+ * clients' subscription restoration.
  */
 final class PhpMqttCommandPublisher implements MqttCommandPublisher
 {
+    private const string CLIENT_ID = 'lmu-iot-portal-cmd';
+
     private const int CONNECT_TIMEOUT_SECONDS = 5;
 
     private const int KEEPALIVE_SECONDS = 60;
@@ -87,14 +95,12 @@ final class PhpMqttCommandPublisher implements MqttCommandPublisher
      */
     private function sendConnect($socket): void
     {
-        $clientId = 'lmu-iot-cmd-'.bin2hex(random_bytes(4));
-
         $variableHeader = $this->encodeUtf8String('MQTT')
             ."\x04"
-            ."\x02"
+            ."\x00"
             .pack('n', self::KEEPALIVE_SECONDS);
 
-        $packetPayload = $this->encodeUtf8String($clientId);
+        $packetPayload = $this->encodeUtf8String(self::CLIENT_ID);
 
         $this->writePacket($socket, 0x10, $variableHeader.$packetPayload);
     }

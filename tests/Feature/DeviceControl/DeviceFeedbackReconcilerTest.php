@@ -14,6 +14,7 @@ use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopicLink;
 use App\Events\CommandCompleted;
+use App\Events\DeviceConnectionChanged;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
@@ -178,4 +179,69 @@ it('falls back to linked topic matching when command correlation id is absent', 
     expect($result)->not->toBeNull()
         ->and($result['command_log_id'])->toBe($commandLog->id)
         ->and($commandLog->status)->toBe(CommandStatus::Completed);
+});
+
+it('does not falsely complete a command when device state has no payload overlap', function (): void {
+    config(['broadcasting.default' => 'null']);
+    Event::fake([CommandCompleted::class]);
+    bindFakeStateStore();
+
+    [$device, $commandTopic, $stateTopic] = createDeviceWithLinkedFeedbackTopics();
+
+    $commandLog = DeviceCommandLog::factory()->sent()->create([
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $commandTopic->id,
+        'correlation_id' => (string) Str::uuid(),
+        'command_payload' => ['power' => true, 'brightness' => 80, 'color_hex' => '#00FF00'],
+    ]);
+
+    /** @var DeviceFeedbackReconciler $reconciler */
+    $reconciler = app(DeviceFeedbackReconciler::class);
+
+    $mqttTopic = $stateTopic->resolvedTopic($device);
+
+    $result = $reconciler->reconcileInboundMessage($mqttTopic, [
+        'power' => false,
+        'brightness' => 40,
+        'color_hex' => '#0000FF',
+        'effect' => 'solid',
+    ]);
+
+    $commandLog->refresh();
+
+    expect($result)->not->toBeNull()
+        ->and($result['command_log_id'])->toBeNull()
+        ->and($commandLog->status)->toBe(CommandStatus::Sent);
+
+    Event::assertNotDispatched(CommandCompleted::class);
+});
+
+it('marks the device as online when a state message is reconciled', function (): void {
+    config(['broadcasting.default' => 'null']);
+    Event::fake([DeviceConnectionChanged::class]);
+    bindFakeStateStore();
+
+    [$device, $commandTopic, $stateTopic] = createDeviceWithLinkedFeedbackTopics();
+
+    $device->updateQuietly(['connection_state' => 'offline', 'last_seen_at' => null]);
+
+    /** @var DeviceFeedbackReconciler $reconciler */
+    $reconciler = app(DeviceFeedbackReconciler::class);
+
+    $mqttTopic = $stateTopic->resolvedTopic($device);
+
+    $result = $reconciler->reconcileInboundMessage($mqttTopic, [
+        'power' => true,
+        'brightness' => 100,
+    ]);
+
+    $device->refresh();
+
+    expect($result)->not->toBeNull()
+        ->and($device->connection_state)->toBe('online')
+        ->and($device->last_seen_at)->not->toBeNull();
+
+    Event::assertDispatched(DeviceConnectionChanged::class, function (DeviceConnectionChanged $event) use ($device): bool {
+        return $event->deviceId === $device->id && $event->connectionState === 'online';
+    });
 });

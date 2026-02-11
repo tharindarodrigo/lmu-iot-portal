@@ -9,6 +9,7 @@ use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceControl\Models\DeviceDesiredTopicState;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsDeviceStateStore;
+use App\Domain\DeviceManagement\Services\DevicePresenceService;
 use App\Domain\DeviceSchema\Enums\TopicLinkType;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Events\CommandCompleted;
@@ -29,6 +30,7 @@ class DeviceFeedbackReconciler
 
     public function __construct(
         private readonly NatsDeviceStateStore $stateStore,
+        private readonly DevicePresenceService $presenceService,
         private readonly LogManager $logManager,
     ) {}
 
@@ -75,6 +77,8 @@ class DeviceFeedbackReconciler
             'topic_suffix' => $topic->suffix,
             'purpose' => $topic->resolvedPurpose()->value,
         ]);
+
+        $this->presenceService->markOnline($device);
 
         $this->stateStore->store($device->uuid, $mqttTopic, $payload, $host, $port);
 
@@ -235,7 +239,11 @@ class DeviceFeedbackReconciler
             }
         }
 
-        return $bestMatch ?? $candidates->first();
+        if ($bestMatch !== null && $bestScore > 0) {
+            return $bestMatch;
+        }
+
+        return null;
     }
 
     /**

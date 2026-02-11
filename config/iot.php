@@ -17,4 +17,10 @@ return [
         'inject_meta_command_id' => (bool) env('IOT_INJECT_META_COMMAND_ID', true),
         'command_timeout_seconds' => (int) env('IOT_COMMAND_TIMEOUT_SECONDS', 120),
     ],
+
+    'presence' => [
+        'subject_prefix' => (string) env('IOT_PRESENCE_SUBJECT_PREFIX', 'devices'),
+        'subject_suffix' => (string) env('IOT_PRESENCE_SUBJECT_SUFFIX', 'presence'),
+        'heartbeat_timeout_seconds' => (int) env('IOT_HEARTBEAT_TIMEOUT_SECONDS', 300),
+    ],
 ];

@@ -12,7 +12,6 @@ use App\Filament\Admin\Resources\DeviceManagement\Devices\DeviceResource;
 use App\Filament\Admin\Resources\DeviceManagement\DeviceTypes\DeviceTypeResource;
 use App\Filament\Admin\Resources\Shared\Organizations\OrganizationResource;
 use Filament\Actions;
-use Filament\Support\Colors\Color;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -57,19 +56,30 @@ class DevicesTable
                     ->boolean()
                     ->sortable(),
 
-                TextColumn::make('connection_state')
+                IconColumn::make('connection_state')
                     ->label('Status')
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'online' => Color::Green,
-                        'offline' => Color::Red,
-                        default => Color::Gray,
+                    ->icon(fn (?string $state): Heroicon => match ($state) {
+                        'online' => Heroicon::Wifi,
+                        'offline' => Heroicon::SignalSlash,
+                        default => Heroicon::QuestionMarkCircle,
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'online' => 'success',
+                        'offline' => 'danger',
+                        default => 'gray',
+                    })
+                    ->tooltip(fn (?string $state): string => match ($state) {
+                        'online' => 'Online',
+                        'offline' => 'Offline',
+                        default => 'Unknown',
                     })
                     ->sortable(),
 
                 TextColumn::make('last_seen_at')
-                    ->dateTime()
+                    ->label('Last Seen')
+                    ->since()
                     ->sortable()
+                    ->placeholder('Never')
                     ->toggleable(),
 
                 TextColumn::make('external_id')
@@ -123,6 +133,7 @@ class DevicesTable
                     Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('created_at', 'desc')
+            ->poll('30s');
     }
 }

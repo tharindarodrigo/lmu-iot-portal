@@ -1,10 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Filament\Admin\Resources\DeviceManagement\Devices\Pages;
 
 use App\Filament\Admin\Resources\DeviceManagement\Devices\DeviceResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
+use Livewire\Attributes\On;
 
 class ListDevices extends ListRecords
 {
@@ -15,5 +18,22 @@ class ListDevices extends ListRecords
         return [
             Actions\CreateAction::make(),
         ];
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function getListeners(): array
+    {
+        return [
+            ...parent::getListeners(),
+            'echo:devices,device.connection.changed' => 'refreshDeviceTable',
+        ];
+    }
+
+    #[On('echo:devices,device.connection.changed')]
+    public function refreshDeviceTable(): void
+    {
+        $this->resetTable();
     }
 }

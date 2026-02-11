@@ -9,3 +9,4 @@ Artisan::command('inspire', function (): void {
 })->purpose('Display an inspiring quote')->hourly();
 
 Schedule::command('iot:expire-stale-commands')->everyMinute();
+Schedule::command('iot:check-device-health')->everyMinute();

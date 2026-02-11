@@ -24,7 +24,6 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
-use Filament\Support\Colors\Color;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -155,18 +154,23 @@ class DeviceResource extends Resource
                             ->label('Active')
                             ->boolean(),
 
-                        TextEntry::make('connection_state')
+                        IconEntry::make('connection_state')
                             ->label('Connection State')
-                            ->badge()
-                            ->color(fn ($state) => match ($state) {
-                                'online' => Color::Green,
-                                'offline' => Color::Red,
-                                default => Color::Gray,
+                            ->icon(fn (?string $state): Heroicon => match ($state) {
+                                'online' => Heroicon::Wifi,
+                                'offline' => Heroicon::SignalSlash,
+                                default => Heroicon::QuestionMarkCircle,
+                            })
+                            ->color(fn (?string $state): string => match ($state) {
+                                'online' => 'success',
+                                'offline' => 'danger',
+                                default => 'gray',
                             }),
 
                         TextEntry::make('last_seen_at')
                             ->label('Last Seen')
-                            ->dateTime(),
+                            ->since()
+                            ->placeholder('Never'),
                     ])
                     ->columns(2),
 
@@ -260,19 +264,30 @@ class DeviceResource extends Resource
                     ->boolean()
                     ->sortable(),
 
-                TextColumn::make('connection_state')
+                IconColumn::make('connection_state')
                     ->label('Status')
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'online' => Color::Green,
-                        'offline' => Color::Red,
-                        default => Color::Gray,
+                    ->icon(fn (?string $state): Heroicon => match ($state) {
+                        'online' => Heroicon::Wifi,
+                        'offline' => Heroicon::SignalSlash,
+                        default => Heroicon::QuestionMarkCircle,
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'online' => 'success',
+                        'offline' => 'danger',
+                        default => 'gray',
+                    })
+                    ->tooltip(fn (?string $state): string => match ($state) {
+                        'online' => 'Online',
+                        'offline' => 'Offline',
+                        default => 'Unknown',
                     })
                     ->sortable(),
 
                 TextColumn::make('last_seen_at')
-                    ->dateTime()
-                    ->sortable(),
+                    ->label('Last Seen')
+                    ->since()
+                    ->sortable()
+                    ->placeholder('Never'),
             ])
             ->filters([
                 SelectFilter::make('deviceType')
