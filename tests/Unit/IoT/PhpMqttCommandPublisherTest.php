@@ -72,3 +72,37 @@ it('uses a deterministic client ID across multiple invocations', function (): vo
     expect($firstId)->toBe($secondId)
         ->and($firstId)->toBe('lmu-iot-portal-cmd');
 });
+
+it('serializes publishes with a lock file', function (): void {
+    $publisher = new PhpMqttCommandPublisher;
+
+    $lockPathMethod = new ReflectionMethod($publisher, 'lockFilePath');
+    $lockPath = $lockPathMethod->invoke($publisher);
+
+    if (is_string($lockPath) && file_exists($lockPath)) {
+        unlink($lockPath);
+    }
+
+    $acquireLock = new ReflectionMethod($publisher, 'acquireLock');
+    $releaseLock = new ReflectionMethod($publisher, 'releaseLock');
+
+    $handle = $acquireLock->invoke($publisher);
+
+    expect(is_resource($handle))->toBeTrue();
+
+    $secondHandle = fopen($lockPath, 'c');
+    $locked = flock($secondHandle, LOCK_EX | LOCK_NB);
+
+    expect($locked)->toBeFalse();
+
+    fclose($secondHandle);
+    $releaseLock->invoke($publisher, $handle);
+
+    $thirdHandle = fopen($lockPath, 'c');
+    $lockedAfterRelease = flock($thirdHandle, LOCK_EX | LOCK_NB);
+
+    expect($lockedAfterRelease)->toBeTrue();
+
+    flock($thirdHandle, LOCK_UN);
+    fclose($thirdHandle);
+});

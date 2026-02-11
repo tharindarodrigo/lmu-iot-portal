@@ -50,6 +50,32 @@ it('updates last_seen_at without broadcasting when already online', function ():
     Event::assertNotDispatched(DeviceConnectionChanged::class);
 });
 
+it('broadcasts when a stale online model is offline in the database', function (): void {
+    Event::fake([DeviceConnectionChanged::class]);
+
+    $device = Device::factory()->create([
+        'connection_state' => 'online',
+        'last_seen_at' => now()->subMinutes(5),
+    ]);
+
+    $staleDevice = Device::find($device->id);
+
+    Device::query()
+        ->whereKey($device->id)
+        ->update(['connection_state' => 'offline', 'last_seen_at' => null]);
+
+    $this->service->markOnline($staleDevice);
+
+    $device->refresh();
+
+    expect($device->connection_state)->toBe('online')
+        ->and($device->last_seen_at)->not->toBeNull();
+
+    Event::assertDispatched(DeviceConnectionChanged::class, function (DeviceConnectionChanged $event) use ($device): bool {
+        return $event->deviceId === $device->id && $event->connectionState === 'online';
+    });
+});
+
 it('marks a device offline and broadcasts when transitioning from online', function (): void {
     Event::fake([DeviceConnectionChanged::class]);
 

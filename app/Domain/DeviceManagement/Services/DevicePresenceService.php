@@ -14,9 +14,15 @@ class DevicePresenceService
     public function markOnline(Device $device, ?Carbon $seenAt = null): void
     {
         $resolvedSeenAt = $seenAt ?? now();
-        $previousState = $device->connection_state;
+        $freshDevice = $this->refreshDevice($device);
 
-        $device->updateQuietly([
+        if ($freshDevice === null) {
+            return;
+        }
+
+        $previousState = $freshDevice->connection_state;
+
+        $freshDevice->updateQuietly([
             'connection_state' => 'online',
             'last_seen_at' => $resolvedSeenAt,
         ]);
@@ -24,21 +30,21 @@ class DevicePresenceService
         if ($previousState !== 'online') {
             try {
                 event(new DeviceConnectionChanged(
-                    deviceId: $device->id,
-                    deviceUuid: $device->uuid,
+                    deviceId: $freshDevice->id,
+                    deviceUuid: $freshDevice->uuid,
                     connectionState: 'online',
                     lastSeenAt: $resolvedSeenAt,
                 ));
             } catch (\Throwable $e) {
                 Log::channel('device_control')->warning('DeviceConnectionChanged broadcast failed (non-fatal)', [
-                    'device_id' => $device->id,
+                    'device_id' => $freshDevice->id,
                     'error' => $e->getMessage(),
                 ]);
             }
 
             Log::channel('device_control')->info('Device came online', [
-                'device_id' => $device->id,
-                'device_uuid' => $device->uuid,
+                'device_id' => $freshDevice->id,
+                'device_uuid' => $freshDevice->uuid,
                 'previous_state' => $previousState,
             ]);
         }
@@ -46,33 +52,43 @@ class DevicePresenceService
 
     public function markOffline(Device $device, ?Carbon $seenAt = null): void
     {
-        $previousState = $device->connection_state;
+        $freshDevice = $this->refreshDevice($device);
+
+        if ($freshDevice === null) {
+            return;
+        }
+
+        $previousState = $freshDevice->connection_state;
 
         if ($previousState === 'offline') {
             return;
         }
 
-        $device->updateQuietly([
+        $freshDevice->updateQuietly([
             'connection_state' => 'offline',
         ]);
 
+        $resolvedLastSeenAt = $seenAt ?? ($freshDevice->last_seen_at
+            ? Carbon::parse((string) $freshDevice->last_seen_at)
+            : null);
+
         try {
             event(new DeviceConnectionChanged(
-                deviceId: $device->id,
-                deviceUuid: $device->uuid,
+                deviceId: $freshDevice->id,
+                deviceUuid: $freshDevice->uuid,
                 connectionState: 'offline',
-                lastSeenAt: $seenAt ?? ($device->last_seen_at ? Carbon::parse($device->last_seen_at) : null),
+                lastSeenAt: $resolvedLastSeenAt,
             ));
         } catch (\Throwable $e) {
             Log::channel('device_control')->warning('DeviceConnectionChanged broadcast failed (non-fatal)', [
-                'device_id' => $device->id,
+                'device_id' => $freshDevice->id,
                 'error' => $e->getMessage(),
             ]);
         }
 
         Log::channel('device_control')->info('Device went offline', [
-            'device_id' => $device->id,
-            'device_uuid' => $device->uuid,
+            'device_id' => $freshDevice->id,
+            'device_uuid' => $freshDevice->uuid,
             'previous_state' => $previousState,
         ]);
     }
@@ -118,5 +134,20 @@ class DevicePresenceService
         }
 
         return Device::query()->where('external_id', $identifier)->first();
+    }
+
+    private function refreshDevice(Device $device): ?Device
+    {
+        $freshDevice = $device->fresh();
+
+        if ($freshDevice === null) {
+            Log::channel('device_control')->warning('Presence update skipped for missing device', [
+                'device_id' => $device->id,
+            ]);
+
+            return null;
+        }
+
+        return $freshDevice;
     }
 }
