@@ -112,8 +112,8 @@ The `Str::isUuid()` check prevents PostgreSQL type errors — querying a UUID co
 
 | Method | Behaviour |
 |--------|-----------|
-| `markOnline()` | Sets `connection_state = 'online'` and `last_seen_at`. Broadcasts `DeviceConnectionChanged` only if the previous state was not already online (avoids duplicate events). |
-| `markOffline()` | Sets `connection_state = 'offline'`. Broadcasts `DeviceConnectionChanged` only if the previous state was not already offline. Returns early if already offline. |
+| `markOnline()` | Sets `connection_state = 'online'` and `last_seen_at`. Broadcasts `DeviceConnectionChanged` only if the previous state was not already online (avoids duplicate events). Refreshes the device from the database first to avoid stale state in long-lived listeners. |
+| `markOffline()` | Sets `connection_state = 'offline'`. Broadcasts `DeviceConnectionChanged` only if the previous state was not already offline. Returns early if already offline. Refreshes the device from the database first to avoid stale state in long-lived listeners. |
 
 Both methods use `updateQuietly()` to avoid triggering Eloquent model events, and wrap broadcast calls in try-catch to prevent presence tracking from crashing if Reverb is unavailable.
 

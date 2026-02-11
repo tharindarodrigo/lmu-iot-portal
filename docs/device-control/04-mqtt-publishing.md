@@ -88,6 +88,16 @@ The device connects but gets **zero subscriptions restored** — it cannot recei
 - Since the publisher never subscribes, the persistent session has zero overhead
 - The `$MQTT_sess` stream remains healthy
 
+### Serialize Command Publishes
+
+Because a fixed client ID is required for session stability, concurrent command publishes would compete for the same MQTT session (brokers allow only one active connection per client ID). To prevent overlapping CONNECT/PUBLISH flows from disconnecting each other, `PhpMqttCommandPublisher` serializes publishes with a lightweight file lock.
+
+- Each `publish()` acquires an exclusive lock in the OS temp directory
+- The MQTT publish handshake runs while the lock is held
+- The lock is released immediately after disconnect
+
+This keeps the session stable without sacrificing the fixed client ID that protects JetStream’s `$MQTT_sess` stream from corruption.
+
 ### QoS 1 — At Least Once Delivery
 
 The publisher uses QoS 1, meaning:
