@@ -113,7 +113,8 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
         $message = $exception->getMessage();
 
         return str_contains($message, 'No handler for message _REQS.')
-            || str_contains($message, 'JS not enabled');
+            || str_contains($message, 'JS not enabled')
+            || str_contains($message, 'Return value must be of type int, null returned');
     }
 
     /**

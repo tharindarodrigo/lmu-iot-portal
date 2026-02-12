@@ -10,7 +10,8 @@ use App\Domain\DeviceControl\Enums\CommandStatus;
 use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
-use App\Domain\DeviceManagement\Publishing\Mqtt\MqttCommandPublisher;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisher;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
@@ -197,29 +198,37 @@ function createExecutionFixture(float $voltage): array
     ];
 }
 
-function bindFakeMqttPublisherForAutomationExecution(): void
+function bindFakeNatsPublisherForAutomationExecution(): void
 {
-    $fakePublisher = new class implements MqttCommandPublisher
+    $fakePublisher = new class implements NatsPublisher
     {
-        /** @var array<int, array{topic: string, payload: string, host: string, port: int}> */
+        /** @var array<int, array{subject: string, payload: string}> */
         public array $published = [];
 
-        public function publish(string $mqttTopic, string $payload, string $host, int $port): void
+        public function publish(string $subject, string $payload): void
         {
             $this->published[] = [
-                'topic' => $mqttTopic,
+                'subject' => $subject,
                 'payload' => $payload,
-                'host' => $host,
-                'port' => $port,
             ];
         }
     };
 
-    app()->instance(MqttCommandPublisher::class, $fakePublisher);
+    $fakeFactory = new class($fakePublisher) implements NatsPublisherFactory
+    {
+        public function __construct(private NatsPublisher $publisher) {}
+
+        public function make(string $host, int $port): NatsPublisher
+        {
+            return $this->publisher;
+        }
+    };
+
+    app()->instance(NatsPublisherFactory::class, $fakeFactory);
 }
 
 it('executes condition and command nodes when telemetry condition passes', function (): void {
-    bindFakeMqttPublisherForAutomationExecution();
+    bindFakeNatsPublisherForAutomationExecution();
 
     $fixture = createExecutionFixture(voltage: 120.5);
 
@@ -255,7 +264,7 @@ it('executes condition and command nodes when telemetry condition passes', funct
 });
 
 it('does not dispatch command when condition evaluates to false', function (): void {
-    bindFakeMqttPublisherForAutomationExecution();
+    bindFakeNatsPublisherForAutomationExecution();
 
     $fixture = createExecutionFixture(voltage: 10.0);
 

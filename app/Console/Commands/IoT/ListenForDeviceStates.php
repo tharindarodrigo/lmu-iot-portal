@@ -50,6 +50,11 @@ class ListenForDeviceStates extends Command
         $client->subscribe($natsSubject, function (Payload $payload, ?string $replyTo) use ($host, $port, $reconciler): void {
             try {
                 $subject = $payload->subject ?? '';
+
+                if ($this->isInternalNatsSubject($subject)) {
+                    return;
+                }
+
                 $body = $payload->body;
                 $mqttTopic = str_replace('.', '/', $subject);
 
@@ -153,6 +158,24 @@ class ListenForDeviceStates extends Command
         $port = config('iot.nats.port', 4223);
 
         return is_numeric($port) ? (int) $port : 4223;
+    }
+
+    /**
+     * Skip internal NATS subjects that are not device messages.
+     *
+     * These include JetStream API (`$JS.*`), MQTT bridge internals (`$MQTT.*`),
+     * KV operations (`$KV.*`), request-reply (`_REQS.*`, `_INBOX.*`), and
+     * system subjects (`_R_.*`).
+     */
+    private function isInternalNatsSubject(string $subject): bool
+    {
+        if ($subject === '') {
+            return true;
+        }
+
+        $firstChar = $subject[0];
+
+        return $firstChar === '$' || $firstChar === '_';
     }
 
     /**

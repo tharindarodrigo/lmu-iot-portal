@@ -8,7 +8,8 @@ use App\Domain\DeviceControl\Models\DeviceDesiredTopicState;
 use App\Domain\DeviceControl\Services\DeviceCommandDispatcher;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
-use App\Domain\DeviceManagement\Publishing\Mqtt\MqttCommandPublisher;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisher;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
@@ -66,25 +67,36 @@ function createDeviceWithSubscribeTopic(): array
     return [$device, $subscribeTopic];
 }
 
-function bindFakeMqttPublisher(): object
+/**
+ * @return object{published: array<int, array{subject: string, payload: string}>}
+ */
+function bindFakeNatsPublisher(): object
 {
-    $fakePublisher = new class implements MqttCommandPublisher
+    $fakePublisher = new class implements NatsPublisher
     {
-        /** @var array<int, array{topic: string, payload: string, host: string, port: int}> */
+        /** @var array<int, array{subject: string, payload: string}> */
         public array $published = [];
 
-        public function publish(string $mqttTopic, string $payload, string $host, int $port): void
+        public function publish(string $subject, string $payload): void
         {
             $this->published[] = [
-                'topic' => $mqttTopic,
+                'subject' => $subject,
                 'payload' => $payload,
-                'host' => $host,
-                'port' => $port,
             ];
         }
     };
 
-    app()->instance(MqttCommandPublisher::class, $fakePublisher);
+    $fakeFactory = new class($fakePublisher) implements NatsPublisherFactory
+    {
+        public function __construct(public NatsPublisher $publisher) {}
+
+        public function make(string $host, int $port): NatsPublisher
+        {
+            return $this->publisher;
+        }
+    };
+
+    app()->instance(NatsPublisherFactory::class, $fakeFactory);
 
     return $fakePublisher;
 }
@@ -93,7 +105,7 @@ it('creates a command log with pending status and broadcasts CommandDispatched',
     Event::fake([CommandDispatched::class, CommandSent::class]);
 
     [$device, $topic] = createDeviceWithSubscribeTopic();
-    $fakePublisher = bindFakeMqttPublisher();
+    bindFakeNatsPublisher();
 
     /** @var DeviceCommandDispatcher $dispatcher */
     $dispatcher = app(DeviceCommandDispatcher::class);
@@ -113,11 +125,11 @@ it('creates a command log with pending status and broadcasts CommandDispatched',
     Event::assertDispatched(CommandDispatched::class);
 });
 
-it('publishes to correct MQTT topic and updates status to sent', function (): void {
+it('publishes to correct NATS subject and updates status to sent', function (): void {
     Event::fake([CommandDispatched::class, CommandSent::class]);
 
     [$device, $topic] = createDeviceWithSubscribeTopic();
-    $fakePublisher = bindFakeMqttPublisher();
+    $fakePublisher = bindFakeNatsPublisher();
 
     /** @var DeviceCommandDispatcher $dispatcher */
     $dispatcher = app(DeviceCommandDispatcher::class);
@@ -132,7 +144,7 @@ it('publishes to correct MQTT topic and updates status to sent', function (): vo
     $publishedPayload = json_decode($fakePublisher->published[0]['payload'], true);
 
     expect($fakePublisher->published)->toHaveCount(1)
-        ->and($fakePublisher->published[0]['topic'])->toBe('devices/pump-42/control')
+        ->and($fakePublisher->published[0]['subject'])->toBe('devices.pump-42.control')
         ->and($publishedPayload)->toBeArray()
         ->and(data_get($publishedPayload, 'power'))->toBe('on')
         ->and(data_get($publishedPayload, '_meta.command_id'))->toBe($commandLog->correlation_id)
@@ -146,20 +158,30 @@ it('publishes to correct MQTT topic and updates status to sent', function (): vo
     });
 });
 
-it('marks command as failed when MQTT publish throws', function (): void {
+it('marks command as failed when NATS publish throws', function (): void {
     Event::fake([CommandDispatched::class, CommandSent::class]);
 
     [$device, $topic] = createDeviceWithSubscribeTopic();
 
-    $failingPublisher = new class implements MqttCommandPublisher
+    $failingPublisher = new class implements NatsPublisher
     {
-        public function publish(string $mqttTopic, string $payload, string $host, int $port): void
+        public function publish(string $subject, string $payload): void
         {
-            throw new \RuntimeException('MQTT connection refused');
+            throw new \RuntimeException('NATS connection refused');
         }
     };
 
-    app()->instance(MqttCommandPublisher::class, $failingPublisher);
+    $failingFactory = new class($failingPublisher) implements NatsPublisherFactory
+    {
+        public function __construct(private NatsPublisher $publisher) {}
+
+        public function make(string $host, int $port): NatsPublisher
+        {
+            return $this->publisher;
+        }
+    };
+
+    app()->instance(NatsPublisherFactory::class, $failingFactory);
 
     /** @var DeviceCommandDispatcher $dispatcher */
     $dispatcher = app(DeviceCommandDispatcher::class);
@@ -171,7 +193,7 @@ it('marks command as failed when MQTT publish throws', function (): void {
     );
 
     expect($commandLog->status)->toBe(CommandStatus::Failed)
-        ->and($commandLog->error_message)->toBe('MQTT connection refused');
+        ->and($commandLog->error_message)->toBe('NATS connection refused');
 
     Event::assertDispatched(CommandDispatched::class);
     Event::assertNotDispatched(CommandSent::class);
@@ -181,7 +203,7 @@ it('stores the command log in the database', function (): void {
     Event::fake([CommandDispatched::class, CommandSent::class]);
 
     [$device, $topic] = createDeviceWithSubscribeTopic();
-    bindFakeMqttPublisher();
+    bindFakeNatsPublisher();
 
     /** @var DeviceCommandDispatcher $dispatcher */
     $dispatcher = app(DeviceCommandDispatcher::class);
@@ -203,7 +225,7 @@ it('upserts desired topic state when dispatching commands', function (): void {
     Event::fake([CommandDispatched::class, CommandSent::class]);
 
     [$device, $topic] = createDeviceWithSubscribeTopic();
-    bindFakeMqttPublisher();
+    bindFakeNatsPublisher();
 
     /** @var DeviceCommandDispatcher $dispatcher */
     $dispatcher = app(DeviceCommandDispatcher::class);
@@ -231,32 +253,47 @@ it('upserts desired topic state when dispatching commands', function (): void {
         ->and($state->reconciled_at)->toBeNull();
 });
 
-it('uses configured MQTT host and port when dispatch host and port are not provided', function (): void {
+it('uses configured NATS host and port when dispatch host and port are not provided', function (): void {
     Event::fake([CommandDispatched::class, CommandSent::class]);
     config([
-        'iot.mqtt.host' => '10.77.0.12',
-        'iot.mqtt.port' => 1884,
+        'iot.nats.host' => '10.77.0.12',
+        'iot.nats.port' => 4224,
     ]);
 
     [$device, $topic] = createDeviceWithSubscribeTopic();
 
-    $fakePublisher = new class implements MqttCommandPublisher
+    $capturingPublisher = new class implements NatsPublisher
     {
-        /** @var array<int, array{topic: string, payload: string, host: string, port: int}> */
+        /** @var array<int, array{subject: string, payload: string}> */
         public array $published = [];
 
-        public function publish(string $mqttTopic, string $payload, string $host, int $port): void
+        public function publish(string $subject, string $payload): void
         {
             $this->published[] = [
-                'topic' => $mqttTopic,
+                'subject' => $subject,
                 'payload' => $payload,
-                'host' => $host,
-                'port' => $port,
             ];
         }
     };
 
-    app()->instance(MqttCommandPublisher::class, $fakePublisher);
+    $capturingFactory = new class($capturingPublisher) implements NatsPublisherFactory
+    {
+        public string $receivedHost = '';
+
+        public int $receivedPort = 0;
+
+        public function __construct(public NatsPublisher $publisher) {}
+
+        public function make(string $host, int $port): NatsPublisher
+        {
+            $this->receivedHost = $host;
+            $this->receivedPort = $port;
+
+            return $this->publisher;
+        }
+    };
+
+    app()->instance(NatsPublisherFactory::class, $capturingFactory);
 
     /** @var DeviceCommandDispatcher $dispatcher */
     $dispatcher = app(DeviceCommandDispatcher::class);
@@ -267,7 +304,7 @@ it('uses configured MQTT host and port when dispatch host and port are not provi
         payload: ['power' => 'on'],
     );
 
-    expect($fakePublisher->published[0]['host'])->toBe('10.77.0.12')
-        ->and($fakePublisher->published[0]['port'])->toBe(1884)
-        ->and($fakePublisher->published)->toHaveCount(1);
+    expect($capturingFactory->receivedHost)->toBe('10.77.0.12')
+        ->and($capturingFactory->receivedPort)->toBe(4224)
+        ->and($capturingPublisher->published)->toHaveCount(1);
 });

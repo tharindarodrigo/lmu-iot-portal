@@ -6,8 +6,9 @@ use App\Domain\DeviceControl\Enums\CommandStatus;
 use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
-use App\Domain\DeviceManagement\Publishing\Mqtt\MqttCommandPublisher;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsDeviceStateStore;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisher;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
@@ -79,12 +80,22 @@ function createTestDeviceForDashboard(): Device
 
 function bindDashboardFakeNats(): void
 {
-    $fakePublisher = new class implements MqttCommandPublisher
+    $fakePublisher = new class implements NatsPublisher
     {
-        public function publish(string $mqttTopic, string $payload, string $host, int $port): void {}
+        public function publish(string $subject, string $payload): void {}
     };
 
-    app()->instance(MqttCommandPublisher::class, $fakePublisher);
+    $fakeFactory = new class($fakePublisher) implements NatsPublisherFactory
+    {
+        public function __construct(private NatsPublisher $publisher) {}
+
+        public function make(string $host, int $port): NatsPublisher
+        {
+            return $this->publisher;
+        }
+    };
+
+    app()->instance(NatsPublisherFactory::class, $fakeFactory);
 }
 
 function bindFakeDeviceStateStoreForDashboard(?array $returnState = null): void
@@ -419,4 +430,54 @@ it('applies initial device state to control values on mount', function (): void 
     $component = livewire(DeviceControlDashboard::class, ['record' => $device->id]);
 
     expect($component->get('controlValues.power'))->toBe('on');
+});
+
+it('applies initial device state from telemetry-wrapped payload with values key', function (): void {
+    $device = createTestDeviceForDashboard();
+
+    bindFakeDeviceStateStoreForDashboard([
+        'topic' => 'devices/pump-42/state',
+        'payload' => [
+            'values' => ['power' => 'on'],
+            'ingestion_message_id' => '019c524c-cfee-724c-a4a6-a163510da42d',
+            'status' => 'processing',
+            'recorded_at' => '2025-01-15T10:30:00+00:00',
+        ],
+        'stored_at' => '2025-01-15T10:30:00+00:00',
+    ]);
+
+    $component = livewire(DeviceControlDashboard::class, ['record' => $device->id]);
+
+    expect($component->get('controlValues.power'))->toBe('on');
+});
+
+it('updates control values from telemetry-wrapped state payload with values key', function (): void {
+    $device = createTestDeviceForDashboard();
+
+    $component = livewire(DeviceControlDashboard::class, ['record' => $device->id]);
+
+    expect($component->get('controlValues.power'))->toBe('off');
+
+    $component->call('updateControlValuesFromState', [
+        'values' => ['power' => 'on'],
+        'ingestion_message_id' => '019c524c-cfee-724c-a4a6-a163510da42d',
+        'status' => 'processing',
+        'recorded_at' => '2025-01-15T10:30:00+00:00',
+    ]);
+
+    expect($component->get('controlValues.power'))->toBe('on');
+});
+
+it('strips metadata keys from raw state payload during update', function (): void {
+    $device = createTestDeviceForDashboard();
+
+    $component = livewire(DeviceControlDashboard::class, ['record' => $device->id]);
+
+    $component->call('updateControlValuesFromState', [
+        'power' => 'on',
+        '_meta' => ['command_id' => 'abc-123'],
+    ]);
+
+    expect($component->get('controlValues.power'))->toBe('on')
+        ->and($component->get('controlValues'))->not->toHaveKey('_meta');
 });

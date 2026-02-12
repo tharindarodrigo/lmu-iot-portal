@@ -133,3 +133,22 @@ it('is editable on the parent view page', function (): void {
         ->assertTableActionVisible('edit', $parameter)
         ->assertTableActionEnabled('edit', $parameter);
 });
+
+it('groups parameters by topic by default', function (): void {
+    $topic = SchemaVersionTopic::factory()->publish()->create([
+        'device_schema_version_id' => $this->version->id,
+        'label' => 'Telemetry',
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'type' => ParameterDataType::Decimal,
+    ]);
+
+    $component = livewire(ParameterDefinitionsRelationManager::class, [
+        'ownerRecord' => $this->version,
+        'pageClass' => EditDeviceSchemaVersion::class,
+    ]);
+
+    expect($component->get('tableGrouping'))->toBe('topic.label:asc');
+});

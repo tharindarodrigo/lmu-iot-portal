@@ -25,6 +25,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Grouping\Group;
 use Filament\Tables\Table;
 use Illuminate\Validation\Rules\Unique;
 
@@ -275,6 +276,12 @@ class ParameterDefinitionsRelationManager extends RelationManager
                 TextColumn::make('sequence')
                     ->sortable(),
             ])
+            ->groups([
+                Group::make('topic.label')
+                    ->label('Topic')
+                    ->collapsible(),
+            ])
+            ->defaultGroup('topic.label')
             ->headerActions([
                 CreateAction::make()
                     ->using(function (array $data): ParameterDefinition {

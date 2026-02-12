@@ -488,16 +488,17 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
      */
     public function updateControlValuesFromState(array $payload): void
     {
+        $controlPayload = $this->extractControlPayloadFromState($payload);
         $changed = false;
 
         foreach ($this->controlSchema as $control) {
             $key = $control['key'];
 
-            if (! array_key_exists($key, $payload)) {
+            if (! array_key_exists($key, $controlPayload)) {
                 continue;
             }
 
-            $value = $payload[$key];
+            $value = $controlPayload[$key];
 
             if ($control['widget'] === 'toggle') {
                 $value = (bool) $value;
@@ -534,7 +535,12 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
                 $resolvedPort,
             );
             $this->initialDeviceState = $this->initialDeviceStates[0] ?? null;
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            logger()->warning('Failed to load initial device state from NATS KV', [
+                'device_uuid' => $device->uuid,
+                'error' => $exception->getMessage(),
+            ]);
+
             $this->initialDeviceStates = [];
             $this->initialDeviceState = null;
         }
@@ -556,14 +562,16 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
                 continue;
             }
 
+            $controlPayload = $this->extractControlPayloadFromState($payload);
+
             foreach ($this->controlSchema as $control) {
                 $key = $control['key'];
 
-                if (! array_key_exists($key, $payload)) {
+                if (! array_key_exists($key, $controlPayload)) {
                     continue;
                 }
 
-                $value = $payload[$key];
+                $value = $controlPayload[$key];
 
                 if ($control['widget'] === 'toggle') {
                     $value = (bool) $value;
@@ -608,6 +616,30 @@ class DeviceControlDashboard extends Page implements HasForms, HasTable
             $resolved['payload'],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
         ) ?: '{}';
+    }
+
+    /**
+     * Extract flat control key-value pairs from a device state payload.
+     *
+     * Handles two payload formats:
+     *  - Raw MQTT: {"power": true, "brightness": 85, "_meta": {...}}
+     *  - Telemetry ingestion: {"values": {"power": true, ...}, "ingestion_message_id": "...", ...}
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function extractControlPayloadFromState(array $payload): array
+    {
+        $values = $payload['values'] ?? null;
+
+        if (is_array($values) && $values !== []) {
+            /** @var array<string, mixed> $values */
+            return $values;
+        }
+
+        unset($payload['_meta'], $payload['ingestion_message_id'], $payload['status'], $payload['recorded_at']);
+
+        return $payload;
     }
 
     private function normalizeControlValuesForUi(): void

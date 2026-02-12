@@ -173,7 +173,9 @@ class IngestTelemetryCommand extends Command
             return true;
         }
 
-        if (Str::startsWith($subject, ['$JS.', '$KV.', '_INBOX.', '_REQS.'])) {
+        $firstChar = $subject[0];
+
+        if ($firstChar === '$' || $firstChar === '_') {
             return true;
         }
 

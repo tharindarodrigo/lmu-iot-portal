@@ -8,7 +8,7 @@ use App\Domain\DeviceControl\Enums\CommandStatus;
 use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceControl\Models\DeviceDesiredTopicState;
 use App\Domain\DeviceManagement\Models\Device;
-use App\Domain\DeviceManagement\Publishing\Mqtt\MqttCommandPublisher;
+use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Events\CommandDispatched;
 use App\Events\CommandSent;
@@ -18,15 +18,16 @@ use Illuminate\Support\Str;
 final readonly class DeviceCommandDispatcher
 {
     public function __construct(
-        private MqttCommandPublisher $mqttPublisher,
+        private NatsPublisherFactory $natsPublisherFactory,
         private LogManager $logManager,
     ) {}
 
     /**
-     * Dispatch a command from the platform to a device via MQTT.
+     * Dispatch a command from the platform to a device via native NATS.
      *
-     * Creates a DeviceCommandLog, publishes to the MQTT broker (NATS MQTT bridge),
-     * and broadcasts Reverb events at each lifecycle step.
+     * Publishes directly to the NATS subject (e.g. devices.rgb-led-01.control)
+     * so the NATS MQTT bridge delivers to subscribed MQTT devices without
+     * creating any MQTT session state that could corrupt $MQTT_sess.
      *
      * @param  array<string, mixed>  $payload
      */
@@ -41,9 +42,10 @@ final readonly class DeviceCommandDispatcher
         $device->loadMissing('deviceType');
         $correlationId = (string) Str::uuid();
         $payloadForPublishing = $this->injectCorrelationMeta($payload, $correlationId);
-        $resolvedHost = $this->resolveMqttHost($host);
-        $resolvedPort = $this->resolveMqttPort($port);
+        $resolvedHost = $this->resolveNatsHost($host);
+        $resolvedPort = $this->resolveNatsPort($port);
         $mqttTopic = $this->resolveTopicWithExternalId($device, $topic);
+        $natsSubject = str_replace('/', '.', $mqttTopic);
 
         $this->log()->info('Dispatching command', [
             'device_id' => $device->id,
@@ -51,9 +53,10 @@ final readonly class DeviceCommandDispatcher
             'device_uuid' => $device->uuid,
             'topic_id' => $topic->id,
             'topic_suffix' => $topic->suffix,
+            'nats_subject' => $natsSubject,
             'mqtt_topic' => $mqttTopic,
-            'mqtt_host' => $resolvedHost,
-            'mqtt_port' => $resolvedPort,
+            'nats_host' => $resolvedHost,
+            'nats_port' => $resolvedPort,
             'correlation_id' => $correlationId,
             'payload' => $payload,
             'user_id' => $userId,
@@ -96,21 +99,20 @@ final readonly class DeviceCommandDispatcher
             ]);
         }
 
-        $natsSubject = str_replace('/', '.', $mqttTopic);
-
         $encodedPayload = json_encode($payloadForPublishing);
         $encodedPayload = is_string($encodedPayload) ? $encodedPayload : '{}';
 
         try {
-            $this->log()->info('Publishing MQTT command', [
+            $this->log()->info('Publishing command via native NATS', [
                 'command_log_id' => $commandLog->id,
-                'mqtt_topic' => $mqttTopic,
-                'mqtt_host' => $resolvedHost,
-                'mqtt_port' => $resolvedPort,
+                'nats_subject' => $natsSubject,
+                'nats_host' => $resolvedHost,
+                'nats_port' => $resolvedPort,
                 'payload_size' => strlen($encodedPayload),
             ]);
 
-            $this->mqttPublisher->publish($mqttTopic, $encodedPayload, $resolvedHost, $resolvedPort);
+            $publisher = $this->natsPublisherFactory->make($resolvedHost, $resolvedPort);
+            $publisher->publish($natsSubject, $encodedPayload);
 
             $commandLog->update([
                 'status' => CommandStatus::Sent,
@@ -119,7 +121,7 @@ final readonly class DeviceCommandDispatcher
 
             $commandLog->refresh();
 
-            $this->log()->info('Command sent successfully', [
+            $this->log()->info('Command sent successfully via NATS', [
                 'command_log_id' => $commandLog->id,
                 'correlation_id' => $correlationId,
                 'nats_subject' => $natsSubject,
@@ -143,9 +145,9 @@ final readonly class DeviceCommandDispatcher
             $this->log()->error('Command publish failed', [
                 'command_log_id' => $commandLog->id,
                 'correlation_id' => $correlationId,
-                'mqtt_topic' => $mqttTopic,
-                'mqtt_host' => $resolvedHost,
-                'mqtt_port' => $resolvedPort,
+                'nats_subject' => $natsSubject,
+                'nats_host' => $resolvedHost,
+                'nats_port' => $resolvedPort,
                 'error' => $exception->getMessage(),
             ]);
 
@@ -160,28 +162,28 @@ final readonly class DeviceCommandDispatcher
         return $commandLog;
     }
 
-    private function resolveMqttHost(?string $host): string
+    private function resolveNatsHost(?string $host): string
     {
         if (is_string($host) && trim($host) !== '') {
             return trim($host);
         }
 
-        $configuredHost = config('iot.mqtt.host', '127.0.0.1');
+        $configuredHost = config('iot.nats.host', '127.0.0.1');
 
         return is_string($configuredHost) && trim($configuredHost) !== ''
             ? trim($configuredHost)
             : '127.0.0.1';
     }
 
-    private function resolveMqttPort(?int $port): int
+    private function resolveNatsPort(?int $port): int
     {
         if (is_int($port) && $port > 0) {
             return $port;
         }
 
-        $configuredPort = config('iot.mqtt.port', 1883);
+        $configuredPort = config('iot.nats.port', 4223);
 
-        return is_numeric($configuredPort) ? (int) $configuredPort : 1883;
+        return is_numeric($configuredPort) ? (int) $configuredPort : 4223;
     }
 
     private function resolveTopicWithExternalId(Device $device, SchemaVersionTopic $topic): string

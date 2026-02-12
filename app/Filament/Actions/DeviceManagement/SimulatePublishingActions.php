@@ -85,6 +85,9 @@ final class SimulatePublishingActions
                     ->body('Publishing simulation has been queued and will run shortly.')
                     ->success()
                     ->send();
+            })->after(function (array $data, Device $record): void {
+
+                // redirect to telemetry viewer with filters for the topic
             });
     }
 
@@ -94,7 +97,7 @@ final class SimulatePublishingActions
             ->label('Simulate Devices')
             ->icon(Heroicon::OutlinedPlay)
             ->modalHeading('Simulate Devices')
-            ->modalSubheading('Publish simulated telemetry messages for each selected device.')
+            ->modalDescription('Publish simulated telemetry messages for each selected device.')
             ->schema([
                 TextInput::make('count')
                     ->label('Iterations')

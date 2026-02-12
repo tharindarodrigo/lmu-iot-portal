@@ -309,9 +309,10 @@
     </x-filament::section>
 
     <div class="dc-state-grid"
+         wire:ignore
          x-data="deviceControlStream()"
          x-init="init()"
-         x-on:clear-device-log.window="events = []"
+         x-on:clear-device-log.window="events = []; eventCounter = 0"
     >
         <x-filament::section>
             <x-slot name="heading">
@@ -335,11 +336,11 @@
                     <span>Event</span>
                     <span>Details</span>
                 </div>
-                <div class="dc-log-body" x-ref="eventLog">
+                <div class="dc-log-body">
                     <template x-if="events.length === 0">
                         <div class="dc-empty">Waiting for events... Send a command or start the mock device.</div>
                     </template>
-                    <template x-for="(event, index) in events" :key="index">
+                    <template x-for="event in events" :key="event.id">
                         <div>
                             <template x-if="event.type === 'cycle-separator'">
                                 <div class="dc-separator">cycle complete</div>
@@ -403,6 +404,7 @@
 
                 return {
                     events: [],
+                    eventCounter: 0,
                     topicStates,
 
                     init() {
@@ -438,15 +440,20 @@
                                 case 'device.state.received':
                                     this.addEvent('device.state.received', 'Received',
                                         `Topic: ${payload.data.topic} | Payload: ${JSON.stringify(payload.data.payload)} | ${payload.data.received_at}`
-                                    );
+                                    , { position: this.resolveReceivedInsertPosition() });
+
+                                    const statePayload = payload.data.payload ?? {};
+                                    const controlValues = (statePayload.values && typeof statePayload.values === 'object')
+                                        ? statePayload.values
+                                        : statePayload;
 
                                     this.topicStates[payload.data.topic] = {
-                                        payload: payload.data.payload ?? {},
+                                        payload: statePayload,
                                         stored_at: payload.data.received_at ?? new Date().toISOString(),
                                     };
 
-                                    if (payload.data.payload) {
-                                        this.$wire.call('updateControlValuesFromState', payload.data.payload);
+                                    if (controlValues && Object.keys(controlValues).length > 0) {
+                                        this.$wire.call('updateControlValuesFromState', statePayload);
                                     }
 
                                     break;
@@ -525,22 +532,46 @@
                         });
                     },
 
-                    addEvent(type, label, detail) {
-                        this.events.push({ type, label, detail, time: new Date().toLocaleTimeString() });
-                        this.$nextTick(() => {
-                            if (this.$refs.eventLog) {
-                                this.$refs.eventLog.scrollTop = this.$refs.eventLog.scrollHeight;
-                            }
+                    addEvent(type, label, detail, options = {}) {
+                        const position = Number.isInteger(options.position) ? options.position : 0;
+                        this.events.unshift({
+                            id: ++this.eventCounter,
+                            type,
+                            label,
+                            detail,
+                            time: new Date().toLocaleTimeString(),
                         });
+
+                        if (position > 0) {
+                            const newestEvent = this.events.shift();
+
+                            if (!newestEvent) {
+                                return;
+                            }
+
+                            const boundedPosition = Math.min(position, this.events.length);
+                            this.events.splice(boundedPosition, 0, newestEvent);
+                        }
                     },
 
                     addSeparator() {
-                        this.events.push({ type: 'cycle-separator', time: '' });
-                        this.$nextTick(() => {
-                            if (this.$refs.eventLog) {
-                                this.$refs.eventLog.scrollTop = this.$refs.eventLog.scrollHeight;
-                            }
+                        this.events.unshift({
+                            id: ++this.eventCounter,
+                            type: 'cycle-separator',
+                            time: '',
                         });
+                    },
+
+                    resolveReceivedInsertPosition() {
+                        if (this.events[0]?.type === 'cycle-separator' && this.events[1]?.type === 'command.completed') {
+                            return 2;
+                        }
+
+                        if (this.events[0]?.type === 'command.completed') {
+                            return 1;
+                        }
+
+                        return 0;
                     },
 
                     formatTime(isoString) {
