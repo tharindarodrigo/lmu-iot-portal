@@ -1,6 +1,6 @@
 const GRID_STACK_COLUMNS = 24;
 const GRID_STACK_CELL_HEIGHT = 96;
-const GRID_STACK_MARGIN = '20px 12px';
+const GRID_STACK_MARGIN = '6px';
 const MOBILE_BREAKPOINT = '(max-width: 768px)';
 
 const dashboardState = {
@@ -17,6 +17,11 @@ const dashboardState = {
     isHydrating: false,
     hydrateFrameId: null,
     pendingWidgets: [],
+    gridIntegrityObserver: null,
+    gridIntegrityTimer: null,
+    isMobileLayout: false,
+    isApplyingResponsiveLayout: false,
+    desktopLayouts: new Map(),
 };
 
 function normalizeNumericValue(value) {
@@ -31,7 +36,28 @@ function normalizeNumericValue(value) {
     return null;
 }
 
+function isDarkMode() {
+    return document.documentElement.classList.contains('dark')
+        || document.body.classList.contains('dark');
+}
+
+function getChartThemeColors() {
+    const dark = isDarkMode();
+
+    return {
+        legendText: dark ? '#cbd5e1' : '#64748b',
+        tooltipBg: dark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.96)',
+        tooltipBorder: dark ? 'rgba(148, 163, 184, 0.3)' : 'rgba(203, 213, 225, 0.6)',
+        tooltipText: dark ? '#e2e8f0' : '#1e293b',
+        axisLineColor: dark ? 'rgba(148, 163, 184, 0.45)' : 'rgba(100, 116, 139, 0.35)',
+        axisLabelColor: dark ? '#94a3b8' : '#64748b',
+        splitLineColor: dark ? 'rgba(148, 163, 184, 0.15)' : 'rgba(203, 213, 225, 0.5)',
+    };
+}
+
 function buildChartOption(widget, series) {
+    const theme = getChartThemeColors();
+
     return {
         backgroundColor: 'transparent',
         animation: true,
@@ -46,33 +72,33 @@ function buildChartOption(widget, series) {
         legend: {
             top: 4,
             textStyle: {
-                color: '#cbd5e1',
+                color: theme.legendText,
                 fontSize: 11,
             },
         },
         tooltip: {
             trigger: 'axis',
-            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-            borderColor: 'rgba(148, 163, 184, 0.3)',
+            backgroundColor: theme.tooltipBg,
+            borderColor: theme.tooltipBorder,
             textStyle: {
-                color: '#e2e8f0',
+                color: theme.tooltipText,
             },
         },
         xAxis: {
             type: 'time',
-            axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.45)' } },
+            axisLine: { lineStyle: { color: theme.axisLineColor } },
             splitLine: { show: false },
             axisLabel: {
-                color: '#94a3b8',
+                color: theme.axisLabelColor,
                 fontSize: 11,
             },
         },
         yAxis: {
             type: 'value',
             axisLine: { show: false },
-            splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.15)' } },
+            splitLine: { lineStyle: { color: theme.splitLineColor } },
             axisLabel: {
-                color: '#94a3b8',
+                color: theme.axisLabelColor,
                 fontSize: 11,
             },
         },
@@ -151,7 +177,15 @@ function clearChartsAndPolling() {
         dashboardState.hydrateFrameId = null;
     }
 
+    if (dashboardState.gridIntegrityTimer !== null) {
+        clearTimeout(dashboardState.gridIntegrityTimer);
+        dashboardState.gridIntegrityTimer = null;
+    }
+
     dashboardState.pendingLayoutUpdates.clear();
+    dashboardState.desktopLayouts.clear();
+    dashboardState.isMobileLayout = false;
+    dashboardState.isApplyingResponsiveLayout = false;
 
     for (const chart of dashboardState.charts.values()) {
         if (!chart.isDisposed()) {
@@ -172,19 +206,105 @@ function ensureResizeBinding() {
     dashboardState.resizeBound = true;
 
     window.addEventListener('resize', () => {
-        const isMobile = window.matchMedia(MOBILE_BREAKPOINT).matches;
+        applyResponsiveGridMode();
 
-        if (dashboardState.grid) {
-            dashboardState.grid.column(isMobile ? 1 : GRID_STACK_COLUMNS);
-            dashboardState.grid.enableMove(!isMobile);
-            dashboardState.grid.enableResize(!isMobile);
+        if (dashboardState.grid && typeof dashboardState.grid.onParentResize === 'function') {
+            dashboardState.grid.onParentResize();
         }
 
-        for (const chart of dashboardState.charts.values()) {
-            if (!chart.isDisposed()) {
-                chart.resize();
-            }
+        window.requestAnimationFrame(() => {
+            resizeAllCharts();
+        });
+    });
+}
+
+function cacheDesktopLayout() {
+    if (!dashboardState.grid) {
+        return;
+    }
+
+    dashboardState.desktopLayouts.clear();
+
+    dashboardState.grid.engine.nodes.forEach((node) => {
+        const widgetId = parseWidgetIdFromNode(node);
+
+        if (widgetId === null) {
+            return;
         }
+
+        dashboardState.desktopLayouts.set(widgetId, {
+            x: Math.max(0, Number(node.x ?? 0)),
+            y: Math.max(0, Number(node.y ?? 0)),
+            w: Math.max(1, Math.min(GRID_STACK_COLUMNS, Number(node.w ?? 1))),
+            h: Math.max(2, Math.min(12, Number(node.h ?? 4))),
+        });
+    });
+}
+
+function restoreDesktopLayout() {
+    const grid = dashboardState.grid;
+
+    if (!grid || dashboardState.desktopLayouts.size === 0) {
+        return;
+    }
+
+    dashboardState.desktopLayouts.forEach((layout, widgetId) => {
+        const element = document.querySelector(`#iot-dashboard-grid .grid-stack-item[gs-id="${widgetId}"]`);
+
+        if (!element) {
+            return;
+        }
+
+        grid.update(element, layout);
+
+        const widget = dashboardState.widgets.get(widgetId);
+
+        if (widget) {
+            widget.layout = layout;
+        }
+    });
+}
+
+function resizeAllCharts() {
+    for (const chart of dashboardState.charts.values()) {
+        if (!chart.isDisposed()) {
+            chart.resize();
+        }
+    }
+}
+
+function applyResponsiveGridMode(force = false) {
+    const grid = dashboardState.grid;
+
+    if (!grid) {
+        return;
+    }
+
+    const shouldUseMobileLayout = window.matchMedia(MOBILE_BREAKPOINT).matches;
+
+    if (!force && dashboardState.isMobileLayout === shouldUseMobileLayout) {
+        return;
+    }
+
+    dashboardState.isApplyingResponsiveLayout = true;
+
+    if (shouldUseMobileLayout) {
+        cacheDesktopLayout();
+        grid.column(1, 'list');
+        grid.enableMove(false);
+        grid.enableResize(false);
+    } else {
+        grid.column(GRID_STACK_COLUMNS, 'moveScale');
+        restoreDesktopLayout();
+        grid.enableMove(true);
+        grid.enableResize(true);
+    }
+
+    dashboardState.isMobileLayout = shouldUseMobileLayout;
+    dashboardState.isApplyingResponsiveLayout = false;
+
+    window.requestAnimationFrame(() => {
+        resizeAllCharts();
     });
 }
 
@@ -532,7 +652,7 @@ function initializeGridStack() {
     dashboardState.grid.on('change', (_event, changedItems) => {
         resizeChartsForNodes(changedItems);
 
-        if (dashboardState.isHydrating) {
+        if (dashboardState.isHydrating || dashboardState.isApplyingResponsiveLayout || dashboardState.isMobileLayout) {
             return;
         }
 
@@ -543,12 +663,11 @@ function initializeGridStack() {
         resizeChartsForNodes([{ el: element }]);
     });
 
+    dashboardState.isMobileLayout = window.matchMedia(MOBILE_BREAKPOINT).matches;
+    applyResponsiveGridMode(true);
+
     window.setTimeout(() => {
-        for (const chart of dashboardState.charts.values()) {
-            if (!chart.isDisposed()) {
-                chart.resize();
-            }
-        }
+        resizeAllCharts();
     }, 0);
 }
 
@@ -597,8 +716,77 @@ function scheduleHydration(rawWidgets) {
     });
 }
 
+function hasGridStackRuntimeState(container) {
+    if (!container) {
+        return false;
+    }
+
+    const hasColumnClass = container.classList.contains('gs-24') || container.classList.contains('gs-1');
+
+    if (!hasColumnClass) {
+        return false;
+    }
+
+    if (container.getAttribute('gs-current-row') === null) {
+        return false;
+    }
+
+    return document.querySelectorAll('style[gs-style-id]').length > 0;
+}
+
+function ensureGridIntegrity() {
+    const widgets = window.iotDashboardWidgets ?? [];
+
+    if (!Array.isArray(widgets) || widgets.length === 0) {
+        return;
+    }
+
+    const container = document.getElementById('iot-dashboard-grid');
+
+    if (!container) {
+        return;
+    }
+
+    const gridMatchesContainer = dashboardState.grid && dashboardState.grid.el === container;
+
+    if (gridMatchesContainer && hasGridStackRuntimeState(container)) {
+        return;
+    }
+
+    scheduleHydration(widgets);
+}
+
+function scheduleGridIntegrityCheck() {
+    if (dashboardState.gridIntegrityTimer !== null) {
+        clearTimeout(dashboardState.gridIntegrityTimer);
+    }
+
+    dashboardState.gridIntegrityTimer = window.setTimeout(() => {
+        dashboardState.gridIntegrityTimer = null;
+        ensureGridIntegrity();
+    }, 120);
+}
+
+function ensureGridIntegrityObserver() {
+    if (dashboardState.gridIntegrityObserver || typeof window.MutationObserver === 'undefined') {
+        return;
+    }
+
+    dashboardState.gridIntegrityObserver = new window.MutationObserver(() => {
+        scheduleGridIntegrityCheck();
+    });
+
+    dashboardState.gridIntegrityObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+    });
+}
+
 function bootDashboardGrid() {
     ensureResizeBinding();
+    ensureGridIntegrityObserver();
     scheduleHydration(window.iotDashboardWidgets ?? []);
 }
 

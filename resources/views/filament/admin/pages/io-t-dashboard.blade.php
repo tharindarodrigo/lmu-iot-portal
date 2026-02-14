@@ -12,21 +12,27 @@
 
         .iot-dashboard-grid {
             min-height: 340px;
+            padding-bottom: 1rem;
         }
 
-        .iot-dashboard-grid.grid-stack > .grid-stack-item > .grid-stack-item-content {
-            margin: 0;
+        .grid-stack > .grid-stack-item {
+            overflow: hidden;
         }
 
         .iot-widget-card {
-            border: 1px solid rgba(148, 163, 184, 0.24);
+            border: 1px solid var(--gray-200);
             border-radius: 0.75rem;
             overflow: hidden;
-            background: linear-gradient(160deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
-            box-shadow: 0 12px 30px rgba(2, 6, 23, 0.25);
-            display: grid;
-            grid-template-rows: auto 1fr;
-            min-height: 100%;
+            background-color: var(--gray-50);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+            display: flex;
+            flex-direction: column;
+        }
+
+        :is(.dark, .dark *) .iot-widget-card {
+            border-color: var(--gray-700);
+            background-color: var(--gray-900);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
         }
 
         .iot-widget-card header {
@@ -35,22 +41,34 @@
             align-items: flex-start;
             gap: 0.75rem;
             padding: 0.85rem 1rem;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        :is(.dark, .dark *) .iot-widget-card header {
+            border-bottom-color: var(--gray-700);
         }
 
         .iot-widget-title {
             font-size: 0.95rem;
             line-height: 1.3rem;
             font-weight: 700;
-            color: #f8fafc;
+            color: var(--gray-900);
             margin: 0;
+        }
+
+        :is(.dark, .dark *) .iot-widget-title {
+            color: var(--gray-100);
         }
 
         .iot-widget-meta {
             margin-top: 0.25rem;
             font-size: 0.74rem;
             line-height: 1.05rem;
-            color: #cbd5e1;
+            color: var(--gray-500);
+        }
+
+        :is(.dark, .dark *) .iot-widget-meta {
+            color: var(--gray-400);
         }
 
         .iot-widget-flags {
@@ -60,17 +78,22 @@
         }
 
         .iot-widget-chart {
-            min-height: 220px;
-            height: 100%;
+            flex: 1 1 0%;
+            min-height: 0;
             width: 100%;
         }
 
         .iot-empty-state {
             padding: 1.35rem 1rem;
-            border: 1px dashed rgba(148, 163, 184, 0.35);
+            border: 1px dashed var(--gray-300);
             border-radius: 0.75rem;
-            color: rgb(100, 116, 139);
+            color: var(--gray-500);
             font-size: 0.875rem;
+        }
+
+        :is(.dark, .dark *) .iot-empty-state {
+            border-color: var(--gray-600);
+            color: var(--gray-400);
         }
 
         .grid-stack-placeholder > .placeholder-content {
@@ -164,12 +187,7 @@
                                                 Poll
                                             </x-filament::badge>
                                             {{ ($this->editWidgetAction)(['widget' => $widget->id]) }}
-                                            <x-filament::icon-button
-                                                icon="heroicon-o-trash"
-                                                color="danger"
-                                                size="sm"
-                                                wire:click="deleteWidget({{ $widget->id }})"
-                                            />
+                                            {{ ($this->deleteWidgetAction)(['widget' => $widget->id]) }}
                                         </div>
                                     </header>
 
