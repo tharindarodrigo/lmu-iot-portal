@@ -14,6 +14,7 @@ use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\Shared\Models\Organization;
 use App\Domain\Shared\Models\User;
 use App\Filament\Admin\Pages\IoTDashboard as IoTDashboardPage;
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -108,6 +109,28 @@ it('adds a line widget with three configured series', function (): void {
         ->and(collect($widget?->series_config ?? [])->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
 });
 
+it('renders a newly added widget immediately without a page reload', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction('addLineWidget', data: [
+            'title' => 'Immediate Widget Render',
+            'schema_version_topic_id' => (string) $topic->id,
+            'device_id' => (string) $device->id,
+            'parameter_keys' => ['V1'],
+            'use_websocket' => true,
+            'use_polling' => true,
+            'polling_interval_seconds' => 10,
+            'lookback_minutes' => 120,
+            'max_points' => 240,
+            'grid_columns' => '6',
+            'card_height_px' => 360,
+        ])
+        ->assertNotified('Line widget added')
+        ->assertSee('Immediate Widget Render');
+});
+
 it('edits an existing line widget using action arguments', function (): void {
     [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
 
@@ -146,6 +169,46 @@ it('edits an existing line widget using action arguments', function (): void {
     expect($widget->title)->toBe('Updated Voltages')
         ->and($widget->polling_interval_seconds)->toBe(8)
         ->and(collect($widget->series_config)->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
+});
+
+it('requires confirmation before deleting a widget', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'title' => 'Confirmation Required Widget',
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->assertActionExists(
+            TestAction::make('deleteWidget')->arguments(['widget' => $widget->id]),
+            checkActionUsing: fn (Action $action): bool => $action->isConfirmationRequired(),
+        );
+});
+
+it('removes a widget from rendered output immediately after delete confirmation', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'title' => 'Delete Me Right Now',
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->assertSee('Delete Me Right Now')
+        ->callAction(TestAction::make('deleteWidget')->arguments(['widget' => $widget->id]))
+        ->assertNotified('Widget removed')
+        ->assertDontSee('Delete Me Right Now');
+
+    $this->assertDatabaseMissing('iot_dashboard_widgets', [
+        'id' => $widget->id,
+    ]);
 });
 
 it('loads gridstack extra stylesheet for multi-column widget widths', function (): void {

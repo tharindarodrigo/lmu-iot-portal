@@ -24,8 +24,11 @@ class IoTDashboard extends Model
     protected static function booted(): void
     {
         static::creating(function (self $dashboard): void {
-            if (! is_string($dashboard->slug) || trim($dashboard->slug) === '') {
-                $dashboard->slug = Str::slug($dashboard->name);
+            $slug = $dashboard->getAttribute('slug');
+
+            if (! is_string($slug) || trim($slug) === '') {
+                $name = $dashboard->getAttribute('name');
+                $dashboard->slug = Str::slug(is_string($name) ? $name : 'dashboard');
             }
         });
     }

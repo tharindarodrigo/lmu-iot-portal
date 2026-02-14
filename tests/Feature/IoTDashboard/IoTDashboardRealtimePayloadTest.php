@@ -11,10 +11,13 @@ use App\Domain\Telemetry\Services\TelemetryLogRecorder;
 use App\Events\TelemetryReceived;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 
 uses(RefreshDatabase::class);
 
 it('broadcasts realtime payload data required by line widgets', function (): void {
+    Event::fake([TelemetryReceived::class]);
+
     $schemaVersion = DeviceSchemaVersion::factory()->active()->create();
 
     $topic = SchemaVersionTopic::factory()->publish()->create([

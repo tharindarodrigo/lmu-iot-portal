@@ -35,13 +35,20 @@ class IoTDashboardForm
                             ->maxLength(255)
                             ->live(onBlur: true)
                             ->afterStateUpdated(function (Set $set, Get $get, mixed $state): void {
-                                $currentSlug = trim((string) $get('slug'));
+                                $currentSlugValue = $get('slug');
+                                $currentSlug = is_string($currentSlugValue)
+                                    ? trim($currentSlugValue)
+                                    : '';
 
                                 if ($currentSlug !== '') {
                                     return;
                                 }
 
-                                $set('slug', Str::slug((string) $state));
+                                if (! is_string($state) || trim($state) === '') {
+                                    return;
+                                }
+
+                                $set('slug', Str::slug($state));
                             }),
 
                         TextInput::make('slug')
@@ -52,8 +59,15 @@ class IoTDashboardForm
                                 table: IoTDashboard::class,
                                 column: 'slug',
                                 ignoreRecord: true,
-                                modifyRuleUsing: fn (Unique $rule, Get $get): Unique => $rule
-                                    ->where('organization_id', (int) $get('organization_id')),
+                                modifyRuleUsing: function (Unique $rule, Get $get): Unique {
+                                    $organizationId = $get('organization_id');
+
+                                    if (! is_numeric($organizationId)) {
+                                        return $rule;
+                                    }
+
+                                    return $rule->where('organization_id', (int) $organizationId);
+                                },
                             ),
 
                         TextInput::make('refresh_interval_seconds')

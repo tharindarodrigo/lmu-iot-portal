@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\IoTDashboard;
 
+use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateIoTDashboardWidgetLayoutRequest;
@@ -28,7 +29,13 @@ class IoTDashboardWidgetLayoutController extends Controller
 
         $widget->loadMissing(['dashboard', 'device:id,organization_id']);
 
-        $organizationId = (int) $widget->dashboard->organization_id;
+        $dashboard = $widget->dashboard;
+
+        if (! $dashboard instanceof IoTDashboard) {
+            abort(Response::HTTP_FORBIDDEN);
+        }
+
+        $organizationId = (int) $dashboard->organization_id;
         $belongsToOrganization = $user->organizations()->whereKey($organizationId)->exists();
 
         if (! $user->isSuperAdmin() && ! $belongsToOrganization) {
@@ -42,13 +49,13 @@ class IoTDashboardWidgetLayoutController extends Controller
             abort(Response::HTTP_FORBIDDEN);
         }
 
-        $validated = $request->validated();
-        $x = (int) $validated['x'];
-        $y = (int) $validated['y'];
-        $w = (int) $validated['w'];
-        $h = (int) $validated['h'];
+        $x = $request->integer('x');
+        $y = $request->integer('y');
+        $w = $request->integer('w');
+        $h = $request->integer('h');
 
-        $options = is_array($widget->options) ? $widget->options : [];
+        $optionsValue = $widget->getAttribute('options');
+        $options = is_array($optionsValue) ? $optionsValue : [];
         $options['layout'] = [
             'x' => $x,
             'y' => $y,

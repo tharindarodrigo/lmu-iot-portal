@@ -22,8 +22,11 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property-read IoTDashboardModel|null $selectedDashboard
+ * @property-read array<int, array<string, mixed>> $widgetBootstrapPayload
+ */
 class IoTDashboard extends Page
 {
     protected static bool $shouldRegisterNavigation = false;
@@ -82,18 +85,27 @@ class IoTDashboard extends Page
 
     public function getTitle(): string
     {
-        return $this->selectedDashboard?->name ?? __('IoT Dashboard');
+        $dashboard = $this->selectedDashboard();
+
+        if (! $dashboard instanceof IoTDashboardModel) {
+            return __('IoT Dashboard');
+        }
+
+        return $dashboard->name;
     }
 
     public function getSubheading(): ?string
     {
-        $dashboard = $this->selectedDashboard;
+        $dashboard = $this->selectedDashboard();
 
         if (! $dashboard instanceof IoTDashboardModel) {
             return __('Pick a dashboard from Dashboards to start plotting telemetry.');
         }
 
-        $organizationName = $dashboard->organization?->name ?? 'Unknown Organization';
+        $organization = $dashboard->organization;
+        $organizationName = is_string($organization?->name) && trim($organization->name) !== ''
+            ? $organization->name
+            : 'Unknown Organization';
 
         return __(
             ':organization · Realtime device telemetry with polling fallback.',
@@ -112,11 +124,11 @@ class IoTDashboard extends Page
             Action::make('addLineWidget')
                 ->label('Add Line Widget')
                 ->icon(Heroicon::OutlinedPresentationChartLine)
-                ->visible(fn (): bool => $this->selectedDashboard instanceof IoTDashboardModel)
+                ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
                 ->slideOver()
                 ->schema($this->lineWidgetFormSchema())
                 ->action(function (array $data): void {
-                    $dashboard = $this->selectedDashboard;
+                    $dashboard = $this->selectedDashboard();
 
                     if (! $dashboard instanceof IoTDashboardModel) {
                         Notification::make()
@@ -133,7 +145,8 @@ class IoTDashboard extends Page
                         return;
                     }
 
-                    $nextSequence = ((int) $dashboard->widgets()->max('sequence')) + 1;
+                    $maxSequence = $dashboard->widgets()->max('sequence');
+                    $nextSequence = (is_numeric($maxSequence) ? (int) $maxSequence : 0) + 1;
 
                     IoTDashboardWidget::query()->create([
                         'iot_dashboard_id' => $dashboard->id,
@@ -157,6 +170,7 @@ class IoTDashboard extends Page
                         ->success()
                         ->send();
 
+                    $this->refreshDashboardComputedProperties();
                     $this->dispatchWidgetBootstrapEvent();
                 }),
         ];
@@ -198,7 +212,7 @@ class IoTDashboard extends Page
                 ];
             })
             ->action(function (array $data, array $arguments): void {
-                $dashboard = $this->selectedDashboard;
+                $dashboard = $this->selectedDashboard();
 
                 if (! $dashboard instanceof IoTDashboardModel) {
                     return;
@@ -239,32 +253,50 @@ class IoTDashboard extends Page
                     ->success()
                     ->send();
 
+                $this->refreshDashboardComputedProperties();
                 $this->dispatchWidgetBootstrapEvent();
             });
     }
 
-    public function deleteWidget(int $widgetId): void
+    public function deleteWidgetAction(): Action
     {
-        $dashboard = $this->selectedDashboard;
+        return Action::make('deleteWidget')
+            ->icon(Heroicon::OutlinedTrash)
+            ->iconButton()
+            ->color('danger')
+            ->size('sm')
+            ->requiresConfirmation()
+            ->modalHeading('Delete widget')
+            ->modalDescription('This will remove the widget from the dashboard.')
+            ->modalSubmitActionLabel('Delete widget')
+            ->action(function (array $arguments): void {
+                $dashboard = $this->selectedDashboard();
 
-        if (! $dashboard instanceof IoTDashboardModel) {
-            return;
-        }
+                if (! $dashboard instanceof IoTDashboardModel) {
+                    return;
+                }
 
-        $widget = $dashboard->widgets()->whereKey($widgetId)->first();
+                $widget = $this->resolveWidgetFromArguments($arguments);
 
-        if (! $widget instanceof IoTDashboardWidget) {
-            return;
-        }
+                if (! $widget instanceof IoTDashboardWidget) {
+                    Notification::make()
+                        ->title('Widget not found')
+                        ->warning()
+                        ->send();
 
-        $widget->delete();
+                    return;
+                }
 
-        Notification::make()
-            ->title('Widget removed')
-            ->success()
-            ->send();
+                $widget->delete();
 
-        $this->dispatchWidgetBootstrapEvent();
+                Notification::make()
+                    ->title('Widget removed')
+                    ->success()
+                    ->send();
+
+                $this->refreshDashboardComputedProperties();
+                $this->dispatchWidgetBootstrapEvent();
+            });
     }
 
     public function getSelectedDashboardProperty(): ?IoTDashboardModel
@@ -276,7 +308,7 @@ class IoTDashboard extends Page
         return IoTDashboardModel::query()
             ->with([
                 'organization:id,name',
-                'widgets' => fn (HasMany $query) => $query
+                'widgets' => fn ($query) => $query
                     ->with([
                         'topic:id,label,suffix',
                         'device:id,uuid,name,external_id',
@@ -288,26 +320,11 @@ class IoTDashboard extends Page
     }
 
     /**
-     * @return array<int, array{
-     *     id: int,
-     *     type: string,
-     *     title: string,
-     *     topic: array{id: int|null, label: string|null, suffix: string|null},
-     *     device: array{id: int|null, uuid: string|null, name: string|null},
-     *     series: array<int, array{key: string, label: string, color: string}>,
-     *     data_url: string,
-     *     layout_url: string,
-     *     use_websocket: bool,
-     *     use_polling: bool,
-     *     polling_interval_seconds: int,
-     *     lookback_minutes: int,
-     *     max_points: int,
-     *     layout: array{x: int, y: int, w: int, h: int}
-     * }
+     * @return array<int, array<string, mixed>>
      */
     public function getWidgetBootstrapPayloadProperty(): array
     {
-        $dashboard = $this->selectedDashboard;
+        $dashboard = $this->selectedDashboard();
 
         if (! $dashboard instanceof IoTDashboardModel) {
             return [];
@@ -320,12 +337,12 @@ class IoTDashboard extends Page
                     'type' => (string) $widget->type,
                     'title' => (string) $widget->title,
                     'topic' => [
-                        'id' => is_numeric($widget->schema_version_topic_id) ? (int) $widget->schema_version_topic_id : null,
+                        'id' => (int) $widget->schema_version_topic_id,
                         'label' => $widget->topic?->label,
                         'suffix' => $widget->topic?->suffix,
                     ],
                     'device' => [
-                        'id' => is_numeric($widget->device_id) ? (int) $widget->device_id : null,
+                        'id' => $widget->device_id === null ? null : (int) $widget->device_id,
                         'uuid' => $widget->device?->uuid,
                         'name' => $widget->device?->name,
                     ],
@@ -344,6 +361,9 @@ class IoTDashboard extends Page
             ->all();
     }
 
+    /**
+     * @return array<int, \Filament\Actions\Action|\Filament\Actions\ActionGroup|\Filament\Schemas\Components\Component>
+     */
     private function lineWidgetFormSchema(): array
     {
         return [
@@ -426,7 +446,7 @@ class IoTDashboard extends Page
      */
     private function deviceOptionsForDashboard(): array
     {
-        $dashboard = $this->selectedDashboard;
+        $dashboard = $this->selectedDashboard();
 
         if (! $dashboard instanceof IoTDashboardModel) {
             return [];
@@ -449,7 +469,7 @@ class IoTDashboard extends Page
      */
     private function topicOptionsForDevice(mixed $deviceId): array
     {
-        $dashboard = $this->selectedDashboard;
+        $dashboard = $this->selectedDashboard();
 
         if (! $dashboard instanceof IoTDashboardModel || ! is_numeric($deviceId)) {
             return [];
@@ -471,10 +491,18 @@ class IoTDashboard extends Page
             ->orderBy('label')
             ->get(['id', 'label', 'suffix', 'device_schema_version_id'])
             ->mapWithKeys(function (SchemaVersionTopic $topic): array {
-                $schemaVersion = $topic->schemaVersion;
-                $schemaName = $schemaVersion?->schema?->name ?? 'Unknown Schema';
-                $version = $schemaVersion?->version ?? '?';
-                $deviceType = $schemaVersion?->schema?->deviceType?->name ?? 'Unknown Type';
+                $schemaNameValue = data_get($topic, 'schemaVersion.schema.name');
+                $schemaName = is_string($schemaNameValue) && trim($schemaNameValue) !== ''
+                    ? $schemaNameValue
+                    : 'Unknown Schema';
+                $versionValue = data_get($topic, 'schemaVersion.version');
+                $version = is_scalar($versionValue)
+                    ? (string) $versionValue
+                    : '?';
+                $deviceTypeValue = data_get($topic, 'schemaVersion.schema.deviceType.name');
+                $deviceType = is_string($deviceTypeValue) && trim($deviceTypeValue) !== ''
+                    ? $deviceTypeValue
+                    : 'Unknown Type';
 
                 return [
                     (string) $topic->id => "{$topic->label} ({$topic->suffix}) · {$deviceType} · {$schemaName} v{$version}",
@@ -503,9 +531,12 @@ class IoTDashboard extends Page
             ->all();
     }
 
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
     private function resolveWidgetFromArguments(array $arguments): ?IoTDashboardWidget
     {
-        $dashboard = $this->selectedDashboard;
+        $dashboard = $this->selectedDashboard();
         $widgetId = is_numeric($arguments['widget'] ?? null)
             ? (int) $arguments['widget']
             : null;
@@ -667,7 +698,7 @@ class IoTDashboard extends Page
 
     private function sanitizeGridColumns(mixed $value): int
     {
-        return (int) min(max((int) $value, 1), self::GRID_STACK_COLUMNS);
+        return min(max($this->toInt($value, 1), 1), self::GRID_STACK_COLUMNS);
     }
 
     /**
@@ -687,17 +718,17 @@ class IoTDashboard extends Page
 
     private function sanitizeGridRows(mixed $value): int
     {
-        return (int) min(max((int) $value, 2), 12);
+        return min(max($this->toInt($value, 2), 2), 12);
     }
 
     private function sanitizeGridCoordinate(mixed $value): int
     {
-        return (int) max((int) $value, 0);
+        return max($this->toInt($value), 0);
     }
 
     private function sanitizeCardHeight(mixed $value): int
     {
-        return (int) min(max((int) $value, 260), 900);
+        return min(max($this->toInt($value, 360), 260), 900);
     }
 
     private function gridRowsFromCardHeight(mixed $cardHeight): int
@@ -712,18 +743,19 @@ class IoTDashboard extends Page
      */
     private function resolveWidgetLayout(IoTDashboardWidget $widget): array
     {
-        $options = is_array($widget->options) ? $widget->options : [];
+        $optionsValue = $widget->getAttribute('options');
+        $options = is_array($optionsValue) ? $optionsValue : [];
         $layout = data_get($options, 'layout', []);
         $fallbackW = $this->sanitizeGridColumns(data_get($options, 'grid_columns', self::DEFAULT_WIDGET_GRID_COLUMNS));
         $fallbackH = $this->gridRowsFromCardHeight(data_get($options, 'card_height_px', 360));
         $layoutColumns = max(
             1,
-            (int) data_get($options, 'layout_columns', self::LEGACY_GRID_STACK_COLUMNS),
+            $this->toInt(data_get($options, 'layout_columns', self::LEGACY_GRID_STACK_COLUMNS), self::LEGACY_GRID_STACK_COLUMNS),
         );
         $scaleFactor = self::GRID_STACK_COLUMNS / $layoutColumns;
 
-        $x = (int) data_get($layout, 'x', 0);
-        $w = (int) data_get($layout, 'w', $fallbackW);
+        $x = $this->toInt(data_get($layout, 'x', 0));
+        $w = $this->toInt(data_get($layout, 'w', $fallbackW), $fallbackW);
 
         if ($layoutColumns !== self::GRID_STACK_COLUMNS) {
             $x = (int) round($x * $scaleFactor);
@@ -740,6 +772,34 @@ class IoTDashboard extends Page
 
     private function dispatchWidgetBootstrapEvent(): void
     {
-        $this->dispatch('iot-dashboard-widgets-updated', widgets: $this->widgetBootstrapPayload);
+        $this->dispatch('iot-dashboard-widgets-updated', widgets: $this->getWidgetBootstrapPayloadProperty());
+    }
+
+    private function refreshDashboardComputedProperties(): void
+    {
+        unset($this->{'selectedDashboard'});
+        unset($this->{'widgetBootstrapPayload'});
+    }
+
+    private function selectedDashboard(): ?IoTDashboardModel
+    {
+        return $this->getSelectedDashboardProperty();
+    }
+
+    private function toInt(mixed $value, int $default = 0): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_float($value)) {
+            return (int) round($value);
+        }
+
+        if (is_string($value) && is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return $default;
     }
 }

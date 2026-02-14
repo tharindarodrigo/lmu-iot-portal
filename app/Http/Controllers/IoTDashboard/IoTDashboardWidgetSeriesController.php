@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\IoTDashboard;
 
+use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\IoTDashboard\Services\LineChartWidgetDataResolver;
 use App\Http\Controllers\Controller;
@@ -28,7 +29,13 @@ class IoTDashboardWidgetSeriesController extends Controller
 
         $widget->loadMissing(['dashboard', 'device:id,organization_id']);
 
-        $organizationId = (int) $widget->dashboard->organization_id;
+        $dashboard = $widget->dashboard;
+
+        if (! $dashboard instanceof IoTDashboard) {
+            abort(Response::HTTP_FORBIDDEN);
+        }
+
+        $organizationId = (int) $dashboard->organization_id;
         $belongsToOrganization = $user->organizations()->whereKey($organizationId)->exists();
 
         if (! $user->isSuperAdmin() && ! $belongsToOrganization) {

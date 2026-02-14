@@ -16,7 +16,6 @@ use App\Domain\Shared\Models\User;
 use App\Domain\Telemetry\Enums\ValidationStatus;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
 
@@ -95,7 +94,7 @@ it('returns configured line series points for polling', function (): void {
         'device_schema_version_id' => $device->device_schema_version_id,
     ]);
 
-    $baseTime = Carbon::parse('2026-02-13 09:00:00');
+    $baseTime = now()->subMinutes(10);
 
     DeviceTelemetryLog::factory()->forDevice($device)->forTopic($topic)->create([
         'recorded_at' => $baseTime->copy(),
