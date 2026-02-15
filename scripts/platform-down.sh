@@ -16,16 +16,26 @@ command_exists() {
 
 is_process_running() {
     local pid="${1:-}"
+    local search_term="${2:-}"
 
-    if [[ -z "$pid" ]]; then
+    if [[ -z "$pid" ]] || [[ ! "$pid" =~ ^[0-9]+$ ]]; then
         return 1
     fi
 
-    if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
         return 1
     fi
 
-    kill -0 "$pid" >/dev/null 2>&1
+    if [[ -n "$search_term" ]]; then
+        local actual_cmd
+        actual_cmd=$(ps -p "$pid" -o command= 2>/dev/null || echo "")
+
+        if [[ "$actual_cmd" != *"$search_term"* ]]; then
+            return 1
+        fi
+    fi
+
+    return 0
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -42,6 +52,7 @@ summary_lines=()
 
 stop_pid_file() {
     local pid_file="$1"
+    local expected_command="${2:-}"
     local name
     local pid
     local status
@@ -58,7 +69,7 @@ stop_pid_file() {
         return
     fi
 
-    if ! is_process_running "$pid"; then
+    if ! is_process_running "$pid" "$expected_command"; then
         status="not-running"
         rm -f "$pid_file"
         summary_lines+=("$name|$status|$pid")
@@ -68,18 +79,18 @@ stop_pid_file() {
     kill "$pid" >/dev/null 2>&1 || true
 
     for ((i = 0; i < attempts; i++)); do
-        if ! is_process_running "$pid"; then
+        if ! is_process_running "$pid" "$expected_command"; then
             break
         fi
 
         sleep 1
     done
 
-    if is_process_running "$pid"; then
+    if is_process_running "$pid" "$expected_command"; then
         kill -9 "$pid" >/dev/null 2>&1 || true
         sleep 1
 
-        if is_process_running "$pid"; then
+        if is_process_running "$pid" "$expected_command"; then
             status="failed"
         else
             status="killed"
@@ -92,12 +103,40 @@ stop_pid_file() {
     summary_lines+=("$name|$status|$pid")
 }
 
+processed_pids=()
+
+if [[ -f "$manifest_path" ]]; then
+    while IFS='|' read -r name pid command log; do
+        [[ "$name" =~ ^# ]] && continue
+        pid_file="$state_dir/$name.pid"
+        if [[ -f "$pid_file" ]]; then
+            stop_pid_file "$pid_file" "$command"
+            processed_pids+=("$name")
+        fi
+    done < "$manifest_path"
+fi
+
 if [[ -d "$state_dir" ]] && compgen -G "$state_dir/*.pid" > /dev/null; then
     for pid_file in "$state_dir"/*.pid; do
-        stop_pid_file "$pid_file"
+        name="$(basename "$pid_file" .pid)"
+        
+        # Skip if already processed via manifest
+        skip=0
+        for p in "${processed_pids[@]:-}"; do
+            if [[ "$p" == "$name" ]]; then
+                skip=1
+                break
+            fi
+        done
+        [[ "$skip" -eq 1 ]] && continue
+
+        # Fallback for pid file without command verification
+        stop_pid_file "$pid_file" ""
     done
 else
-    echo "No managed PID files found."
+    if [[ "${#processed_pids[@]}" -eq 0 ]]; then
+        echo "No managed processes found."
+    fi
 fi
 
 rm -f "$manifest_path"

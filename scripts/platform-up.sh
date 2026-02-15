@@ -20,16 +20,29 @@ command_exists() {
 
 is_process_running() {
     local pid="${1:-}"
+    local search_term="${2:-}"
 
-    if [[ -z "$pid" ]]; then
+    if [[ -z "$pid" ]] || [[ ! "$pid" =~ ^[0-9]+$ ]]; then
         return 1
     fi
 
-    if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
         return 1
     fi
 
-    kill -0 "$pid" >/dev/null 2>&1
+    if [[ -n "$search_term" ]]; then
+        local actual_cmd
+        actual_cmd=$(ps -p "$pid" -o command= 2>/dev/null || echo "")
+
+        # Use a more flexible check: it should contain both 'php' and parts of the command
+        # or just the search term if it's specific enough.
+        # We'll use a simple substring check.
+        if [[ "$actual_cmd" != *"$search_term"* ]]; then
+            return 1
+        fi
+    fi
+
+    return 0
 }
 
 include_vite=0
@@ -122,7 +135,7 @@ start_service() {
         local existing_pid
         existing_pid="$(tr -d '[:space:]' < "$pid_file")"
 
-        if is_process_running "$existing_pid"; then
+        if is_process_running "$existing_pid" "$command"; then
             status="running"
             pid="$existing_pid"
             summary_lines+=("$name|$status|$pid|$log_file|$command")
@@ -139,7 +152,7 @@ start_service() {
 
     sleep 1
 
-    if is_process_running "$started_pid"; then
+    if is_process_running "$started_pid" "$command"; then
         printf '%s\n' "$started_pid" > "$pid_file"
         status="started"
         pid="$started_pid"
