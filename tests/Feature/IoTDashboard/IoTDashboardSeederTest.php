@@ -15,7 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('seeds an energy meter dashboard widget with V1, V2, and V3 series', function (): void {
+it('seeds energy meter line, bar, and gauge dashboard widgets', function (): void {
     $this->seed([
         OrganizationSeeder::class,
         DeviceSchemaSeeder::class,
@@ -59,4 +59,34 @@ it('seeds an energy meter dashboard widget with V1, V2, and V3 series', function
         ->all();
 
     expect($seriesKeys)->toBe(['V1', 'V2', 'V3']);
+
+    $hourlyWidget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard?->id)
+        ->where('title', 'Hourly Energy Consumption (kWh)')
+        ->first();
+
+    $dailyWidget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard?->id)
+        ->where('title', 'Daily Energy Consumption (kWh)')
+        ->first();
+    $gaugeWidget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard?->id)
+        ->where('title', 'Phase A Current Gauge (A1)')
+        ->first();
+
+    expect($hourlyWidget)->not->toBeNull()
+        ->and($hourlyWidget?->type)->toBe('bar_chart')
+        ->and(data_get($hourlyWidget?->options, 'bar_interval'))->toBe('hourly')
+        ->and(collect($hourlyWidget?->series_config ?? [])->pluck('key')->all())->toBe(['total_energy_kwh'])
+        ->and($dailyWidget)->not->toBeNull()
+        ->and($dailyWidget?->type)->toBe('bar_chart')
+        ->and(data_get($dailyWidget?->options, 'bar_interval'))->toBe('daily')
+        ->and(collect($dailyWidget?->series_config ?? [])->pluck('key')->all())->toBe(['total_energy_kwh'])
+        ->and($gaugeWidget)->not->toBeNull()
+        ->and($gaugeWidget?->type)->toBe('gauge_chart')
+        ->and(data_get($gaugeWidget?->options, 'gauge_style'))->toBe('classic')
+        ->and((float) data_get($gaugeWidget?->options, 'gauge_min'))->toBe(0.0)
+        ->and((float) data_get($gaugeWidget?->options, 'gauge_max'))->toBe(120.0)
+        ->and(collect($gaugeWidget?->series_config ?? [])->pluck('key')->all())->toBe(['A1'])
+        ->and(collect(data_get($gaugeWidget?->options, 'gauge_ranges', []))->pluck('color')->all())->toContain('#10b981', '#f59e0b', '#ef4444');
 });

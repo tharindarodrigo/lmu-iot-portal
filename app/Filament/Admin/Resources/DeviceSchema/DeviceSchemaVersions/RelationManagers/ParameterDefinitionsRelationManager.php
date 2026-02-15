@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\RelationManagers;
 
 use App\Domain\DeviceSchema\Enums\ControlWidgetType;
+use App\Domain\DeviceSchema\Enums\MetricUnit;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
@@ -86,9 +87,11 @@ class ParameterDefinitionsRelationManager extends RelationManager
                     ->options(ParameterDataType::class)
                     ->required(),
 
-                TextInput::make('unit')
-                    ->maxLength(50)
-                    ->placeholder('Celsius'),
+                Select::make('unit')
+                    ->label('Metric Unit')
+                    ->options(MetricUnit::class)
+                    ->searchable()
+                    ->placeholder('Select metric unit'),
 
                 CodeEditor::make('default_value')
                     ->language(Language::Json)

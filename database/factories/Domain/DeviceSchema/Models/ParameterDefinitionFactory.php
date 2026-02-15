@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories\Domain\DeviceSchema\Models;
 
+use App\Domain\DeviceSchema\Enums\MetricUnit;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
@@ -31,7 +32,16 @@ class ParameterDefinitionFactory extends Factory
             'label' => $this->faker->words(2, true),
             'json_path' => $this->faker->randomElement(['temp', 'status.temp', '$.status.temp']),
             'type' => $dataType,
-            'unit' => $dataType === ParameterDataType::Decimal ? $this->faker->randomElement(['Celsius', 'Percent', 'Volts']) : null,
+            'unit' => $dataType === ParameterDataType::Decimal
+                ? $this->faker->randomElement([
+                    MetricUnit::Celsius->value,
+                    MetricUnit::Percent->value,
+                    MetricUnit::Volts->value,
+                    MetricUnit::Amperes->value,
+                    MetricUnit::KilowattHours->value,
+                    MetricUnit::Watts->value,
+                ])
+                : null,
             'required' => $this->faker->boolean(60),
             'is_critical' => $this->faker->boolean(20),
             'validation_rules' => [

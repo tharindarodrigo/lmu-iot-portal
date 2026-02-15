@@ -16,7 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('seeds an active energy meter power range automation that controls rgb colors', function (): void {
+it('seeds an active energy meter current range automation that controls rgb colors', function (): void {
     $this->seed([
         OrganizationSeeder::class,
         DeviceSchemaSeeder::class,
@@ -25,7 +25,7 @@ it('seeds an active energy meter power range automation that controls rgb colors
     ]);
 
     $workflow = AutomationWorkflow::query()
-        ->where('slug', 'energy-meter-power-l1-color-automation')
+        ->where('slug', 'energy-meter-current-a1-color-automation')
         ->first();
 
     expect($workflow)->not->toBeNull()

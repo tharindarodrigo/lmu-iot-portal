@@ -20,7 +20,7 @@ use Illuminate\Database\Seeder;
 
 class AutomationSeeder extends Seeder
 {
-    private const WORKFLOW_SLUG = 'energy-meter-power-l1-color-automation';
+    private const WORKFLOW_SLUG = 'energy-meter-current-a1-color-automation';
 
     private const ENERGY_METER_EXTERNAL_ID = 'main-energy-meter-01';
 
@@ -78,7 +78,7 @@ class AutomationSeeder extends Seeder
         $sourceParameter = $sourceTopic instanceof SchemaVersionTopic
             ? ParameterDefinition::query()
                 ->where('schema_version_topic_id', $sourceTopic->id)
-                ->where('key', 'power_l1')
+                ->where('key', 'A1')
                 ->where('is_active', true)
                 ->first()
             : null;
@@ -101,7 +101,7 @@ class AutomationSeeder extends Seeder
                 'slug' => self::WORKFLOW_SLUG,
             ],
             [
-                'name' => 'Energy Meter Power L1 to RGB Color',
+                'name' => 'Energy Meter Current A1 to RGB Color',
                 'status' => AutomationWorkflowStatus::Active->value,
             ],
         );
@@ -156,7 +156,7 @@ class AutomationSeeder extends Seeder
             'version' => 1,
             'nodes' => [
                 [
-                    'id' => 'trigger-power-l1',
+                    'id' => 'trigger-current-a1',
                     'type' => 'telemetry-trigger',
                     'data' => [
                         'config' => [
@@ -293,9 +293,9 @@ class AutomationSeeder extends Seeder
                 ],
             ],
             'edges' => [
-                ['id' => 'edge-trigger-yellow', 'source' => 'trigger-power-l1', 'target' => 'condition-yellow'],
-                ['id' => 'edge-trigger-purple', 'source' => 'trigger-power-l1', 'target' => 'condition-purple'],
-                ['id' => 'edge-trigger-blue', 'source' => 'trigger-power-l1', 'target' => 'condition-blue'],
+                ['id' => 'edge-trigger-yellow', 'source' => 'trigger-current-a1', 'target' => 'condition-yellow'],
+                ['id' => 'edge-trigger-purple', 'source' => 'trigger-current-a1', 'target' => 'condition-purple'],
+                ['id' => 'edge-trigger-blue', 'source' => 'trigger-current-a1', 'target' => 'condition-blue'],
                 ['id' => 'edge-yellow-command', 'source' => 'condition-yellow', 'target' => 'command-yellow'],
                 ['id' => 'edge-purple-command', 'source' => 'condition-purple', 'target' => 'command-purple'],
                 ['id' => 'edge-blue-command', 'source' => 'condition-blue', 'target' => 'command-blue'],

@@ -61,6 +61,34 @@ function createDashboardTopicForPageTest(): array
         ]);
     }
 
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'A1',
+        'label' => 'Current A1',
+        'json_path' => 'currents.A1',
+        'type' => ParameterDataType::Decimal,
+        'required' => true,
+        'is_active' => true,
+        'sequence' => 4,
+        'validation_rules' => ['min' => 0, 'max' => 150],
+        'mutation_expression' => null,
+        'validation_error_code' => null,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'total_energy_kwh',
+        'label' => 'Total Energy',
+        'json_path' => 'energy.total_energy_kwh',
+        'type' => ParameterDataType::Decimal,
+        'required' => true,
+        'is_active' => true,
+        'sequence' => 5,
+        'validation_rules' => ['category' => 'counter', 'min' => 0],
+        'mutation_expression' => null,
+        'validation_error_code' => null,
+    ]);
+
     return [$dashboard, $topic, $device];
 }
 
@@ -107,6 +135,84 @@ it('adds a line widget with three configured series', function (): void {
         ->and($widget?->type)->toBe('line_chart')
         ->and($widget?->device_id)->toBe($device->id)
         ->and(collect($widget?->series_config ?? [])->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
+});
+
+it('adds a bar widget for energy consumption with hourly aggregation', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction('addBarWidget', data: [
+            'title' => 'Hourly Energy Consumption',
+            'schema_version_topic_id' => (string) $topic->id,
+            'device_id' => (string) $device->id,
+            'parameter_key' => 'total_energy_kwh',
+            'bar_interval' => 'hourly',
+            'use_websocket' => false,
+            'use_polling' => true,
+            'polling_interval_seconds' => 60,
+            'lookback_minutes' => 1440,
+            'max_points' => 24,
+            'grid_columns' => '6',
+            'card_height_px' => 360,
+        ])
+        ->assertNotified('Bar widget added');
+
+    $widget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard->id)
+        ->where('title', 'Hourly Energy Consumption')
+        ->first();
+
+    expect($widget)->not->toBeNull()
+        ->and($widget?->type)->toBe('bar_chart')
+        ->and($widget?->device_id)->toBe($device->id)
+        ->and(data_get($widget?->options, 'bar_interval'))->toBe('hourly')
+        ->and(collect($widget?->series_config ?? [])->pluck('key')->all())->toBe(['total_energy_kwh']);
+});
+
+it('adds a gauge widget with style and color ranges', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction('addGaugeWidget', data: [
+            'title' => 'Phase A Gauge',
+            'schema_version_topic_id' => (string) $topic->id,
+            'device_id' => (string) $device->id,
+            'parameter_key' => 'A1',
+            'gauge_style' => 'progress',
+            'gauge_min' => 0,
+            'gauge_max' => 120,
+            'gauge_ranges' => [
+                ['from' => 0, 'to' => 60, 'color' => '#22c55e'],
+                ['from' => 60, 'to' => 90, 'color' => '#f59e0b'],
+                ['from' => 90, 'to' => 120, 'color' => '#ef4444'],
+            ],
+            'use_websocket' => true,
+            'use_polling' => true,
+            'polling_interval_seconds' => 10,
+            'lookback_minutes' => 120,
+            'max_points' => 1,
+            'grid_columns' => '6',
+            'card_height_px' => 360,
+        ])
+        ->assertNotified('Gauge widget added');
+
+    $widget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard->id)
+        ->where('title', 'Phase A Gauge')
+        ->first();
+
+    expect($widget)->not->toBeNull()
+        ->and($widget?->type)->toBe('gauge_chart')
+        ->and($widget?->device_id)->toBe($device->id)
+        ->and(collect($widget?->series_config ?? [])->pluck('key')->all())->toBe(['A1'])
+        ->and(data_get($widget?->options, 'gauge_style'))->toBe('classic')
+        ->and((float) data_get($widget?->options, 'gauge_min'))->toBe(0.0)
+        ->and((float) data_get($widget?->options, 'gauge_max'))->toBe(120.0);
+
+    expect(collect(data_get($widget?->options, 'gauge_ranges', []))->pluck('color')->all())
+        ->toContain('#22c55e', '#f59e0b');
 });
 
 it('renders a newly added widget immediately without a page reload', function (): void {

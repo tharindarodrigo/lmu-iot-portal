@@ -134,70 +134,65 @@
                 </div>
             </x-filament::section>
         @else
-            <x-filament::section
-                :heading="$this->selectedDashboard->name"
-                :description="$this->selectedDashboard->description ?: 'Widgets are scoped by topic + device. Drag and resize cards to snap on the grid without overlap.'"
-            >
-                @if ($this->selectedDashboard->widgets->isEmpty())
-                    <div class="iot-empty-state">
-                        No widgets yet. Click <strong>Add Line Widget</strong>, choose a topic, then choose the exact device and parameters.
-                    </div>
-                @else
-                    @php(
-                        $widgetLayouts = collect($this->widgetBootstrapPayload)
-                            ->mapWithKeys(fn (array $widget): array => [(int) $widget['id'] => (array) ($widget['layout'] ?? [])])
-                            ->all()
-                    )
+            @if ($this->selectedDashboard->widgets->isEmpty())
+                <div class="iot-empty-state">
+                    No widgets yet. Click <strong>Add Line Widget</strong> or <strong>Add Bar Widget</strong>, choose a topic, then choose the exact device and parameters.
+                </div>
+            @else
+                @php(
+                    $widgetLayouts = collect($this->widgetBootstrapPayload)
+                        ->mapWithKeys(fn (array $widget): array => [(int) $widget['id'] => (array) ($widget['layout'] ?? [])])
+                        ->all()
+                )
 
-                    <div class="iot-dashboard-grid grid-stack" id="iot-dashboard-grid">
-                        @foreach ($this->selectedDashboard->widgets as $widget)
-                            @php($layout = $widgetLayouts[(int) $widget->id] ?? [])
-                            @php($gridSpan = max(1, min(24, (int) data_get($layout, 'w', (int) data_get($widget->options, 'grid_columns', 1)))))
-                            @php($gridHeight = max(2, min(12, (int) data_get($layout, 'h', (int) ceil(max(260, min(900, (int) data_get($widget->options, 'card_height_px', 360))) / 96)))))
-                            @php($gridX = max(0, (int) data_get($layout, 'x', 0)))
-                            @php($gridY = max(0, (int) data_get($layout, 'y', 0)))
+                <div class="iot-dashboard-grid grid-stack" id="iot-dashboard-grid">
+                    @foreach ($this->selectedDashboard->widgets as $widget)
+                        @php($layout = $widgetLayouts[(int) $widget->id] ?? [])
+                        @php($gridSpan = max(1, min(24, (int) data_get($layout, 'w', (int) data_get($widget->options, 'grid_columns', 1)))))
+                        @php($gridHeight = max(2, min(12, (int) data_get($layout, 'h', (int) ceil(max(260, min(900, (int) data_get($widget->options, 'card_height_px', 360))) / 96)))))
+                        @php($gridX = max(0, (int) data_get($layout, 'x', 0)))
+                        @php($gridY = max(0, (int) data_get($layout, 'y', 0)))
 
-                            <div
-                                class="grid-stack-item"
-                                gs-id="{{ $widget->id }}"
-                                gs-x="{{ $gridX }}"
-                                gs-y="{{ $gridY }}"
-                                gs-w="{{ $gridSpan }}"
-                                gs-h="{{ $gridHeight }}"
-                            >
-                                <article class="iot-widget-card grid-stack-item-content">
-                                    <header>
-                                        <div>
-                                            <h3 class="iot-widget-title">{{ $widget->title }}</h3>
-                                            <p class="iot-widget-meta">
-                                                {{ $widget->topic?->label ?? 'Unknown topic' }}
-                                                @if ($widget->topic?->suffix)
-                                                    ({{ $widget->topic->suffix }})
-                                                @endif
-                                                ·
-                                                {{ $widget->device?->name ?? 'Unknown device' }}
-                                            </p>
-                                        </div>
+                        <div
+                            class="grid-stack-item"
+                            gs-id="{{ $widget->id }}"
+                            gs-x="{{ $gridX }}"
+                            gs-y="{{ $gridY }}"
+                            gs-w="{{ $gridSpan }}"
+                            gs-h="{{ $gridHeight }}"
+                        >
+                            <article class="iot-widget-card grid-stack-item-content">
+                                <header>
+                                    <div>
+                                        <h3 class="iot-widget-title">{{ $widget->title }}</h3>
+                                        <p class="iot-widget-meta">
+                                            {{ $widget->topic?->label ?? 'Unknown topic' }}
+                                            @if ($widget->topic?->suffix)
+                                                ({{ $widget->topic->suffix }})
+                                            @endif
+                                            ·
+                                            {{ $widget->device?->name ?? 'Unknown device' }}
+                                        </p>
+                                    </div>
 
-                                        <div class="iot-widget-flags">
-                                            <x-filament::badge :color="$widget->use_websocket ? 'success' : 'gray'" size="sm">
-                                                WS
-                                            </x-filament::badge>
-                                            <x-filament::badge :color="$widget->use_polling ? 'info' : 'gray'" size="sm">
-                                                Poll
-                                            </x-filament::badge>
-                                            {{ ($this->editWidgetAction)(['widget' => $widget->id]) }}
-                                            {{ ($this->deleteWidgetAction)(['widget' => $widget->id]) }}
-                                        </div>
-                                    </header>
+                                    <div class="iot-widget-flags">
+                                        <x-filament::badge :color="$widget->use_websocket ? 'success' : 'gray'" size="sm">
+                                            WS
+                                        </x-filament::badge>
+                                        <x-filament::badge :color="$widget->use_polling ? 'info' : 'gray'" size="sm">
+                                            Poll
+                                        </x-filament::badge>
+                                        {{ ($this->editWidgetAction)(['widget' => $widget->id]) }}
+                                        {{ ($this->deleteWidgetAction)(['widget' => $widget->id]) }}
+                                    </div>
+                                </header>
 
-                                    <div class="iot-widget-chart" id="iot-widget-chart-{{ $widget->id }}"></div>
-                                </article>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
-            </x-filament::section>
+                                <div class="iot-widget-chart" id="iot-widget-chart-{{ $widget->id }}"></div>
+                            </article>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
         @endif
     </div>
 

@@ -56,6 +56,124 @@ function getChartThemeColors() {
 }
 
 function buildChartOption(widget, series) {
+    if (widget?.type === 'gauge_chart') {
+        return buildGaugeChartOption(widget, series);
+    }
+
+    if (widget?.type === 'bar_chart') {
+        return buildBarChartOption(widget, series);
+    }
+
+    return buildLineChartOption(series);
+}
+
+function buildGaugeChartOption(widget, series) {
+    const theme = getChartThemeColors();
+    const primarySeries = Array.isArray(series) && series.length > 0 ? series[0] : null;
+    const latestPoint = primarySeries?.points?.length > 0
+        ? primarySeries.points[primarySeries.points.length - 1]
+        : null;
+    const currentValue = normalizeNumericValue(latestPoint?.value) ?? 0;
+    const min = Number.isFinite(Number(widget?.gauge_min)) ? Number(widget.gauge_min) : 0;
+    const max = Number.isFinite(Number(widget?.gauge_max)) ? Number(widget.gauge_max) : 100;
+    const normalizedMax = max > min ? max : min + 1;
+    const style = typeof widget?.gauge_style === 'string' ? widget.gauge_style : 'classic';
+
+    return {
+        backgroundColor: 'transparent',
+        animation: true,
+        tooltip: {
+            formatter: `{a}<br/>{b}: {c}`,
+            backgroundColor: theme.tooltipBg,
+            borderColor: theme.tooltipBorder,
+            textStyle: {
+                color: theme.tooltipText,
+            },
+        },
+        series: [
+            {
+                type: 'gauge',
+                min,
+                max: normalizedMax,
+                progress: {
+                    show: style === 'progress',
+                    width: style === 'minimal' ? 8 : 14,
+                    roundCap: style !== 'classic',
+                },
+                axisLine: {
+                    roundCap: style !== 'classic',
+                    lineStyle: {
+                        width: style === 'minimal' ? 8 : 14,
+                        color: resolveGaugeAxisLineColors(widget?.gauge_ranges, min, normalizedMax),
+                    },
+                },
+                pointer: {
+                    show: style !== 'minimal',
+                    length: style === 'progress' ? '72%' : '65%',
+                    width: style === 'minimal' ? 2 : 5,
+                },
+                anchor: {
+                    show: style !== 'minimal',
+                    size: 10,
+                },
+                axisTick: { show: style === 'classic' },
+                splitLine: { show: style === 'classic' },
+                axisLabel: { show: style === 'classic' },
+                title: {
+                    color: theme.axisLabelColor,
+                    fontSize: 12,
+                    offsetCenter: [0, '70%'],
+                },
+                detail: {
+                    valueAnimation: true,
+                    fontSize: 24,
+                    color: theme.tooltipText,
+                    offsetCenter: [0, style === 'minimal' ? '10%' : '30%'],
+                    formatter: (value) => `${Number(value).toFixed(2)}`,
+                },
+                data: [
+                    {
+                        value: currentValue,
+                        name: primarySeries?.label ?? 'Value',
+                    },
+                ],
+            },
+        ],
+    };
+}
+
+function resolveGaugeAxisLineColors(rawRanges, minimum, maximum) {
+    if (!Array.isArray(rawRanges) || rawRanges.length === 0 || maximum <= minimum) {
+        return [[1, '#22d3ee']];
+    }
+
+    const ranges = rawRanges
+        .filter((range) => range && Number.isFinite(Number(range.to)) && typeof range.color === 'string')
+        .map((range) => ({
+            to: Number(range.to),
+            color: range.color,
+        }))
+        .sort((left, right) => left.to - right.to);
+
+    if (ranges.length === 0) {
+        return [[1, '#22d3ee']];
+    }
+
+    const resolved = [];
+
+    ranges.forEach((range) => {
+        const threshold = Math.min(Math.max((range.to - minimum) / (maximum - minimum), 0), 1);
+        resolved.push([threshold, range.color]);
+    });
+
+    if (resolved[resolved.length - 1][0] < 1) {
+        resolved.push([1, resolved[resolved.length - 1][1]]);
+    }
+
+    return resolved;
+}
+
+function buildLineChartOption(series) {
     const theme = getChartThemeColors();
 
     return {
@@ -116,6 +234,109 @@ function buildChartOption(widget, series) {
             data: entry.points.map((point) => [point.timestamp, point.value]),
         })),
     };
+}
+
+function buildBarChartOption(widget, series) {
+    const theme = getChartThemeColors();
+    const timestamps = resolveBarSeriesTimestamps(series);
+    const categories = timestamps.map((timestamp) => formatBarTimestampLabel(timestamp, widget?.bar_interval));
+
+    return {
+        backgroundColor: 'transparent',
+        animation: true,
+        color: series.map((entry) => entry.color),
+        grid: {
+            left: 42,
+            right: 18,
+            top: 34,
+            bottom: 34,
+            containLabel: true,
+        },
+        legend: {
+            top: 4,
+            textStyle: {
+                color: theme.legendText,
+                fontSize: 11,
+            },
+        },
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: theme.tooltipBg,
+            borderColor: theme.tooltipBorder,
+            textStyle: {
+                color: theme.tooltipText,
+            },
+        },
+        xAxis: {
+            type: 'category',
+            data: categories,
+            axisLine: { lineStyle: { color: theme.axisLineColor } },
+            axisLabel: {
+                color: theme.axisLabelColor,
+                fontSize: 11,
+            },
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: theme.splitLineColor } },
+            axisLabel: {
+                color: theme.axisLabelColor,
+                fontSize: 11,
+            },
+        },
+        series: series.map((entry) => {
+            const valuesByTimestamp = new Map(
+                entry.points.map((point) => [point.timestamp, point.value]),
+            );
+
+            return {
+                name: entry.label,
+                type: 'bar',
+                barMaxWidth: 28,
+                emphasis: { focus: 'series' },
+                data: timestamps.map((timestamp) => valuesByTimestamp.get(timestamp) ?? 0),
+            };
+        }),
+    };
+}
+
+function resolveBarSeriesTimestamps(series) {
+    const timestamps = [];
+    const seen = new Set();
+
+    series.forEach((entry) => {
+        entry.points.forEach((point) => {
+            if (typeof point?.timestamp !== 'string' || seen.has(point.timestamp)) {
+                return;
+            }
+
+            seen.add(point.timestamp);
+            timestamps.push(point.timestamp);
+        });
+    });
+
+    return timestamps.sort((left, right) => new Date(left).getTime() - new Date(right).getTime());
+}
+
+function formatBarTimestampLabel(timestamp, barInterval) {
+    const date = new Date(timestamp);
+
+    if (Number.isNaN(date.getTime())) {
+        return timestamp;
+    }
+
+    if (barInterval === 'daily') {
+        return date.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+        });
+    }
+
+    return date.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 }
 
 function destroyGrid() {
@@ -405,12 +626,18 @@ function requestWidgetSnapshot(widget) {
         return;
     }
 
+    const params = {
+        lookback_minutes: widget.lookback_minutes,
+        max_points: widget.max_points,
+    };
+
+    if (widget?.type === 'bar_chart' && typeof widget.bar_interval === 'string') {
+        params.bar_interval = widget.bar_interval;
+    }
+
     window.axios
         .get(widget.data_url, {
-            params: {
-                lookback_minutes: widget.lookback_minutes,
-                max_points: widget.max_points,
-            },
+            params,
         })
         .then((response) => {
             applySnapshot(widget, response.data);
@@ -439,7 +666,7 @@ function isMatchingWidgetStream(widget, topicId, deviceUuid) {
         ? widget.device.uuid
         : null;
 
-    if (!widget.use_websocket || widgetTopicId !== topicId) {
+    if (!widget.use_websocket || widgetTopicId !== topicId || widget?.type === 'bar_chart') {
         return false;
     }
 
@@ -492,7 +719,8 @@ function appendRealtimePayload(payload) {
                 value,
             }];
 
-            const maxPoints = Math.max(20, Number(widget.max_points || 240));
+            const minPoints = widget?.type === 'gauge_chart' ? 1 : 20;
+            const maxPoints = Math.max(minPoints, Number(widget.max_points || 240));
 
             if (nextPoints.length > maxPoints) {
                 nextPoints.splice(0, nextPoints.length - maxPoints);

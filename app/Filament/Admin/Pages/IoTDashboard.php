@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Pages;
 
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Domain\IoTDashboard\Enums\BarInterval;
+use App\Domain\IoTDashboard\Enums\GaugeStyle;
 use App\Domain\IoTDashboard\Models\IoTDashboard as IoTDashboardModel;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Filament\Admin\Resources\IoTDashboards\IoTDashboardResource;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -60,6 +66,12 @@ class IoTDashboard extends Page
     private const int LEGACY_GRID_STACK_COLUMNS = 4;
 
     private const int DEFAULT_WIDGET_GRID_COLUMNS = 6;
+
+    private const string WIDGET_TYPE_LINE_CHART = 'line_chart';
+
+    private const string WIDGET_TYPE_BAR_CHART = 'bar_chart';
+
+    private const string WIDGET_TYPE_GAUGE_CHART = 'gauge_chart';
 
     public function mount(): void
     {
@@ -124,7 +136,8 @@ class IoTDashboard extends Page
                 ->icon(Heroicon::OutlinedRectangleStack)
                 ->url(IoTDashboardResource::getUrl()),
 
-            Action::make('addLineWidget')
+            ActionGroup::make([
+                Action::make('addLineWidget')
                 ->label('Add Line Widget')
                 ->icon(Heroicon::OutlinedPresentationChartLine)
                 ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
@@ -155,7 +168,7 @@ class IoTDashboard extends Page
                         'iot_dashboard_id' => $dashboard->id,
                         'device_id' => $resolved['device']->id,
                         'schema_version_topic_id' => $resolved['topic']->id,
-                        'type' => 'line_chart',
+                        'type' => self::WIDGET_TYPE_LINE_CHART,
                         'title' => trim((string) $data['title']),
                         'series_config' => $resolved['series_configuration'],
                         'options' => $this->buildWidgetOptions($data),
@@ -176,6 +189,131 @@ class IoTDashboard extends Page
                     $this->refreshDashboardComputedProperties();
                     $this->dispatchWidgetBootstrapEvent();
                 }),
+
+                Action::make('addBarWidget')
+                ->label('Add Bar Widget')
+                ->icon(Heroicon::OutlinedPresentationChartLine)
+                ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                ->slideOver()
+                ->schema($this->barWidgetFormSchema())
+                ->action(function (array $data): void {
+                    $dashboard = $this->selectedDashboard();
+
+                    if (! $dashboard instanceof IoTDashboardModel) {
+                        Notification::make()
+                            ->title('Select a dashboard first')
+                            ->warning()
+                            ->send();
+
+                        return;
+                    }
+
+                    $parameterKey = is_string($data['parameter_key'] ?? null)
+                        ? (string) $data['parameter_key']
+                        : null;
+                    $resolved = $this->resolveWidgetInput($dashboard, [
+                        ...$data,
+                        'parameter_keys' => $parameterKey === null ? [] : [$parameterKey],
+                    ]);
+
+                    if ($resolved === null) {
+                        return;
+                    }
+
+                    $maxSequence = $dashboard->widgets()->max('sequence');
+                    $nextSequence = (is_numeric($maxSequence) ? (int) $maxSequence : 0) + 1;
+
+                    IoTDashboardWidget::query()->create([
+                        'iot_dashboard_id' => $dashboard->id,
+                        'device_id' => $resolved['device']->id,
+                        'schema_version_topic_id' => $resolved['topic']->id,
+                        'type' => self::WIDGET_TYPE_BAR_CHART,
+                        'title' => trim((string) $data['title']),
+                        'series_config' => $resolved['series_configuration'],
+                        'options' => $this->buildWidgetOptions([
+                            ...$data,
+                            'bar_interval' => $this->sanitizeBarInterval($data['bar_interval'] ?? BarInterval::Hourly->value)->value,
+                        ]),
+                        'use_websocket' => (bool) ($data['use_websocket'] ?? false),
+                        'use_polling' => (bool) ($data['use_polling'] ?? true),
+                        'polling_interval_seconds' => (int) ($data['polling_interval_seconds'] ?? 60),
+                        'lookback_minutes' => (int) ($data['lookback_minutes'] ?? 43200),
+                        'max_points' => (int) ($data['max_points'] ?? 31),
+                        'sequence' => $nextSequence,
+                    ]);
+
+                    Notification::make()
+                        ->title('Bar widget added')
+                        ->body('The chart now aggregates energy consumption by hour/day.')
+                        ->success()
+                        ->send();
+
+                    $this->refreshDashboardComputedProperties();
+                    $this->dispatchWidgetBootstrapEvent();
+                }),
+
+                Action::make('addGaugeWidget')
+                ->label('Add Gauge Widget')
+                ->icon(Heroicon::OutlinedPresentationChartLine)
+                ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                ->slideOver()
+                ->schema($this->gaugeWidgetFormSchema())
+                ->action(function (array $data): void {
+                    $dashboard = $this->selectedDashboard();
+
+                    if (! $dashboard instanceof IoTDashboardModel) {
+                        Notification::make()
+                            ->title('Select a dashboard first')
+                            ->warning()
+                            ->send();
+
+                        return;
+                    }
+
+                    $parameterKey = is_string($data['parameter_key'] ?? null)
+                        ? (string) $data['parameter_key']
+                        : null;
+                    $resolved = $this->resolveWidgetInput($dashboard, [
+                        ...$data,
+                        'parameter_keys' => $parameterKey === null ? [] : [$parameterKey],
+                    ]);
+
+                    if ($resolved === null) {
+                        return;
+                    }
+
+                    $maxSequence = $dashboard->widgets()->max('sequence');
+                    $nextSequence = (is_numeric($maxSequence) ? (int) $maxSequence : 0) + 1;
+
+                    IoTDashboardWidget::query()->create([
+                        'iot_dashboard_id' => $dashboard->id,
+                        'device_id' => $resolved['device']->id,
+                        'schema_version_topic_id' => $resolved['topic']->id,
+                        'type' => self::WIDGET_TYPE_GAUGE_CHART,
+                        'title' => trim((string) $data['title']),
+                        'series_config' => $resolved['series_configuration'],
+                        'options' => $this->buildWidgetOptions($data),
+                        'use_websocket' => (bool) ($data['use_websocket'] ?? true),
+                        'use_polling' => (bool) ($data['use_polling'] ?? true),
+                        'polling_interval_seconds' => (int) ($data['polling_interval_seconds'] ?? 10),
+                        'lookback_minutes' => (int) ($data['lookback_minutes'] ?? 180),
+                        'max_points' => 1,
+                        'sequence' => $nextSequence,
+                    ]);
+
+                    Notification::make()
+                        ->title('Gauge widget added')
+                        ->body('The gauge now displays a live numeric telemetry value.')
+                        ->success()
+                        ->send();
+
+                    $this->refreshDashboardComputedProperties();
+                    $this->dispatchWidgetBootstrapEvent();
+                }),
+            ])
+                ->label('Add Widget')
+                ->icon(Heroicon::OutlinedPlus)
+                ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel),
         ];
     }
 
@@ -376,6 +514,11 @@ class IoTDashboard extends Page
                     'polling_interval_seconds' => (int) $widget->polling_interval_seconds,
                     'lookback_minutes' => (int) $widget->lookback_minutes,
                     'max_points' => (int) $widget->max_points,
+                    'bar_interval' => $this->resolveWidgetBarInterval($widget)->value,
+                    'gauge_style' => $this->resolveWidgetGaugeStyle($widget)->value,
+                    'gauge_min' => $this->resolveWidgetGaugeMinimum($widget),
+                    'gauge_max' => $this->resolveWidgetGaugeMaximum($widget),
+                    'gauge_ranges' => $this->resolveWidgetGaugeRanges($widget),
                     'layout' => $this->resolveWidgetLayout($widget),
                 ];
             })
@@ -444,6 +587,208 @@ class IoTDashboard extends Page
                         ->minValue(20)
                         ->maxValue(1000)
                         ->default(240),
+                ]),
+            Grid::make(2)
+                ->schema([
+                    Select::make('grid_columns')
+                        ->label('Widget width')
+                        ->options(fn (): array => $this->gridColumnOptions())
+                        ->default((string) self::DEFAULT_WIDGET_GRID_COLUMNS)
+                        ->required(),
+                    TextInput::make('card_height_px')
+                        ->label('Initial height (px)')
+                        ->integer()
+                        ->minValue(260)
+                        ->maxValue(900)
+                        ->default(360)
+                        ->required(),
+                ]),
+        ];
+    }
+
+    /**
+     * @return array<int, \Filament\Actions\Action|\Filament\Actions\ActionGroup|\Filament\Schemas\Components\Component>
+     */
+    private function barWidgetFormSchema(): array
+    {
+        return [
+            TextInput::make('title')
+                ->label('Widget title')
+                ->required()
+                ->default('Energy Consumption')
+                ->maxLength(255),
+            Select::make('device_id')
+                ->label('Device')
+                ->options(fn (): array => $this->deviceOptionsForDashboard())
+                ->helperText('Select a device first. Topic options are filtered by this device schema.')
+                ->searchable()
+                ->required()
+                ->live(),
+            Select::make('schema_version_topic_id')
+                ->label('Publish topic')
+                ->options(fn (Get $get): array => $this->topicOptionsForDevice($get('device_id')))
+                ->searchable()
+                ->required()
+                ->live(),
+            Select::make('parameter_key')
+                ->label('Counter parameter')
+                ->options(fn (Get $get): array => $this->counterParameterOptionsForTopic($get('schema_version_topic_id')))
+                ->helperText('Choose the cumulative energy counter parameter (for example, total_energy_kwh).')
+                ->required(),
+            Select::make('bar_interval')
+                ->label('Aggregation interval')
+                ->options(BarInterval::class)
+                ->default(BarInterval::Hourly->value)
+                ->required(),
+            Grid::make(2)
+                ->schema([
+                    Toggle::make('use_websocket')
+                        ->label('Realtime WebSocket updates')
+                        ->default(false),
+                    Toggle::make('use_polling')
+                        ->label('Polling fallback')
+                        ->default(true)
+                        ->live(),
+                ]),
+            Grid::make(3)
+                ->schema([
+                    TextInput::make('polling_interval_seconds')
+                        ->label('Polling interval (s)')
+                        ->integer()
+                        ->minValue(5)
+                        ->maxValue(300)
+                        ->default(60)
+                        ->visible(fn (Get $get): bool => (bool) $get('use_polling')),
+                    TextInput::make('lookback_minutes')
+                        ->label('Lookback window (min)')
+                        ->integer()
+                        ->minValue(60)
+                        ->maxValue(129600)
+                        ->default(43200),
+                    TextInput::make('max_points')
+                        ->label('Max bars')
+                        ->integer()
+                        ->minValue(6)
+                        ->maxValue(1000)
+                        ->default(31),
+                ]),
+            Grid::make(2)
+                ->schema([
+                    Select::make('grid_columns')
+                        ->label('Widget width')
+                        ->options(fn (): array => $this->gridColumnOptions())
+                        ->default((string) self::DEFAULT_WIDGET_GRID_COLUMNS)
+                        ->required(),
+                    TextInput::make('card_height_px')
+                        ->label('Initial height (px)')
+                        ->integer()
+                        ->minValue(260)
+                        ->maxValue(900)
+                        ->default(360)
+                        ->required(),
+                ]),
+        ];
+    }
+
+    /**
+     * @return array<int, \Filament\Actions\Action|\Filament\Actions\ActionGroup|\Filament\Schemas\Components\Component>
+     */
+    private function gaugeWidgetFormSchema(): array
+    {
+        return [
+            TextInput::make('title')
+                ->label('Widget title')
+                ->required()
+                ->default('Gauge')
+                ->maxLength(255),
+            Select::make('device_id')
+                ->label('Device')
+                ->options(fn (): array => $this->deviceOptionsForDashboard())
+                ->helperText('Select a device first. Topic options are filtered by this device schema.')
+                ->searchable()
+                ->required()
+                ->live(),
+            Select::make('schema_version_topic_id')
+                ->label('Publish topic')
+                ->options(fn (Get $get): array => $this->topicOptionsForDevice($get('device_id')))
+                ->searchable()
+                ->required()
+                ->live(),
+            Select::make('parameter_key')
+                ->label('Gauge parameter')
+                ->options(fn (Get $get): array => $this->numericParameterOptionsForTopic($get('schema_version_topic_id')))
+                ->helperText('Choose a numeric parameter to display.')
+                ->required(),
+            Select::make('gauge_style')
+                ->label('Gauge style')
+                ->options(GaugeStyle::class)
+                ->default(GaugeStyle::Classic->value)
+                ->required(),
+            Grid::make(2)
+                ->schema([
+                    TextInput::make('gauge_min')
+                        ->label('Minimum')
+                        ->numeric()
+                        ->default(0)
+                        ->required(),
+                    TextInput::make('gauge_max')
+                        ->label('Maximum')
+                        ->numeric()
+                        ->default(100)
+                        ->required(),
+                ]),
+            Repeater::make('gauge_ranges')
+                ->label('Color ranges')
+                ->default($this->defaultGaugeRanges())
+                ->minItems(1)
+                ->maxItems(10)
+                ->reorderable()
+                ->schema([
+                    TextInput::make('from')
+                        ->label('From')
+                        ->numeric()
+                        ->required(),
+                    TextInput::make('to')
+                        ->label('To')
+                        ->numeric()
+                        ->required(),
+                    ColorPicker::make('color')
+                        ->label('Color')
+                        ->required(),
+                ])
+                ->columns(3)
+                ->columnSpanFull(),
+            Grid::make(2)
+                ->schema([
+                    Toggle::make('use_websocket')
+                        ->label('Realtime WebSocket updates')
+                        ->default(true),
+                    Toggle::make('use_polling')
+                        ->label('Polling fallback')
+                        ->default(true)
+                        ->live(),
+                ]),
+            Grid::make(3)
+                ->schema([
+                    TextInput::make('polling_interval_seconds')
+                        ->label('Polling interval (s)')
+                        ->integer()
+                        ->minValue(2)
+                        ->maxValue(300)
+                        ->default(10)
+                        ->visible(fn (Get $get): bool => (bool) $get('use_polling')),
+                    TextInput::make('lookback_minutes')
+                        ->label('Lookback window (min)')
+                        ->integer()
+                        ->minValue(5)
+                        ->maxValue(1440)
+                        ->default(180),
+                    TextInput::make('max_points')
+                        ->label('Max points')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(10)
+                        ->default(1),
                 ]),
             Grid::make(2)
                 ->schema([
@@ -554,6 +899,57 @@ class IoTDashboard extends Page
     }
 
     /**
+     * @return array<int|string, string>
+     */
+    private function counterParameterOptionsForTopic(mixed $topicId): array
+    {
+        if (! is_numeric($topicId)) {
+            return [];
+        }
+
+        $query = ParameterDefinition::query()
+            ->where('schema_version_topic_id', (int) $topicId)
+            ->where('is_active', true)
+            ->whereIn('type', [ParameterDataType::Integer->value, ParameterDataType::Decimal->value])
+            ->where('validation_rules->category', 'counter')
+            ->orderBy('sequence');
+
+        $counterParameters = $query
+            ->get(['key', 'label'])
+            ->mapWithKeys(fn (ParameterDefinition $parameter): array => [
+                $parameter->key => "{$parameter->label} ({$parameter->key})",
+            ])
+            ->all();
+
+        if ($counterParameters !== []) {
+            return $counterParameters;
+        }
+
+        return $this->parameterOptionsForTopic($topicId);
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
+    private function numericParameterOptionsForTopic(mixed $topicId): array
+    {
+        if (! is_numeric($topicId)) {
+            return [];
+        }
+
+        return ParameterDefinition::query()
+            ->where('schema_version_topic_id', (int) $topicId)
+            ->where('is_active', true)
+            ->whereIn('type', [ParameterDataType::Integer->value, ParameterDataType::Decimal->value])
+            ->orderBy('sequence')
+            ->get(['key', 'label'])
+            ->mapWithKeys(fn (ParameterDefinition $parameter): array => [
+                $parameter->key => "{$parameter->label} ({$parameter->key})",
+            ])
+            ->all();
+    }
+
+    /**
      * @param  array<string, mixed>  $arguments
      */
     private function resolveWidgetFromArguments(array $arguments): ?IoTDashboardWidget
@@ -639,7 +1035,7 @@ class IoTDashboard extends Page
         if ($seriesConfiguration === []) {
             Notification::make()
                 ->title('No series selected')
-                ->body('Choose at least one parameter for the line chart.')
+                ->body('Choose at least one parameter for the chart.')
                 ->warning()
                 ->send();
 
@@ -659,7 +1055,12 @@ class IoTDashboard extends Page
      *     layout: array{x: int, y: int, w: int, h: int},
      *     layout_columns: int,
      *     grid_columns: int,
-     *     card_height_px: int
+     *     card_height_px: int,
+     *     bar_interval?: string,
+     *     gauge_style?: string,
+     *     gauge_min?: int|float,
+     *     gauge_max?: int|float,
+     *     gauge_ranges?: array<int, array{from: int|float, to: int|float, color: string}>
      * }
      */
     private function buildWidgetOptions(array $data, ?IoTDashboardWidget $widget = null): array
@@ -671,8 +1072,13 @@ class IoTDashboard extends Page
         $height = $this->gridRowsFromCardHeight(
             $data['card_height_px'] ?? ($defaultLayout['h'] * self::GRID_STACK_CELL_HEIGHT),
         );
+        $barInterval = $this->sanitizeBarInterval(
+            $data['bar_interval']
+            ?? data_get($widget?->options, 'bar_interval')
+            ?? BarInterval::Hourly->value,
+        );
 
-        return [
+        $options = [
             'layout' => [
                 'x' => $defaultLayout['x'],
                 'y' => $defaultLayout['y'],
@@ -683,6 +1089,30 @@ class IoTDashboard extends Page
             'grid_columns' => $width,
             'card_height_px' => $height * self::GRID_STACK_CELL_HEIGHT,
         ];
+
+        if ($widget?->type === self::WIDGET_TYPE_BAR_CHART || array_key_exists('bar_interval', $data)) {
+            $options['bar_interval'] = $barInterval->value;
+        }
+
+        if ($widget?->type === self::WIDGET_TYPE_GAUGE_CHART || array_key_exists('gauge_style', $data)) {
+            $options['gauge_style'] = $this->sanitizeGaugeStyle(
+                $data['gauge_style'] ?? data_get($widget?->options, 'gauge_style'),
+            )->value;
+            $options['gauge_min'] = $this->sanitizeGaugeMinimum(
+                $data['gauge_min'] ?? data_get($widget?->options, 'gauge_min'),
+            );
+            $options['gauge_max'] = $this->sanitizeGaugeMaximum(
+                $data['gauge_max'] ?? data_get($widget?->options, 'gauge_max'),
+                $options['gauge_min'],
+            );
+            $options['gauge_ranges'] = $this->sanitizeGaugeRanges(
+                $data['gauge_ranges'] ?? data_get($widget?->options, 'gauge_ranges'),
+                $options['gauge_min'],
+                $options['gauge_max'],
+            );
+        }
+
+        return $options;
     }
 
     /**
@@ -716,6 +1146,139 @@ class IoTDashboard extends Page
         }
 
         return $series;
+    }
+
+    private function resolveWidgetBarInterval(IoTDashboardWidget $widget): BarInterval
+    {
+        return $this->sanitizeBarInterval(data_get($widget->options, 'bar_interval'));
+    }
+
+    private function sanitizeBarInterval(mixed $value): BarInterval
+    {
+        if (is_string($value)) {
+            $interval = BarInterval::tryFrom(strtolower(trim($value)));
+
+            if ($interval instanceof BarInterval) {
+                return $interval;
+            }
+        }
+
+        return BarInterval::Hourly;
+    }
+
+    private function resolveWidgetGaugeStyle(IoTDashboardWidget $widget): GaugeStyle
+    {
+        return $this->sanitizeGaugeStyle(data_get($widget->options, 'gauge_style'));
+    }
+
+    private function resolveWidgetGaugeMinimum(IoTDashboardWidget $widget): float
+    {
+        return $this->sanitizeGaugeMinimum(data_get($widget->options, 'gauge_min'));
+    }
+
+    private function resolveWidgetGaugeMaximum(IoTDashboardWidget $widget): float
+    {
+        $minimum = $this->resolveWidgetGaugeMinimum($widget);
+
+        return $this->sanitizeGaugeMaximum(data_get($widget->options, 'gauge_max'), $minimum);
+    }
+
+    /**
+     * @return array<int, array{from: int|float, to: int|float, color: string}>
+     */
+    private function resolveWidgetGaugeRanges(IoTDashboardWidget $widget): array
+    {
+        $minimum = $this->resolveWidgetGaugeMinimum($widget);
+        $maximum = $this->resolveWidgetGaugeMaximum($widget);
+
+        return $this->sanitizeGaugeRanges(data_get($widget->options, 'gauge_ranges'), $minimum, $maximum);
+    }
+
+    private function sanitizeGaugeStyle(mixed $value): GaugeStyle
+    {
+        if (is_string($value)) {
+            $style = GaugeStyle::tryFrom(strtolower(trim($value)));
+
+            if ($style instanceof GaugeStyle) {
+                return $style;
+            }
+        }
+
+        return GaugeStyle::Classic;
+    }
+
+    private function sanitizeGaugeMinimum(mixed $value): float
+    {
+        return is_numeric($value) ? (float) $value : 0.0;
+    }
+
+    private function sanitizeGaugeMaximum(mixed $value, float $minimum): float
+    {
+        if (! is_numeric($value)) {
+            return max($minimum + 1, 100.0);
+        }
+
+        $maximum = (float) $value;
+
+        return $maximum > $minimum ? $maximum : $minimum + 1;
+    }
+
+    /**
+     * @return array<int, array{from: int|float, to: int|float, color: string}>
+     */
+    private function sanitizeGaugeRanges(mixed $ranges, float $minimum, float $maximum): array
+    {
+        if (! is_array($ranges)) {
+            return $this->defaultGaugeRanges();
+        }
+
+        $sanitized = [];
+
+        foreach ($ranges as $range) {
+            if (! is_array($range)) {
+                continue;
+            }
+
+            $from = isset($range['from']) && is_numeric($range['from']) ? (float) $range['from'] : null;
+            $to = isset($range['to']) && is_numeric($range['to']) ? (float) $range['to'] : null;
+            $color = is_string($range['color'] ?? null) && trim((string) $range['color']) !== ''
+                ? (string) $range['color']
+                : null;
+
+            if ($from === null || $to === null || $color === null) {
+                continue;
+            }
+
+            if ($to <= $from) {
+                continue;
+            }
+
+            $sanitized[] = [
+                'from' => min(max($from, $minimum), $maximum),
+                'to' => min(max($to, $minimum), $maximum),
+                'color' => $color,
+            ];
+        }
+
+        if ($sanitized === []) {
+            return $this->defaultGaugeRanges();
+        }
+
+        usort($sanitized, fn (array $left, array $right): int => ($left['from'] <=> $right['from']));
+
+        return $sanitized;
+    }
+
+    /**
+     * @return array<int, array{from: int|float, to: int|float, color: string}>
+     */
+    private function defaultGaugeRanges(): array
+    {
+        return [
+            ['from' => 0, 'to' => 50, 'color' => '#10b981'],
+            ['from' => 50, 'to' => 80, 'color' => '#f59e0b'],
+            ['from' => 80, 'to' => 100, 'color' => '#ef4444'],
+        ];
     }
 
     private function sanitizeGridColumns(mixed $value): int

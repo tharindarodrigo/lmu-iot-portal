@@ -7,6 +7,7 @@ namespace Database\Seeders;
 use App\Domain\DeviceManagement\Enums\ProtocolType;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceManagement\ValueObjects\Protocol\MqttProtocolConfig;
+use App\Domain\DeviceSchema\Enums\MetricUnit;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Enums\TopicPurpose;
@@ -243,55 +244,104 @@ class DeviceSchemaSeeder extends Seeder
             'direction' => TopicDirection::Publish,
             'purpose' => TopicPurpose::Telemetry,
             'suffix' => 'telemetry',
-            'description' => 'Voltage and power readings',
+            'description' => 'Three-phase voltages and currents with cumulative energy readings',
             'qos' => 1,
             'retain' => false,
             'sequence' => 0,
         ]);
 
+        ParameterDefinition::query()
+            ->where('schema_version_topic_id', $energyTelemetryTopic->id)
+            ->whereIn('key', ['power_l1', 'power_l2', 'power_l3'])
+            ->delete();
+
+        DerivedParameterDefinition::query()
+            ->where('device_schema_version_id', $energyVersion->id)
+            ->where('key', 'total_power')
+            ->delete();
+
         foreach (['V1', 'V2', 'V3'] as $index => $key) {
-            ParameterDefinition::firstOrCreate([
+            ParameterDefinition::updateOrCreate([
                 'schema_version_topic_id' => $energyTelemetryTopic->id,
                 'key' => $key,
             ], [
                 'label' => "Voltage {$key}",
                 'json_path' => "voltages.{$key}",
                 'type' => ParameterDataType::Decimal,
-                'unit' => 'Volts',
+                'unit' => MetricUnit::Volts->value,
                 'required' => true,
                 'is_critical' => true,
-                'validation_rules' => ['min' => 0, 'max' => 480],
+                'validation_rules' => ['min' => 180, 'max' => 280, 'category' => 'static'],
                 'validation_error_code' => 'VOLTAGE_RANGE',
                 'sequence' => $index + 1,
                 'is_active' => true,
             ]);
         }
 
-        foreach (['power_l1', 'power_l2', 'power_l3'] as $index => $key) {
-            ParameterDefinition::firstOrCreate([
+        foreach (['A1', 'A2', 'A3'] as $index => $key) {
+            ParameterDefinition::updateOrCreate([
                 'schema_version_topic_id' => $energyTelemetryTopic->id,
                 'key' => $key,
             ], [
-                'label' => "Power {$key}",
-                'json_path' => "power.{$key}",
+                'label' => "Current {$key}",
+                'json_path' => "currents.{$key}",
                 'type' => ParameterDataType::Decimal,
-                'unit' => 'Watts',
+                'unit' => MetricUnit::Amperes->value,
                 'required' => true,
                 'is_critical' => true,
-                'validation_rules' => ['min' => 0],
-                'validation_error_code' => 'POWER_RANGE',
+                'validation_rules' => ['min' => 0, 'max' => 120, 'category' => 'static'],
+                'validation_error_code' => 'CURRENT_RANGE',
                 'sequence' => $index + 4,
                 'is_active' => true,
             ]);
         }
 
-        DerivedParameterDefinition::firstOrCreate([
+        ParameterDefinition::updateOrCreate([
+            'schema_version_topic_id' => $energyTelemetryTopic->id,
+            'key' => 'total_energy_kwh',
+        ], [
+            'label' => 'Total Energy',
+            'json_path' => 'energy.total_energy_kwh',
+            'type' => ParameterDataType::Decimal,
+            'unit' => MetricUnit::KilowattHours->value,
+            'required' => true,
+            'is_critical' => true,
+            'validation_rules' => [
+                'min' => 0,
+                'category' => 'counter',
+                'increment_min' => 0.08,
+                'increment_max' => 0.45,
+            ],
+            'validation_error_code' => 'ENERGY_COUNTER_RANGE',
+            'sequence' => 7,
+            'is_active' => true,
+        ]);
+
+        ParameterDefinition::updateOrCreate([
+            'schema_version_topic_id' => $energyTelemetryTopic->id,
+            'key' => 'meter_state',
+        ], [
+            'label' => 'Meter State',
+            'json_path' => 'status.meter_state',
+            'type' => ParameterDataType::String,
+            'required' => true,
+            'is_critical' => false,
+            'validation_rules' => [
+                'category' => 'enum',
+                'enum' => ['idle', 'normal', 'fault'],
+            ],
+            'validation_error_code' => 'METER_STATE_INVALID',
+            'sequence' => 8,
+            'is_active' => true,
+        ]);
+
+        DerivedParameterDefinition::updateOrCreate([
             'device_schema_version_id' => $energyVersion->id,
             'key' => 'avg_voltage',
         ], [
             'label' => 'Average Voltage',
             'data_type' => ParameterDataType::Decimal,
-            'unit' => 'Volts',
+            'unit' => MetricUnit::Volts->value,
             'expression' => [
                 '/' => [
                     ['+' => [
@@ -306,22 +356,22 @@ class DeviceSchemaSeeder extends Seeder
             'json_path' => 'computed.avg_voltage',
         ]);
 
-        DerivedParameterDefinition::firstOrCreate([
+        DerivedParameterDefinition::updateOrCreate([
             'device_schema_version_id' => $energyVersion->id,
-            'key' => 'total_power',
+            'key' => 'total_current',
         ], [
-            'label' => 'Total Power',
+            'label' => 'Total Current',
             'data_type' => ParameterDataType::Decimal,
-            'unit' => 'Watts',
+            'unit' => MetricUnit::Amperes->value,
             'expression' => [
                 '+' => [
-                    ['var' => 'power_l1'],
-                    ['var' => 'power_l2'],
-                    ['var' => 'power_l3'],
+                    ['var' => 'A1'],
+                    ['var' => 'A2'],
+                    ['var' => 'A3'],
                 ],
             ],
-            'dependencies' => ['power_l1', 'power_l2', 'power_l3'],
-            'json_path' => 'computed.total_power',
+            'dependencies' => ['A1', 'A2', 'A3'],
+            'json_path' => 'computed.total_current',
         ]);
 
         $this->seedSmartFan();

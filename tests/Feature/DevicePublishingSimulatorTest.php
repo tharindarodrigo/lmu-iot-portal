@@ -106,3 +106,102 @@ it('simulates publishing and emits TelemetryIncoming events', function (): void 
 
     Event::assertDispatchedTimes(TelemetryIncoming::class, 3);
 });
+
+it('increments counter telemetry values across simulation iterations', function (): void {
+    $schemaVersion = DeviceSchemaVersion::factory()->create();
+
+    $topic = SchemaVersionTopic::factory()->publish()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'telemetry',
+        'label' => 'Telemetry',
+        'suffix' => 'telemetry',
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'total_energy_kwh',
+        'json_path' => 'energy.total_energy_kwh',
+        'type' => ParameterDataType::Decimal,
+        'default_value' => 100.0,
+        'validation_rules' => [
+            'category' => 'counter',
+            'increment_min' => 0.25,
+            'increment_max' => 0.25,
+        ],
+        'required' => true,
+        'is_critical' => false,
+        'mutation_expression' => null,
+        'sequence' => 1,
+        'is_active' => true,
+    ]);
+
+    $deviceType = DeviceType::factory()->mqtt()->create([
+        'protocol_config' => [
+            'broker_host' => 'localhost',
+            'broker_port' => 1883,
+            'username' => null,
+            'password' => null,
+            'use_tls' => false,
+            'base_topic' => 'devices',
+        ],
+    ]);
+
+    $device = Device::factory()->create([
+        'device_type_id' => $deviceType->id,
+        'device_schema_version_id' => $schemaVersion->id,
+        'external_id' => 'energy-meter-01',
+    ]);
+
+    $published = [];
+
+    $fakePublisher = new class($published) implements NatsPublisher
+    {
+        /** @var array<int, array{subject: string, payload: string}> */
+        public array $published;
+
+        public function __construct(array &$published)
+        {
+            $this->published = &$published;
+        }
+
+        public function publish(string $subject, string $payload): void
+        {
+            $this->published[] = [
+                'subject' => $subject,
+                'payload' => $payload,
+            ];
+        }
+    };
+
+    $fakeFactory = new class($fakePublisher) implements NatsPublisherFactory
+    {
+        public function __construct(private NatsPublisher $publisher) {}
+
+        public function make(string $host, int $port): NatsPublisher
+        {
+            return $this->publisher;
+        }
+    };
+
+    app()->instance(NatsPublisherFactory::class, $fakeFactory);
+
+    $capturedValues = [];
+
+    /** @var DevicePublishingSimulator $simulator */
+    $simulator = app(DevicePublishingSimulator::class);
+
+    $simulator->simulate(
+        device: $device,
+        count: 4,
+        intervalSeconds: 0,
+        schemaVersionTopicId: $topic->id,
+        onBeforePublish: function (int $iteration, string $mqttTopic, array $payload, SchemaVersionTopic $schemaTopic) use (&$capturedValues): void {
+            $capturedValues[] = (float) data_get($payload, 'energy.total_energy_kwh');
+        },
+    );
+
+    expect($capturedValues)->toHaveCount(4)
+        ->and($capturedValues[0])->toBeLessThan($capturedValues[1])
+        ->and($capturedValues[1])->toBeLessThan($capturedValues[2])
+        ->and($capturedValues[2])->toBeLessThan($capturedValues[3]);
+});
