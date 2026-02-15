@@ -18,6 +18,7 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -325,7 +326,7 @@ class IoTDashboard extends Page
             ->color('gray')
             ->size('sm')
             ->slideOver()
-            ->schema($this->lineWidgetFormSchema())
+            ->schema($this->editWidgetFormSchema())
             ->fillForm(function (array $arguments): array {
                 $widget = $this->resolveWidgetFromArguments($arguments);
 
@@ -336,6 +337,7 @@ class IoTDashboard extends Page
                 $layout = $this->resolveWidgetLayout($widget);
 
                 return [
+                    'widget_type' => $widget->type,
                     'title' => $widget->title,
                     'device_id' => (string) $widget->device_id,
                     'schema_version_topic_id' => (string) $widget->schema_version_topic_id,
@@ -343,6 +345,9 @@ class IoTDashboard extends Page
                         ->pluck('key')
                         ->values()
                         ->all(),
+                    'parameter_key' => collect($widget->resolvedSeriesConfig())
+                        ->pluck('key')
+                        ->first(),
                     'use_websocket' => (bool) $widget->use_websocket,
                     'use_polling' => (bool) $widget->use_polling,
                     'polling_interval_seconds' => (int) $widget->polling_interval_seconds,
@@ -350,6 +355,11 @@ class IoTDashboard extends Page
                     'max_points' => (int) $widget->max_points,
                     'grid_columns' => (string) $layout['w'],
                     'card_height_px' => $layout['h'] * self::GRID_STACK_CELL_HEIGHT,
+                    'bar_interval' => $this->resolveWidgetBarInterval($widget)->value,
+                    'gauge_style' => $this->resolveWidgetGaugeStyle($widget)->value,
+                    'gauge_min' => $this->resolveWidgetGaugeMinimum($widget),
+                    'gauge_max' => $this->resolveWidgetGaugeMaximum($widget),
+                    'gauge_ranges' => $this->resolveWidgetGaugeRanges($widget),
                 ];
             })
             ->action(function (array $data, array $arguments): void {
@@ -370,7 +380,7 @@ class IoTDashboard extends Page
                     return;
                 }
 
-                $resolved = $this->resolveWidgetInput($dashboard, $data);
+                $resolved = $this->resolveWidgetInput($dashboard, $this->normalizeWidgetActionInput($widget, $data));
 
                 if ($resolved === null) {
                     return;
@@ -397,6 +407,148 @@ class IoTDashboard extends Page
                 $this->refreshDashboardComputedProperties();
                 $this->dispatchWidgetBootstrapEvent();
             });
+    }
+
+    /**
+     * @return array<int, \Filament\Actions\Action|\Filament\Actions\ActionGroup|\Filament\Schemas\Components\Component>
+     */
+    private function editWidgetFormSchema(): array
+    {
+        return [
+            Hidden::make('widget_type')
+                ->default(self::WIDGET_TYPE_LINE_CHART),
+            TextInput::make('title')
+                ->label('Widget title')
+                ->required()
+                ->maxLength(255),
+            Select::make('device_id')
+                ->label('Device')
+                ->options(fn (): array => $this->deviceOptionsForDashboard())
+                ->helperText('Select a device first. Topic options are filtered by this device schema.')
+                ->searchable()
+                ->required()
+                ->live(),
+            Select::make('schema_version_topic_id')
+                ->label('Publish topic')
+                ->options(fn (Get $get): array => $this->topicOptionsForDevice($get('device_id')))
+                ->searchable()
+                ->required()
+                ->live(),
+            Select::make('parameter_keys')
+                ->label('Series parameters')
+                ->multiple()
+                ->options(fn (Get $get): array => $this->parameterOptionsForTopic($get('schema_version_topic_id')))
+                ->helperText('Choose one or more parameters. Colors are assigned automatically.')
+                ->visible(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_LINE_CHART)
+                ->required(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_LINE_CHART),
+            Select::make('parameter_key')
+                ->label('Parameter')
+                ->options(function (Get $get): array {
+                    $topicId = $get('schema_version_topic_id');
+
+                    if ($get('widget_type') === self::WIDGET_TYPE_BAR_CHART) {
+                        return $this->counterParameterOptionsForTopic($topicId);
+                    }
+
+                    return $this->numericParameterOptionsForTopic($topicId);
+                })
+                ->visible(fn (Get $get): bool => in_array($get('widget_type'), [
+                    self::WIDGET_TYPE_BAR_CHART,
+                    self::WIDGET_TYPE_GAUGE_CHART,
+                ], true))
+                ->required(fn (Get $get): bool => in_array($get('widget_type'), [
+                    self::WIDGET_TYPE_BAR_CHART,
+                    self::WIDGET_TYPE_GAUGE_CHART,
+                ], true)),
+            Select::make('bar_interval')
+                ->label('Aggregation interval')
+                ->options(BarInterval::class)
+                ->visible(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_BAR_CHART)
+                ->required(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_BAR_CHART)
+                ->dehydrated(),
+            Select::make('gauge_style')
+                ->label('Gauge style')
+                ->options(GaugeStyle::class)
+                ->visible(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_GAUGE_CHART)
+                ->required(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_GAUGE_CHART),
+            Grid::make(2)
+                ->schema([
+                    TextInput::make('gauge_min')
+                        ->label('Minimum')
+                        ->numeric()
+                        ->required(),
+                    TextInput::make('gauge_max')
+                        ->label('Maximum')
+                        ->numeric()
+                        ->required(),
+                ])
+                ->visible(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_GAUGE_CHART),
+            Repeater::make('gauge_ranges')
+                ->label('Color ranges')
+                ->minItems(1)
+                ->maxItems(10)
+                ->reorderable()
+                ->schema([
+                    TextInput::make('from')
+                        ->label('From')
+                        ->numeric()
+                        ->required(),
+                    TextInput::make('to')
+                        ->label('To')
+                        ->numeric()
+                        ->required(),
+                    ColorPicker::make('color')
+                        ->label('Color')
+                        ->required(),
+                ])
+                ->columns(3)
+                ->columnSpanFull()
+                ->visible(fn (Get $get): bool => $get('widget_type') === self::WIDGET_TYPE_GAUGE_CHART),
+            Grid::make(2)
+                ->schema([
+                    Toggle::make('use_websocket')
+                        ->label('Realtime WebSocket updates')
+                        ->default(true),
+                    Toggle::make('use_polling')
+                        ->label('Polling fallback')
+                        ->default(true)
+                        ->live(),
+                ]),
+            Grid::make(3)
+                ->schema([
+                    TextInput::make('polling_interval_seconds')
+                        ->label('Polling interval (s)')
+                        ->integer()
+                        ->minValue(2)
+                        ->maxValue(300)
+                        ->visible(fn (Get $get): bool => (bool) $get('use_polling')),
+                    TextInput::make('lookback_minutes')
+                        ->label('Lookback window (min)')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(129600)
+                        ->required(),
+                    TextInput::make('max_points')
+                        ->label('Max points')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(1000)
+                        ->required(),
+                ]),
+            Grid::make(2)
+                ->schema([
+                    Select::make('grid_columns')
+                        ->label('Widget width')
+                        ->options(fn (): array => $this->gridColumnOptions())
+                        ->required(),
+                    TextInput::make('card_height_px')
+                        ->label('Initial height (px)')
+                        ->integer()
+                        ->minValue(260)
+                        ->maxValue(900)
+                        ->required(),
+                ]),
+        ];
     }
 
     public function deleteWidgetAction(): Action
@@ -1046,6 +1198,26 @@ class IoTDashboard extends Page
             'device' => $device,
             'topic' => $topic,
             'series_configuration' => $seriesConfiguration,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function normalizeWidgetActionInput(IoTDashboardWidget $widget, array $data): array
+    {
+        if ($widget->type === self::WIDGET_TYPE_LINE_CHART) {
+            return $data;
+        }
+
+        $parameterKey = is_string($data['parameter_key'] ?? null)
+            ? trim((string) $data['parameter_key'])
+            : null;
+
+        return [
+            ...$data,
+            'parameter_keys' => $parameterKey === null || $parameterKey === '' ? [] : [$parameterKey],
         ];
     }
 

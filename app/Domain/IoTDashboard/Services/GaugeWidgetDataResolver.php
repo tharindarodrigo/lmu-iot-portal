@@ -8,7 +8,6 @@ use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 
 class GaugeWidgetDataResolver
 {
@@ -31,9 +30,9 @@ class GaugeWidgetDataResolver
     ): array {
         $deviceId = is_numeric($widget->device_id) ? (int) $widget->device_id : null;
         $seriesConfiguration = $widget->resolvedSeriesConfig();
-        $logs = $deviceId === null
-            ? collect()
-            : $this->fetchTelemetryLogs(
+        $latestLog = $deviceId === null
+            ? null
+            : $this->fetchLatestTelemetryLog(
                 schemaVersionTopicId: (int) $widget->schema_version_topic_id,
                 deviceId: $deviceId,
                 lookbackMinutes: $lookbackMinutes,
@@ -42,7 +41,7 @@ class GaugeWidgetDataResolver
         $series = [];
 
         foreach ($seriesConfiguration as $config) {
-            $latestPoint = $this->resolveLatestPoint($logs, $config['key']);
+            $latestPoint = $this->resolveLatestPoint($latestLog, $config['key']);
 
             $series[] = [
                 'key' => $config['key'],
@@ -61,14 +60,11 @@ class GaugeWidgetDataResolver
         ];
     }
 
-    /**
-     * @return Collection<int, DeviceTelemetryLog>
-     */
-    private function fetchTelemetryLogs(
+    private function fetchLatestTelemetryLog(
         int $schemaVersionTopicId,
         ?int $deviceId,
         int $lookbackMinutes,
-    ): Collection {
+    ): ?DeviceTelemetryLog {
         return DeviceTelemetryLog::query()
             ->where('schema_version_topic_id', $schemaVersionTopicId)
             ->when(
@@ -76,39 +72,31 @@ class GaugeWidgetDataResolver
                 fn (Builder $query): Builder => $query->where('device_id', $deviceId),
             )
             ->where('recorded_at', '>=', now()->subMinutes($lookbackMinutes))
-            ->orderBy('recorded_at')
-            ->get(['id', 'recorded_at', 'transformed_values']);
+            ->orderByDesc('recorded_at')
+            ->first(['id', 'recorded_at', 'transformed_values']);
     }
 
     /**
-     * @param  Collection<int, DeviceTelemetryLog>  $logs
      * @return array{timestamp: string, value: int|float}|null
      */
-    private function resolveLatestPoint(Collection $logs, string $parameterKey): ?array
+    private function resolveLatestPoint(?DeviceTelemetryLog $log, string $parameterKey): ?array
     {
-        for ($index = $logs->count() - 1; $index >= 0; $index--) {
-            /** @var DeviceTelemetryLog|null $log */
-            $log = $logs->get($index);
-
-            if (! $log instanceof DeviceTelemetryLog) {
-                continue;
-            }
-
-            $value = $this->extractNumericValue($log->transformed_values, $parameterKey);
-            $recordedAt = $this->normalizeRecordedAt($log->recorded_at);
-            $timestamp = $recordedAt?->toIso8601String();
-
-            if ($value === null || ! is_string($timestamp)) {
-                continue;
-            }
-
-            return [
-                'timestamp' => $timestamp,
-                'value' => $value,
-            ];
+        if (! $log instanceof DeviceTelemetryLog) {
+            return null;
         }
 
-        return null;
+        $value = $this->extractNumericValue($log->transformed_values, $parameterKey);
+        $recordedAt = $this->normalizeRecordedAt($log->recorded_at);
+        $timestamp = $recordedAt?->toIso8601String();
+
+        if ($value === null || ! is_string($timestamp)) {
+            return null;
+        }
+
+        return [
+            'timestamp' => $timestamp,
+            'value' => $value,
+        ];
     }
 
     private function extractNumericValue(mixed $values, string $parameterKey): int|float|null

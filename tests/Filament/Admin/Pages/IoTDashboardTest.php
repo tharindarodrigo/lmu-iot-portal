@@ -277,6 +277,114 @@ it('edits an existing line widget using action arguments', function (): void {
         ->and(collect($widget->series_config)->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
 });
 
+it('edits an existing bar widget using action arguments', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'type' => 'bar_chart',
+        'title' => 'Old Bar Widget',
+        'series_config' => [
+            ['key' => 'total_energy_kwh', 'label' => 'Total Energy', 'color' => '#0ea5e9'],
+        ],
+        'options' => ['bar_interval' => 'hourly'],
+        'lookback_minutes' => 43200,
+        'max_points' => 31,
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction(
+            TestAction::make('editWidget')->arguments(['widget' => $widget->id]),
+            data: [
+                'widget_type' => 'bar_chart',
+                'title' => 'Updated Bar Widget',
+                'device_id' => (string) $device->id,
+                'schema_version_topic_id' => (string) $topic->id,
+                'parameter_key' => 'total_energy_kwh',
+                'bar_interval' => 'daily',
+                'use_websocket' => false,
+                'use_polling' => true,
+                'polling_interval_seconds' => 60,
+                'lookback_minutes' => 43200,
+                'max_points' => 20,
+                'grid_columns' => '6',
+                'card_height_px' => 420,
+            ],
+        )
+        ->assertNotified('Widget updated');
+
+    $widget->refresh();
+
+    expect($widget->title)->toBe('Updated Bar Widget')
+        ->and($widget->type)->toBe('bar_chart')
+        ->and(collect($widget->series_config)->pluck('key')->all())->toBe(['total_energy_kwh']);
+});
+
+it('edits an existing gauge widget using action arguments', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'type' => 'gauge_chart',
+        'title' => 'Old Gauge Widget',
+        'series_config' => [
+            ['key' => 'A1', 'label' => 'Current A1', 'color' => '#22d3ee'],
+        ],
+        'options' => [
+            'gauge_style' => 'classic',
+            'gauge_min' => 0,
+            'gauge_max' => 100,
+            'gauge_ranges' => [
+                ['from' => 0, 'to' => 50, 'color' => '#10b981'],
+                ['from' => 50, 'to' => 80, 'color' => '#f59e0b'],
+                ['from' => 80, 'to' => 100, 'color' => '#ef4444'],
+            ],
+        ],
+        'max_points' => 1,
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction(
+            TestAction::make('editWidget')->arguments(['widget' => $widget->id]),
+            data: [
+                'widget_type' => 'gauge_chart',
+                'title' => 'Updated Gauge Widget',
+                'device_id' => (string) $device->id,
+                'schema_version_topic_id' => (string) $topic->id,
+                'parameter_key' => 'A1',
+                'gauge_style' => 'minimal',
+                'gauge_min' => 5,
+                'gauge_max' => 120,
+                'gauge_ranges' => [
+                    ['from' => 5, 'to' => 60, 'color' => '#22c55e'],
+                    ['from' => 60, 'to' => 120, 'color' => '#ef4444'],
+                ],
+                'use_websocket' => true,
+                'use_polling' => true,
+                'polling_interval_seconds' => 10,
+                'lookback_minutes' => 120,
+                'max_points' => 1,
+                'grid_columns' => '6',
+                'card_height_px' => 420,
+            ],
+        )
+        ->assertNotified('Widget updated');
+
+    $widget->refresh();
+
+    expect($widget->title)->toBe('Updated Gauge Widget')
+        ->and($widget->type)->toBe('gauge_chart')
+        ->and((float) data_get($widget->options, 'gauge_min'))->toBe(5.0)
+        ->and((float) data_get($widget->options, 'gauge_max'))->toBe(120.0)
+        ->and(collect($widget->series_config)->pluck('key')->all())->toBe(['A1']);
+});
+
 it('requires confirmation before deleting a widget', function (): void {
     [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
 
