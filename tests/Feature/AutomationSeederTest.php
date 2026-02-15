@@ -11,7 +11,6 @@ use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use Database\Seeders\AutomationSeeder;
 use Database\Seeders\DeviceControlSeeder;
 use Database\Seeders\DeviceSchemaSeeder;
-use Database\Seeders\DeviceTelemetrySeeder;
 use Database\Seeders\OrganizationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -22,7 +21,6 @@ it('seeds an active energy meter power range automation that controls rgb colors
         OrganizationSeeder::class,
         DeviceSchemaSeeder::class,
         DeviceControlSeeder::class,
-        DeviceTelemetrySeeder::class,
         AutomationSeeder::class,
     ]);
 
