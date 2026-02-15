@@ -40,7 +40,8 @@ class DatabaseSeeder extends Seeder
             OrganizationSeeder::class,
             DeviceSchemaSeeder::class,
             DeviceControlSeeder::class,
-            DeviceTelemetrySeeder::class,
+            // DeviceTelemetrySeeder::class,
+            AutomationSeeder::class,
             IoTDashboardSeeder::class,
         ]);
     }
