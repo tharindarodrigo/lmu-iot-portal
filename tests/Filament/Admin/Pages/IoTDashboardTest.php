@@ -61,6 +61,34 @@ function createDashboardTopicForPageTest(): array
         ]);
     }
 
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'A1',
+        'label' => 'Current A1',
+        'json_path' => 'currents.A1',
+        'type' => ParameterDataType::Decimal,
+        'required' => true,
+        'is_active' => true,
+        'sequence' => 4,
+        'validation_rules' => ['min' => 0, 'max' => 150],
+        'mutation_expression' => null,
+        'validation_error_code' => null,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'total_energy_kwh',
+        'label' => 'Total Energy',
+        'json_path' => 'energy.total_energy_kwh',
+        'type' => ParameterDataType::Decimal,
+        'required' => true,
+        'is_active' => true,
+        'sequence' => 5,
+        'validation_rules' => ['category' => 'counter', 'min' => 0],
+        'mutation_expression' => null,
+        'validation_error_code' => null,
+    ]);
+
     return [$dashboard, $topic, $device];
 }
 
@@ -106,7 +134,85 @@ it('adds a line widget with three configured series', function (): void {
     expect($widget)->not->toBeNull()
         ->and($widget?->type)->toBe('line_chart')
         ->and($widget?->device_id)->toBe($device->id)
-        ->and(collect($widget?->series_config ?? [])->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
+        ->and(collect($widget?->resolvedSeriesConfig() ?? [])->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
+});
+
+it('adds a bar widget for energy consumption with hourly aggregation', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction('addBarWidget', data: [
+            'title' => 'Hourly Energy Consumption',
+            'schema_version_topic_id' => (string) $topic->id,
+            'device_id' => (string) $device->id,
+            'parameter_key' => 'total_energy_kwh',
+            'bar_interval' => 'hourly',
+            'use_websocket' => false,
+            'use_polling' => true,
+            'polling_interval_seconds' => 60,
+            'lookback_minutes' => 1440,
+            'max_points' => 24,
+            'grid_columns' => '6',
+            'card_height_px' => 360,
+        ])
+        ->assertNotified('Bar widget added');
+
+    $widget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard->id)
+        ->where('title', 'Hourly Energy Consumption')
+        ->first();
+
+    expect($widget)->not->toBeNull()
+        ->and($widget?->type)->toBe('bar_chart')
+        ->and($widget?->device_id)->toBe($device->id)
+        ->and(data_get($widget?->configArray(), 'bar_interval'))->toBe('hourly')
+        ->and(collect($widget?->resolvedSeriesConfig() ?? [])->pluck('key')->all())->toBe(['total_energy_kwh']);
+});
+
+it('adds a gauge widget with style and color ranges', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction('addGaugeWidget', data: [
+            'title' => 'Phase A Gauge',
+            'schema_version_topic_id' => (string) $topic->id,
+            'device_id' => (string) $device->id,
+            'parameter_key' => 'A1',
+            'gauge_style' => 'progress',
+            'gauge_min' => 0,
+            'gauge_max' => 120,
+            'gauge_ranges' => [
+                ['from' => 0, 'to' => 60, 'color' => '#22c55e'],
+                ['from' => 60, 'to' => 90, 'color' => '#f59e0b'],
+                ['from' => 90, 'to' => 120, 'color' => '#ef4444'],
+            ],
+            'use_websocket' => true,
+            'use_polling' => true,
+            'polling_interval_seconds' => 10,
+            'lookback_minutes' => 120,
+            'max_points' => 1,
+            'grid_columns' => '6',
+            'card_height_px' => 360,
+        ])
+        ->assertNotified('Gauge widget added');
+
+    $widget = IoTDashboardWidget::query()
+        ->where('iot_dashboard_id', $dashboard->id)
+        ->where('title', 'Phase A Gauge')
+        ->first();
+
+    expect($widget)->not->toBeNull()
+        ->and($widget?->type)->toBe('gauge_chart')
+        ->and($widget?->device_id)->toBe($device->id)
+        ->and(collect($widget?->resolvedSeriesConfig() ?? [])->pluck('key')->all())->toBe(['A1'])
+        ->and(data_get($widget?->configArray(), 'gauge_style'))->toBe('progress')
+        ->and((float) data_get($widget?->configArray(), 'gauge_min'))->toBe(0.0)
+        ->and((float) data_get($widget?->configArray(), 'gauge_max'))->toBe(120.0);
+
+    expect(collect(data_get($widget?->configArray(), 'gauge_ranges', []))->pluck('color')->all())
+        ->toContain('#22c55e', '#f59e0b');
 });
 
 it('renders a newly added widget immediately without a page reload', function (): void {
@@ -139,8 +245,19 @@ it('edits an existing line widget using action arguments', function (): void {
         'device_id' => $device->id,
         'schema_version_topic_id' => $topic->id,
         'title' => 'Old Title',
-        'series_config' => [
-            ['key' => 'V1', 'label' => 'Voltage V1', 'color' => '#22d3ee'],
+        'config' => [
+            'series' => [
+                ['key' => 'V1', 'label' => 'Voltage V1', 'color' => '#22d3ee'],
+            ],
+            'transport' => [
+                'use_websocket' => true,
+                'use_polling' => true,
+                'polling_interval_seconds' => 10,
+            ],
+            'window' => [
+                'lookback_minutes' => 120,
+                'max_points' => 240,
+            ],
         ],
     ]);
 
@@ -167,8 +284,135 @@ it('edits an existing line widget using action arguments', function (): void {
     $widget->refresh();
 
     expect($widget->title)->toBe('Updated Voltages')
-        ->and($widget->polling_interval_seconds)->toBe(8)
-        ->and(collect($widget->series_config)->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
+        ->and((int) data_get($widget->configArray(), 'transport.polling_interval_seconds'))->toBe(8)
+        ->and(collect($widget->resolvedSeriesConfig())->pluck('key')->all())->toBe(['V1', 'V2', 'V3']);
+});
+
+it('edits an existing bar widget using action arguments', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'type' => 'bar_chart',
+        'title' => 'Old Bar Widget',
+        'config' => [
+            'series' => [
+                ['key' => 'total_energy_kwh', 'label' => 'Total Energy', 'color' => '#0ea5e9'],
+            ],
+            'transport' => [
+                'use_websocket' => false,
+                'use_polling' => true,
+                'polling_interval_seconds' => 60,
+            ],
+            'window' => [
+                'lookback_minutes' => 43200,
+                'max_points' => 31,
+            ],
+            'bar_interval' => 'hourly',
+        ],
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction(
+            TestAction::make('editWidget')->arguments(['widget' => $widget->id]),
+            data: [
+                'widget_type' => 'bar_chart',
+                'title' => 'Updated Bar Widget',
+                'device_id' => (string) $device->id,
+                'schema_version_topic_id' => (string) $topic->id,
+                'parameter_key' => 'total_energy_kwh',
+                'bar_interval' => 'daily',
+                'use_websocket' => false,
+                'use_polling' => true,
+                'polling_interval_seconds' => 60,
+                'lookback_minutes' => 43200,
+                'max_points' => 20,
+                'grid_columns' => '6',
+                'card_height_px' => 420,
+            ],
+        )
+        ->assertNotified('Widget updated');
+
+    $widget->refresh();
+
+    expect($widget->title)->toBe('Updated Bar Widget')
+        ->and($widget->type)->toBe('bar_chart')
+        ->and(data_get($widget->configArray(), 'bar_interval'))->toBe('daily')
+        ->and(collect($widget->resolvedSeriesConfig())->pluck('key')->all())->toBe(['total_energy_kwh']);
+});
+
+it('edits an existing gauge widget using action arguments', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'type' => 'gauge_chart',
+        'title' => 'Old Gauge Widget',
+        'config' => [
+            'series' => [
+                ['key' => 'A1', 'label' => 'Current A1', 'color' => '#22d3ee'],
+            ],
+            'transport' => [
+                'use_websocket' => true,
+                'use_polling' => true,
+                'polling_interval_seconds' => 10,
+            ],
+            'window' => [
+                'lookback_minutes' => 120,
+                'max_points' => 1,
+            ],
+            'gauge_style' => 'classic',
+            'gauge_min' => 0,
+            'gauge_max' => 100,
+            'gauge_ranges' => [
+                ['from' => 0, 'to' => 50, 'color' => '#10b981'],
+                ['from' => 50, 'to' => 80, 'color' => '#f59e0b'],
+                ['from' => 80, 'to' => 100, 'color' => '#ef4444'],
+            ],
+        ],
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->callAction(
+            TestAction::make('editWidget')->arguments(['widget' => $widget->id]),
+            data: [
+                'widget_type' => 'gauge_chart',
+                'title' => 'Updated Gauge Widget',
+                'device_id' => (string) $device->id,
+                'schema_version_topic_id' => (string) $topic->id,
+                'parameter_key' => 'A1',
+                'gauge_style' => 'minimal',
+                'gauge_min' => 5,
+                'gauge_max' => 120,
+                'gauge_ranges' => [
+                    ['from' => 5, 'to' => 60, 'color' => '#22c55e'],
+                    ['from' => 60, 'to' => 120, 'color' => '#ef4444'],
+                ],
+                'use_websocket' => true,
+                'use_polling' => true,
+                'polling_interval_seconds' => 10,
+                'lookback_minutes' => 120,
+                'max_points' => 1,
+                'grid_columns' => '6',
+                'card_height_px' => 420,
+            ],
+        )
+        ->assertNotified('Widget updated');
+
+    $widget->refresh();
+
+    expect($widget->title)->toBe('Updated Gauge Widget')
+        ->and($widget->type)->toBe('gauge_chart')
+        ->and((float) data_get($widget->configArray(), 'gauge_min'))->toBe(5.0)
+        ->and((float) data_get($widget->configArray(), 'gauge_max'))->toBe(120.0)
+        ->and(data_get($widget->configArray(), 'gauge_style'))->toBe('minimal')
+        ->and(collect($widget->resolvedSeriesConfig())->pluck('key')->all())->toBe(['A1']);
 });
 
 it('requires confirmation before deleting a widget', function (): void {
@@ -217,4 +461,20 @@ it('loads gridstack extra stylesheet for multi-column widget widths', function (
     $this->get(route('filament.admin.pages.io-t-dashboard', ['dashboard' => $dashboard->id]))
         ->assertSuccessful()
         ->assertSee('gridstack-extra.min.css', escape: false);
+});
+
+it('renders widget cards with stable livewire keys and ignored chart mount nodes', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $widget = IoTDashboardWidget::factory()->create([
+        'iot_dashboard_id' => $dashboard->id,
+        'device_id' => $device->id,
+        'schema_version_topic_id' => $topic->id,
+        'title' => 'Livewire Stability Widget',
+    ]);
+
+    $this->get(route('filament.admin.pages.io-t-dashboard', ['dashboard' => $dashboard->id]))
+        ->assertSuccessful()
+        ->assertSee('wire:key="dashboard-widget-'.$widget->id.'"', escape: false)
+        ->assertSee('wire:ignore class="iot-widget-chart" id="iot-widget-chart-'.$widget->id.'"', escape: false);
 });

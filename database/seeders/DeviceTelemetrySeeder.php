@@ -54,39 +54,67 @@ class DeviceTelemetrySeeder extends Seeder
             'is_active' => true,
         ]);
 
-        $this->command->info("Generating telemetry history for device: {$device->name}");
+        $this->command->info("Generating 15-minute telemetry history for device: {$device->name}");
 
         $now = Carbon::now();
-        $startDate = $now->copy()->subDay()->startOfDay();
+        $startDate = $now->copy()->subMonth()->startOfDay();
         $stepMinutes = 15;
         $totalSteps = (int) floor($now->diffInMinutes($startDate) / $stepMinutes) + 1;
 
         $currentDate = $startDate->copy();
+        $totalEnergyKwh = rand(18000, 32000) / 10;
 
         $bar = $this->command->getOutput()->createProgressBar($totalSteps);
         $bar->start();
 
         while ($currentDate->lessThanOrEqualTo($now)) {
             $hour = (int) $currentDate->format('H');
-            $loadMultiplier = ($hour >= 8 && $hour <= 18) ? 2.5 : 0.8;
-            $randomNoise = rand(80, 120) / 100;
+            $isWeekend = in_array((int) $currentDate->format('N'), [6, 7], true);
+            $baseLoad = ($hour >= 7 && $hour <= 19) ? 1.0 : 0.45;
+            $loadMultiplier = $isWeekend ? $baseLoad * 0.7 : $baseLoad;
+            $randomNoise = rand(90, 110) / 100;
+
+            $v1 = round(230 + (rand(-35, 35) / 10), 2);
+            $v2 = round(229 + (rand(-35, 35) / 10), 2);
+            $v3 = round(231 + (rand(-35, 35) / 10), 2);
+
+            $a1 = round(max(0.2, (44 * $loadMultiplier * $randomNoise) + (rand(-20, 20) / 10)), 2);
+            $a2 = round(max(0.2, (39 * $loadMultiplier * $randomNoise) + (rand(-20, 20) / 10)), 2);
+            $a3 = round(max(0.2, (47 * $loadMultiplier * $randomNoise) + (rand(-20, 20) / 10)), 2);
+
+            $powerFactor = rand(87, 98) / 100;
+            $totalPowerWatts = (($v1 * $a1) + ($v2 * $a2) + ($v3 * $a3)) * $powerFactor;
+            $intervalHours = $stepMinutes / 60;
+            $totalEnergyKwh = round($totalEnergyKwh + (($totalPowerWatts / 1000) * $intervalHours), 3);
+
+            $meterState = match (true) {
+                max($a1, $a2, $a3) > 75 => 'fault',
+                $totalPowerWatts < 8000 => 'idle',
+                default => 'normal',
+            };
+
+            if (rand(1, 200) === 1) {
+                $meterState = 'fault';
+            }
 
             $payload = [
                 'voltages' => [
-                    'V1' => 230 + (rand(-50, 50) / 10),
-                    'V2' => 229 + (rand(-50, 50) / 10),
-                    'V3' => 231 + (rand(-50, 50) / 10),
+                    'V1' => $v1,
+                    'V2' => $v2,
+                    'V3' => $v3,
                 ],
-                'power' => [
-                    'power_l1' => (1500 * $loadMultiplier * $randomNoise) + rand(-100, 100),
-                    'power_l2' => (1200 * $loadMultiplier * $randomNoise) + rand(-100, 100),
-                    'power_l3' => (1800 * $loadMultiplier * $randomNoise) + rand(-100, 100),
+                'currents' => [
+                    'A1' => $a1,
+                    'A2' => $a2,
+                    'A3' => $a3,
+                ],
+                'energy' => [
+                    'total_energy_kwh' => $totalEnergyKwh,
+                ],
+                'status' => [
+                    'meter_state' => $meterState,
                 ],
             ];
-
-            $payload['power']['power_l1'] = max(0, $payload['power']['power_l1']);
-            $payload['power']['power_l2'] = max(0, $payload['power']['power_l2']);
-            $payload['power']['power_l3'] = max(0, $payload['power']['power_l3']);
 
             $this->recorder->record(
                 device: $device,

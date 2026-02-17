@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\DeviceManagement\Models\DeviceType;
+use App\Domain\DeviceSchema\Enums\MetricUnit;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
@@ -77,6 +78,7 @@ it('can create a subscribe parameter with default_value', function (): void {
             'label' => 'Fan Speed',
             'json_path' => 'fan_speed',
             'type' => ParameterDataType::Integer->value,
+            'unit' => MetricUnit::RevolutionsPerMinute->value,
             'default_value' => '50',
             'required' => true,
             'is_critical' => false,
@@ -91,6 +93,7 @@ it('can create a subscribe parameter with default_value', function (): void {
 
     expect($parameter)->not->toBeNull()
         ->and($parameter->default_value)->toBe(50)
+        ->and($parameter->unit)->toBe(MetricUnit::RevolutionsPerMinute->value)
         ->and($parameter->type)->toBe(ParameterDataType::Integer);
 });
 

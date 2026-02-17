@@ -8,6 +8,7 @@ use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\Shared\Models\Organization;
@@ -68,7 +69,7 @@ class IoTDashboardSeeder extends Seeder
 
         $parameterLabels = ParameterDefinition::query()
             ->where('schema_version_topic_id', $telemetryTopic->id)
-            ->whereIn('key', ['V1', 'V2', 'V3'])
+            ->whereIn('key', ['V1', 'V2', 'V3', 'A1', 'total_energy_kwh'])
             ->pluck('label', 'key')
             ->all();
 
@@ -97,26 +98,156 @@ class IoTDashboardSeeder extends Seeder
                 'title' => 'Energy Meter Voltages (V1 / V2 / V3)',
             ],
             [
-                'type' => 'line_chart',
+                'type' => WidgetType::LineChart->value,
                 'device_id' => $device->id,
-                'series_config' => $seriesConfiguration,
-                'options' => [
-                    'layout' => [
-                        'x' => 0,
-                        'y' => 0,
-                        'w' => 12,
-                        'h' => 4,
+                'config' => [
+                    'series' => $seriesConfiguration,
+                    'transport' => [
+                        'use_websocket' => true,
+                        'use_polling' => true,
+                        'polling_interval_seconds' => 10,
                     ],
-                    'layout_columns' => 24,
-                    'grid_columns' => 12,
-                    'card_height_px' => 360,
+                    'window' => [
+                        'lookback_minutes' => 120,
+                        'max_points' => 240,
+                    ],
                 ],
-                'use_websocket' => true,
-                'use_polling' => true,
-                'polling_interval_seconds' => 10,
-                'lookback_minutes' => 120,
-                'max_points' => 240,
+                'layout' => [
+                    'x' => 0,
+                    'y' => 0,
+                    'w' => 12,
+                    'h' => 4,
+                    'columns' => 24,
+                    'card_height_px' => 384,
+                ],
                 'sequence' => 1,
+            ],
+        );
+
+        IoTDashboardWidget::query()->updateOrCreate(
+            [
+                'iot_dashboard_id' => $dashboard->id,
+                'schema_version_topic_id' => $telemetryTopic->id,
+                'title' => 'Hourly Energy Consumption (kWh)',
+            ],
+            [
+                'type' => WidgetType::BarChart->value,
+                'device_id' => $device->id,
+                'config' => [
+                    'series' => [
+                        [
+                            'key' => 'total_energy_kwh',
+                            'label' => (string) ($parameterLabels['total_energy_kwh'] ?? 'Total Energy (kWh)'),
+                            'color' => '#0ea5e9',
+                        ],
+                    ],
+                    'transport' => [
+                        'use_websocket' => false,
+                        'use_polling' => true,
+                        'polling_interval_seconds' => 60,
+                    ],
+                    'window' => [
+                        'lookback_minutes' => 1440,
+                        'max_points' => 24,
+                    ],
+                    'bar_interval' => 'hourly',
+                ],
+                'layout' => [
+                    'x' => 0,
+                    'y' => 4,
+                    'w' => 12,
+                    'h' => 4,
+                    'columns' => 24,
+                    'card_height_px' => 384,
+                ],
+                'sequence' => 2,
+            ],
+        );
+
+        IoTDashboardWidget::query()->updateOrCreate(
+            [
+                'iot_dashboard_id' => $dashboard->id,
+                'schema_version_topic_id' => $telemetryTopic->id,
+                'title' => 'Daily Energy Consumption (kWh)',
+            ],
+            [
+                'type' => WidgetType::BarChart->value,
+                'device_id' => $device->id,
+                'config' => [
+                    'series' => [
+                        [
+                            'key' => 'total_energy_kwh',
+                            'label' => (string) ($parameterLabels['total_energy_kwh'] ?? 'Total Energy (kWh)'),
+                            'color' => '#22c55e',
+                        ],
+                    ],
+                    'transport' => [
+                        'use_websocket' => false,
+                        'use_polling' => true,
+                        'polling_interval_seconds' => 120,
+                    ],
+                    'window' => [
+                        'lookback_minutes' => 43200,
+                        'max_points' => 31,
+                    ],
+                    'bar_interval' => 'daily',
+                ],
+                'layout' => [
+                    'x' => 12,
+                    'y' => 4,
+                    'w' => 12,
+                    'h' => 4,
+                    'columns' => 24,
+                    'card_height_px' => 384,
+                ],
+                'sequence' => 3,
+            ],
+        );
+
+        IoTDashboardWidget::query()->updateOrCreate(
+            [
+                'iot_dashboard_id' => $dashboard->id,
+                'schema_version_topic_id' => $telemetryTopic->id,
+                'title' => 'Phase A Current Gauge (A1)',
+            ],
+            [
+                'type' => WidgetType::GaugeChart->value,
+                'device_id' => $device->id,
+                'config' => [
+                    'series' => [
+                        [
+                            'key' => 'A1',
+                            'label' => (string) ($parameterLabels['A1'] ?? 'Current A1'),
+                            'color' => '#3b82f6',
+                        ],
+                    ],
+                    'transport' => [
+                        'use_websocket' => true,
+                        'use_polling' => true,
+                        'polling_interval_seconds' => 10,
+                    ],
+                    'window' => [
+                        'lookback_minutes' => 180,
+                        'max_points' => 1,
+                    ],
+                    'gauge_style' => 'classic',
+                    'gauge_min' => 0,
+                    'gauge_max' => 120,
+                    'gauge_ranges' => [
+                        ['from' => 0, 'to' => 60, 'color' => '#10b981'],
+                        ['from' => 60, 'to' => 90, 'color' => '#f59e0b'],
+                        ['from' => 90, 'to' => 120, 'color' => '#ef4444'],
+                    ],
+                ],
+                'layout' => [
+                    'x' => 0,
+                    'y' => 8,
+                    'w' => 8,
+                    'h' => 4,
+                    'columns' => 24,
+                    'card_height_px' => 384,
+                ],
+                'sequence' => 4,
             ],
         );
     }

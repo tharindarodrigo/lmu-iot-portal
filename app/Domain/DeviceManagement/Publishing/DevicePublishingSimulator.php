@@ -7,6 +7,7 @@ namespace App\Domain\DeviceManagement\Publishing;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
+use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Events\TelemetryIncoming;
 
@@ -49,10 +50,11 @@ final readonly class DevicePublishingSimulator
         }
 
         $publisher = $this->publisherFactory->make($resolvedHost, $resolvedPort);
+        $counterState = [];
 
         for ($i = 1; $i <= $count; $i++) {
             foreach ($topics as $topic) {
-                $payload = $this->generateRandomPayload($topic);
+                $payload = $this->generateRandomPayload($topic, $counterState);
                 $mqttTopic = $this->resolveTopicWithExternalId($device, $topic);
 
                 if ($onBeforePublish !== null) {
@@ -90,9 +92,10 @@ final readonly class DevicePublishingSimulator
     }
 
     /**
+     * @param  array<string, float>  $counterState
      * @return array<string, mixed>
      */
-    private function generateRandomPayload(SchemaVersionTopic $topic): array
+    private function generateRandomPayload(SchemaVersionTopic $topic, array &$counterState): array
     {
         $topic->loadMissing('parameters');
 
@@ -101,23 +104,159 @@ final readonly class DevicePublishingSimulator
         $topic->parameters
             ->where('is_active', true)
             ->sortBy('sequence')
-            ->each(function ($parameter) use (&$payload): void {
-                $value = $this->generateRandomValue($parameter->type);
+            ->each(function (ParameterDefinition $parameter) use (&$payload, &$counterState): void {
+                $value = $this->generateRandomValue($parameter, $counterState);
                 $payload = $parameter->placeValue($payload, $value);
             });
 
         return $payload;
     }
 
-    private function generateRandomValue(ParameterDataType $type): mixed
+    /**
+     * @param  array<string, float>  $counterState
+     */
+    private function generateRandomValue(ParameterDefinition $parameter, array &$counterState): mixed
     {
+        $rules = $parameter->resolvedValidationRules();
+        $type = $parameter->type;
+        $category = is_string($rules['category'] ?? null)
+            ? strtolower((string) $rules['category'])
+            : null;
+        $enumValues = $this->resolveEnumValues($rules);
+
+        if ($category === 'enum' && $enumValues !== []) {
+            return $enumValues[array_rand($enumValues)];
+        }
+
+        if ($category === 'counter') {
+            $key = $this->resolveCounterStateKey($parameter);
+            $incrementRange = $this->resolveCounterIncrementRange($type, $rules);
+            $counterMin = isset($rules['min']) && is_numeric($rules['min'])
+                ? (float) $rules['min']
+                : (is_numeric($parameter->default_value) ? (float) $parameter->default_value : 0.0);
+            $counterMax = isset($rules['max']) && is_numeric($rules['max'])
+                ? (float) $rules['max']
+                : PHP_FLOAT_MAX;
+
+            if ($counterMax < $counterMin) {
+                $counterMax = $counterMin;
+            }
+
+            if (! array_key_exists($key, $counterState)) {
+                $counterState[$key] = is_numeric($parameter->default_value)
+                    ? (float) $parameter->default_value
+                    : $counterMin;
+            }
+
+            $nextValue = (float) $counterState[$key] + $this->randomFloat($incrementRange['min'], $incrementRange['max']);
+            $counterState[$key] = min($nextValue, $counterMax);
+
+            return $type === ParameterDataType::Integer
+                ? (int) round($counterState[$key])
+                : round((float) $counterState[$key], 3);
+        }
+
+        if ($type === ParameterDataType::String && $enumValues !== []) {
+            return $enumValues[array_rand($enumValues)];
+        }
+
         return match ($type) {
-            ParameterDataType::Integer => rand(0, 100),
-            ParameterDataType::Decimal => rand(0, 1000) / 10,
+            ParameterDataType::Integer => (int) round($this->randomFloat(...$this->resolveNumericBounds($type, $rules))),
+            ParameterDataType::Decimal => round($this->randomFloat(...$this->resolveNumericBounds($type, $rules)), 3),
             ParameterDataType::Boolean => (bool) rand(0, 1),
             ParameterDataType::String => 'Value_'.rand(100, 999),
             ParameterDataType::Json => ['v' => rand(1, 5)],
         };
+    }
+
+    private function resolveCounterStateKey(ParameterDefinition $parameter): string
+    {
+        return $parameter->schema_version_topic_id.':'.$parameter->key;
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     * @return array<int, int|float>
+     */
+    private function resolveNumericBounds(ParameterDataType $type, array $rules): array
+    {
+        $range = $this->resolveNumericRange($type, $rules);
+
+        return [$range['min'], $range['max']];
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     * @return array{min: float, max: float}
+     */
+    private function resolveNumericRange(ParameterDataType $type, array $rules): array
+    {
+        $defaultMax = $type === ParameterDataType::Integer ? 100.0 : 100.0;
+
+        $min = isset($rules['min']) && is_numeric($rules['min']) ? (float) $rules['min'] : 0.0;
+        $max = isset($rules['max']) && is_numeric($rules['max'])
+            ? (float) $rules['max']
+            : max($min + 1.0, $defaultMax);
+
+        if ($max < $min) {
+            $max = $min;
+        }
+
+        return [
+            'min' => $min,
+            'max' => $max,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     * @return array{min: float, max: float}
+     */
+    private function resolveCounterIncrementRange(ParameterDataType $type, array $rules): array
+    {
+        $defaultMin = $type === ParameterDataType::Integer ? 1.0 : 0.01;
+        $defaultMax = $type === ParameterDataType::Integer ? 5.0 : 0.5;
+
+        $min = isset($rules['increment_min']) && is_numeric($rules['increment_min'])
+            ? (float) $rules['increment_min']
+            : $defaultMin;
+        $max = isset($rules['increment_max']) && is_numeric($rules['increment_max'])
+            ? (float) $rules['increment_max']
+            : $defaultMax;
+
+        if ($max < $min) {
+            $max = $min;
+        }
+
+        return [
+            'min' => $min,
+            'max' => $max,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     * @return array<int, string|int|float>
+     */
+    private function resolveEnumValues(array $rules): array
+    {
+        if (! is_array($rules['enum'] ?? null)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $rules['enum'],
+            fn (mixed $value): bool => is_string($value) || is_int($value) || is_float($value),
+        ));
+    }
+
+    private function randomFloat(float $min, float $max): float
+    {
+        if ($max <= $min) {
+            return $min;
+        }
+
+        return $min + (lcg_value() * ($max - $min));
     }
 
     private function resolveTopicWithExternalId(Device $device, SchemaVersionTopic $topic): string
