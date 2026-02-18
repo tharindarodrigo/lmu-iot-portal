@@ -22,6 +22,24 @@ function shouldEnableEcho() {
 	return document.querySelector('meta[name="enable-echo"]')?.getAttribute('content') === 'true';
 }
 
+function resolveWebSocketConfig() {
+	const scheme = import.meta.env.VITE_REVERB_SCHEME ?? 'http';
+	const configuredHost = import.meta.env.VITE_REVERB_HOST;
+	const fallbackHost = window.location.hostname;
+	const host = configuredHost && configuredHost !== '127.0.0.1' ? configuredHost : fallbackHost;
+	const configuredPort = import.meta.env.VITE_REVERB_PORT;
+	const defaultPort = scheme === 'https' ? 443 : 80;
+	const locationPort = window.location.port ? Number(window.location.port) : undefined;
+	const port = configuredPort ? Number(configuredPort) : locationPort ?? defaultPort;
+
+	return {
+		scheme,
+		host,
+		port,
+		forceTLS: scheme === 'https',
+	};
+}
+
 export function initializeEcho(force = false) {
 	if (window.Echo) {
 		return window.Echo;
@@ -31,13 +49,15 @@ export function initializeEcho(force = false) {
 		return null;
 	}
 
+	const websocket = resolveWebSocketConfig();
+
 	window.Echo = new Echo({
 		broadcaster: 'reverb',
 		key: import.meta.env.VITE_REVERB_APP_KEY,
-		wsHost: import.meta.env.VITE_REVERB_HOST,
-		wsPort: import.meta.env.VITE_REVERB_PORT ?? 80,
-		wssPort: import.meta.env.VITE_REVERB_PORT ?? 443,
-		forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
+		wsHost: websocket.host,
+		wsPort: websocket.port,
+		wssPort: websocket.port,
+		forceTLS: websocket.forceTLS,
 		enabledTransports: ['ws', 'wss'],
 		authEndpoint: '/broadcasting/auth',
 		auth: resolvedToken

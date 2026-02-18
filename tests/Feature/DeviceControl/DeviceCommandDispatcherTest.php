@@ -153,8 +153,12 @@ it('marks command as failed when MQTT publish throws', function (): void {
 
     $failingPublisher = new class implements MqttCommandPublisher
     {
+        public int $attempts = 0;
+
         public function publish(string $mqttTopic, string $payload, string $host, int $port): void
         {
+            $this->attempts++;
+
             throw new \RuntimeException('MQTT connection refused');
         }
     };
@@ -171,10 +175,48 @@ it('marks command as failed when MQTT publish throws', function (): void {
     );
 
     expect($commandLog->status)->toBe(CommandStatus::Failed)
-        ->and($commandLog->error_message)->toBe('MQTT connection refused');
+        ->and($commandLog->error_message)->toBe('MQTT connection refused')
+        ->and($failingPublisher->attempts)->toBe(1);
 
     Event::assertDispatched(CommandDispatched::class);
     Event::assertNotDispatched(CommandSent::class);
+});
+
+it('retries transient MQTT publish failures once and sends successfully', function (): void {
+    Event::fake([CommandDispatched::class, CommandSent::class]);
+
+    [$device, $topic] = createDeviceWithSubscribeTopic();
+
+    $retryingPublisher = new class implements MqttCommandPublisher
+    {
+        public int $attempts = 0;
+
+        public function publish(string $mqttTopic, string $payload, string $host, int $port): void
+        {
+            $this->attempts++;
+
+            if ($this->attempts === 1) {
+                throw new \RuntimeException('MQTT socket read failed or connection closed');
+            }
+        }
+    };
+
+    app()->instance(MqttCommandPublisher::class, $retryingPublisher);
+
+    /** @var DeviceCommandDispatcher $dispatcher */
+    $dispatcher = app(DeviceCommandDispatcher::class);
+
+    $commandLog = $dispatcher->dispatch(
+        device: $device,
+        topic: $topic,
+        payload: ['power' => 'on'],
+    );
+
+    expect($retryingPublisher->attempts)->toBe(2)
+        ->and($commandLog->status)->toBe(CommandStatus::Sent)
+        ->and($commandLog->error_message)->toBeNull();
+
+    Event::assertDispatched(CommandSent::class);
 });
 
 it('stores the command log in the database', function (): void {

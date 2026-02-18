@@ -478,12 +478,24 @@
                         window.__deviceControlPusherBound = true;
 
                         if (!window.__deviceControlPusher) {
+                            const configuredHost = @js(config('broadcasting.connections.reverb.options.host'));
+                            const configuredPort = Number(@js(config('broadcasting.connections.reverb.options.port')));
+                            const configuredScheme = @js(config('broadcasting.connections.reverb.options.scheme'));
+                            const originScheme = window.location.protocol.replace(':', '');
+                            const wsScheme = configuredScheme || originScheme || 'http';
+                            const wsHost = configuredHost && configuredHost !== '127.0.0.1'
+                                ? configuredHost
+                                : window.location.hostname;
+                            const wsPort = Number.isFinite(configuredPort) && configuredPort > 0
+                                ? configuredPort
+                                : (window.location.port ? Number(window.location.port) : (wsScheme === 'https' ? 443 : 80));
+
                             window.__deviceControlPusher = new window.Pusher(@js(config('broadcasting.connections.reverb.key')), {
                                 cluster: 'mt1',
-                                wsHost: @js(config('broadcasting.connections.reverb.options.host')),
-                                wsPort: @js(config('broadcasting.connections.reverb.options.port')),
-                                wssPort: @js(config('broadcasting.connections.reverb.options.port')),
-                                forceTLS: @js(config('broadcasting.connections.reverb.options.scheme') === 'https'),
+                                wsHost,
+                                wsPort,
+                                wssPort: wsPort,
+                                forceTLS: wsScheme === 'https',
                                 enabledTransports: ['ws', 'wss'],
                                 disableStats: true,
                             });

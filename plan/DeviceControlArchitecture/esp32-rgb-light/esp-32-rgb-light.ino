@@ -71,6 +71,11 @@ const unsigned long PUBLISH_DELAY_MS   = 1500;
 const unsigned long MQTT_CONNECTING_INDICATION_MS = 600;
 const unsigned long MQTT_SUBSCRIPTION_REFRESH_MS = 15000;
 const unsigned long MQTT_SUBSCRIPTION_RETRY_MS = 2000;
+const unsigned long PRESENCE_HEARTBEAT_MS = 60000;
+const unsigned long PRESENCE_RETRY_MS = 5000;
+const uint16_t MQTT_KEEPALIVE_SECONDS = 30;
+const uint16_t MQTT_SOCKET_TIMEOUT_SECONDS = 5;
+const bool MQTT_CLEAN_SESSION = false;
 
 const char* COLOR_PRESETS[] = {
   "#FF0000",
@@ -119,6 +124,8 @@ bool publishPending = false;
 unsigned long lastPressTime = 0;
 bool controlTopicSubscribed = false;
 unsigned long lastControlSubscriptionAttemptMs = 0;
+unsigned long lastPresenceOnlinePublishedMs = 0;
+unsigned long lastPresenceOnlineAttemptMs = 0;
 
 enum class WifiIndicatorState : uint8_t {
   Off,
@@ -386,6 +393,35 @@ void publishState() {
                 TOPIC_STATE, payload, ok ? "OK" : "FAIL");
 }
 
+bool publishPresenceOnline(bool forceAttempt = false) {
+  if (!mqttClient.connected()) {
+    return false;
+  }
+
+  unsigned long now = millis();
+  if (!forceAttempt) {
+    if (now - lastPresenceOnlinePublishedMs < PRESENCE_HEARTBEAT_MS) {
+      return true;
+    }
+
+    if (now - lastPresenceOnlineAttemptMs < PRESENCE_RETRY_MS) {
+      return false;
+    }
+  }
+
+  lastPresenceOnlineAttemptMs = now;
+  bool ok = mqttClient.publish(TOPIC_PRESENCE, "online", true);
+
+  if (ok) {
+    lastPresenceOnlinePublishedMs = now;
+    Serial.printf("[MQTT] Presence heartbeat -> %s payload=online\n", TOPIC_PRESENCE);
+  } else {
+    Serial.printf("[MQTT] Presence heartbeat failed -> %s (state=%d)\n", TOPIC_PRESENCE, mqttClient.state());
+  }
+
+  return ok;
+}
+
 void resetEffectTiming() {
   lastEffectTick = 0;
   blinkOn = false;
@@ -557,6 +593,8 @@ void connectWiFi() {
 void connectMQTT() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(512);
+  mqttClient.setKeepAlive(MQTT_KEEPALIVE_SECONDS);
+  mqttClient.setSocketTimeout(MQTT_SOCKET_TIMEOUT_SECONDS);
   mqttClient.setCallback(onMqttMessage);
   controlTopicSubscribed = false;
 
@@ -574,18 +612,16 @@ void connectMQTT() {
     // Configure Last Will and Testament (LWT):
     // If the broker loses contact, it publishes "offline" to the presence topic.
     bool connected = (MQTT_USER[0] == '\0')
-      ? mqttClient.connect(MQTT_CLIENT, nullptr, nullptr, TOPIC_PRESENCE, 1, true, "offline")
-      : mqttClient.connect(MQTT_CLIENT, MQTT_USER, MQTT_PASS, TOPIC_PRESENCE, 1, true, "offline");
+      ? mqttClient.connect(MQTT_CLIENT, nullptr, nullptr, TOPIC_PRESENCE, 1, true, "offline", MQTT_CLEAN_SESSION)
+      : mqttClient.connect(MQTT_CLIENT, MQTT_USER, MQTT_PASS, TOPIC_PRESENCE, 1, true, "offline", MQTT_CLEAN_SESSION);
 
     if (connected) {
       setMqttIndicatorState(MqttIndicatorState::Connected);
       Serial.println("[MQTT] Connected");
       controlTopicSubscribed = false;
       lastControlSubscriptionAttemptMs = 0;
-
-      // Announce online presence (retained so new subscribers see it immediately)
-      mqttClient.publish(TOPIC_PRESENCE, "online", true);
-      Serial.printf("[MQTT] Published presence -> %s payload=online\n", TOPIC_PRESENCE);
+      lastPresenceOnlinePublishedMs = 0;
+      lastPresenceOnlineAttemptMs = 0;
 
       if (!ensureControlTopicSubscription(true)) {
         setMqttIndicatorState(MqttIndicatorState::Backoff);
@@ -595,6 +631,8 @@ void connectMQTT() {
         continue;
       }
 
+      // Announce online only after control subscription is active so first command is not lost.
+      publishPresenceOnline(true);
       publishState();
     } else {
       setMqttIndicatorState(MqttIndicatorState::Backoff);
@@ -725,6 +763,7 @@ void loop() {
   }
 
   mqttClient.loop();
+  publishPresenceOnline();
   ensureControlTopicSubscription();
   handleButtons();
   handleDeferredPublish();

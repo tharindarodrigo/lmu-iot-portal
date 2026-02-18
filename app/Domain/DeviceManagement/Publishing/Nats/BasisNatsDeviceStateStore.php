@@ -20,24 +20,24 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
     public function store(string $deviceUuid, string $topic, array $payload, string $host = '127.0.0.1', int $port = 4223): void
     {
         try {
-            $bucket = $this->getBucket($host, $port);
+            $this->withBucket($host, $port, function (\Basis\Nats\KeyValue\Bucket $bucket) use ($deviceUuid, $topic, $payload): void {
+                $document = $this->normalizeDocument($bucket->get($deviceUuid));
+                $document['topics'][$topic] = [
+                    'topic' => $topic,
+                    'payload' => $payload,
+                    'stored_at' => now()->toIso8601String(),
+                ];
 
-            $document = $this->normalizeDocument($bucket->get($deviceUuid));
-            $document['topics'][$topic] = [
-                'topic' => $topic,
-                'payload' => $payload,
-                'stored_at' => now()->toIso8601String(),
-            ];
+                $data = json_encode($document);
+                $payloadString = is_string($data) ? $data : '{}';
 
-            $data = json_encode($document);
-            $payloadString = is_string($data) ? $data : '{}';
-
-            // We bypass $bucket->put() because it has a strict :int return type hint
-            // which crashes with TypeError if NATS returns null (common when JS is unstable).
-            $bucket->getStream()->publish(
-                $bucket->getSubject($deviceUuid),
-                $payloadString,
-            );
+                // We bypass $bucket->put() because it has a strict :int return type hint
+                // which crashes with TypeError if NATS returns null (common when JS is unstable).
+                $bucket->getStream()->publish(
+                    $bucket->getSubject($deviceUuid),
+                    $payloadString,
+                );
+            });
         } catch (Throwable $exception) {
             if ($this->isJetStreamUnavailable($exception)) {
                 logger()->warning('NATS KV hot-state write skipped: JetStream/KV unavailable.', [
@@ -64,8 +64,9 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
     public function getAllStates(string $deviceUuid, string $host = '127.0.0.1', int $port = 4223): array
     {
         try {
-            $bucket = $this->getBucket($host, $port);
-            $value = $bucket->get($deviceUuid);
+            $value = $this->withBucket($host, $port, function (\Basis\Nats\KeyValue\Bucket $bucket) use ($deviceUuid): mixed {
+                return $bucket->get($deviceUuid);
+            });
         } catch (Throwable $exception) {
             if ($this->isJetStreamUnavailable($exception)) {
                 return [];
@@ -90,8 +91,9 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
     public function getStateByTopic(string $deviceUuid, string $topic, string $host = '127.0.0.1', int $port = 4223): ?array
     {
         try {
-            $bucket = $this->getBucket($host, $port);
-            $value = $bucket->get($deviceUuid);
+            $value = $this->withBucket($host, $port, function (\Basis\Nats\KeyValue\Bucket $bucket) use ($deviceUuid): mixed {
+                return $bucket->get($deviceUuid);
+            });
         } catch (Throwable $exception) {
             if ($this->isJetStreamUnavailable($exception)) {
                 return null;
@@ -123,12 +125,45 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
         return self::$buckets[$key] = $client->getApi()->getBucket(self::BUCKET_NAME);
     }
 
+    /**
+     * @template TValue
+     *
+     * @param  callable(\Basis\Nats\KeyValue\Bucket): TValue  $operation
+     * @return TValue
+     */
+    private function withBucket(string $host, int $port, callable $operation): mixed
+    {
+        try {
+            return $operation($this->getBucket($host, $port));
+        } catch (Throwable $exception) {
+            if (! $this->isStaleConnection($exception)) {
+                throw $exception;
+            }
+
+            $this->forgetBucket($host, $port);
+
+            return $operation($this->getBucket($host, $port));
+        }
+    }
+
+    private function forgetBucket(string $host, int $port): void
+    {
+        $key = "{$host}:{$port}";
+
+        unset(self::$buckets[$key]);
+    }
+
     private function isJetStreamUnavailable(Throwable $exception): bool
     {
         $message = $exception->getMessage();
 
         return str_contains($message, 'No handler for message _REQS.')
             || str_contains($message, 'JS not enabled');
+    }
+
+    private function isStaleConnection(Throwable $exception): bool
+    {
+        return str_contains(strtolower($exception->getMessage()), 'stale connection');
     }
 
     /**
