@@ -151,6 +151,24 @@ it('requires aggregation window for counter and state reports', function (): voi
         ->assertJsonValidationErrors(['grouping']);
 });
 
+it('returns validation error when from_at or until_at cannot be parsed', function (): void {
+    ['organization' => $organization, 'user' => $user, 'device' => $device] = createReportingDeviceContext();
+
+    $response = $this->withHeaders(['X-Reporting-Token' => 'internal-reporting-test-token'])
+        ->postJson('/api/internal/reporting/report-runs', [
+            'organization_id' => $organization->id,
+            'requested_by_user_id' => $user->id,
+            'device_id' => $device->id,
+            'type' => ReportType::ParameterValues->value,
+            'from_at' => 'not-a-date',
+            'until_at' => now()->toIso8601String(),
+            'timezone' => 'UTC',
+        ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors(['from_at']);
+});
+
 it('rejects shift schedule grouping when selected schedule is not a continuous daily cycle', function (): void {
     ['organization' => $organization, 'user' => $user, 'device' => $device] = createReportingDeviceContext();
 
@@ -253,6 +271,34 @@ it('rejects organization shift schedules with overlaps', function (): void {
                         ['name' => 'B', 'start' => '13:00', 'end' => '22:00'],
                         ['name' => 'C', 'start' => '22:00', 'end' => '06:00'],
                     ],
+                ],
+            ],
+        ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors(['shift_schedules.0.windows']);
+});
+
+it('rejects organization shift schedules when windows are non-overlapping but submitted out-of-order', function (): void {
+    ['organization' => $organization] = createReportingDeviceContext();
+
+    // Valid, non-overlapping windows but not in chronological order (should be rejected)
+    $outOfOrder = [
+        ['id' => 'mid', 'name' => 'Mid', 'start' => '14:00', 'end' => '22:00'],
+        ['id' => 'early', 'name' => 'Early', 'start' => '06:00', 'end' => '14:00'],
+        ['id' => 'late', 'name' => 'Late', 'start' => '22:00', 'end' => '06:00'],
+    ];
+
+    $response = $this->withHeaders(['X-Reporting-Token' => 'internal-reporting-test-token'])
+        ->putJson('/api/internal/reporting/organization-report-settings', [
+            'organization_id' => $organization->id,
+            'timezone' => 'UTC',
+            'max_range_days' => 21,
+            'shift_schedules' => [
+                [
+                    'id' => 'rotated',
+                    'name' => 'Rotated',
+                    'windows' => $outOfOrder,
                 ],
             ],
         ]);

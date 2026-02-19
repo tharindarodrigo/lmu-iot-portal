@@ -332,3 +332,45 @@ it('uses an exclusive end boundary for telemetry queries', function (): void {
     expect($csv)->toContain('"2026-02-17 00:00:00","2026-02-17 01:00:00","2026-02-17 00:00",total_energy_kwh,"Total Energy",1,100,100,0')
         ->and($csv)->not->toContain('130');
 });
+
+it('marks a report run as failed when writing the CSV to storage fails', function (): void {
+    ['organization' => $organization, 'user' => $user, 'device' => $device, 'topic' => $topic] = createReportGenerationContext();
+
+    DeviceTelemetryLog::factory()
+        ->forDevice($device)
+        ->forTopic($topic)
+        ->create([
+            'recorded_at' => Carbon::parse('2026-02-17 08:00:00'),
+            'received_at' => Carbon::parse('2026-02-17 08:00:01'),
+            'raw_payload' => ['energy' => ['total_energy_kwh' => 42.0]],
+            'transformed_values' => ['total_energy_kwh' => 42.0],
+            'validation_status' => ValidationStatus::Valid,
+        ]);
+
+    $reportRun = ReportRun::query()->create([
+        'organization_id' => $organization->id,
+        'device_id' => $device->id,
+        'requested_by_user_id' => $user->id,
+        'type' => ReportType::ParameterValues,
+        'status' => ReportRunStatus::Running,
+        'format' => 'csv',
+        'parameter_keys' => ['total_energy_kwh'],
+        'from_at' => Carbon::parse('2026-02-17 00:00:00'),
+        'until_at' => Carbon::parse('2026-02-17 12:00:00'),
+        'timezone' => 'UTC',
+    ]);
+
+    // Simulate Storage disk write failure
+    $adapter = Mockery::mock(\Illuminate\Filesystem\FilesystemAdapter::class);
+    $adapter->shouldReceive('put')->andReturnFalse();
+    \Illuminate\Support\Facades\Storage::shouldReceive('disk')->with('local')->andReturn($adapter);
+
+    app(ReportGenerationService::class)->generate($reportRun);
+
+    $reportRun->refresh();
+
+    expect($reportRun->status)->toBe(ReportRunStatus::Failed)
+        ->and($reportRun->failure_reason)->toContain('Failed to write report to disk')
+        ->and($reportRun->storage_path)->toBeNull()
+        ->and($reportRun->storage_disk)->toBeNull();
+});

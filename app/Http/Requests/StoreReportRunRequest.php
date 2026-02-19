@@ -70,8 +70,21 @@ class StoreReportRunRequest extends FormRequest
                 return;
             }
 
-            $fromAt = Carbon::parse((string) $fromAtInput);
-            $untilAt = Carbon::parse((string) $untilAtInput);
+            try {
+                $fromAt = Carbon::parse((string) $fromAtInput);
+            } catch (\Throwable $e) {
+                $validator->errors()->add('from_at', 'The from_at value is not a valid date/time.');
+
+                return;
+            }
+
+            try {
+                $untilAt = Carbon::parse((string) $untilAtInput);
+            } catch (\Throwable $e) {
+                $validator->errors()->add('until_at', 'The until_at value is not a valid date/time.');
+
+                return;
+            }
             $configuredMaxDays = OrganizationReportSetting::query()
                 ->where('organization_id', $organizationId)
                 ->value('max_range_days');
@@ -222,6 +235,23 @@ class StoreReportRunRequest extends FormRequest
 
         if ($windowCount <= 1) {
             return true;
+        }
+
+        // Enforce that submitted windows are in chronological order (allowing a single roll-over at the end of the day).
+        $starts = array_column($parsedWindows, 'start');
+        $sortedStarts = $starts;
+        sort($sortedStarts);
+        $minStart = min($starts);
+        $minIndex = array_search($minStart, $starts, true);
+
+        if ($minIndex === false) {
+            return false;
+        }
+
+        $rotated = array_merge(array_slice($starts, $minIndex), array_slice($starts, 0, $minIndex));
+
+        if ($rotated !== $sortedStarts) {
+            return false;
         }
 
         for ($index = 0; $index < $windowCount; $index++) {

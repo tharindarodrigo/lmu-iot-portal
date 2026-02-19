@@ -89,7 +89,57 @@ class ReportGenerationService
         $fileName = "report-{$reportRun->id}-{$reportRun->type->value}-".now()->format('Ymd_His').'.csv';
         $storagePath = "{$storageDirectory}/{$fileName}";
 
-        Storage::disk($storageDisk)->put($storagePath, $csvContent);
+        try {
+            $written = Storage::disk($storageDisk)->put($storagePath, $csvContent);
+        } catch (\Throwable $exception) {
+            logger()->error('Report CSV write threw an exception', ['report_run_id' => $reportRun->id, 'error' => $exception->getMessage()]);
+
+            $reportRun->forceFill([
+                'status' => ReportRunStatus::Failed,
+                'row_count' => count($rows),
+                'storage_disk' => null,
+                'storage_path' => null,
+                'file_name' => null,
+                'file_size' => null,
+                'generated_at' => now(),
+                'failed_at' => now(),
+                'failure_reason' => 'Failed to write report to storage: '.$exception->getMessage(),
+                'meta' => [
+                    'timezone' => $resolvedTimezone,
+                    'from_at' => $resolvedRange['from_local']->toIso8601String(),
+                    'until_at' => $resolvedRange['until_local']->toIso8601String(),
+                    'grouping' => $reportRun->grouping?->value,
+                    'shift_schedule' => data_get($reportRun->payload, 'shift_schedule'),
+                ],
+            ])->save();
+
+            return $reportRun->refresh();
+        }
+
+        if (! $written) {
+            logger()->warning('Report CSV could not be written to disk', ['report_run_id' => $reportRun->id, 'disk' => $storageDisk, 'path' => $storagePath]);
+
+            $reportRun->forceFill([
+                'status' => ReportRunStatus::Failed,
+                'row_count' => count($rows),
+                'storage_disk' => null,
+                'storage_path' => null,
+                'file_name' => null,
+                'file_size' => null,
+                'generated_at' => now(),
+                'failed_at' => now(),
+                'failure_reason' => sprintf('Failed to write report to disk "%s".', $storageDisk),
+                'meta' => [
+                    'timezone' => $resolvedTimezone,
+                    'from_at' => $resolvedRange['from_local']->toIso8601String(),
+                    'until_at' => $resolvedRange['until_local']->toIso8601String(),
+                    'grouping' => $reportRun->grouping?->value,
+                    'shift_schedule' => data_get($reportRun->payload, 'shift_schedule'),
+                ],
+            ])->save();
+
+            return $reportRun->refresh();
+        }
 
         $reportRun->forceFill([
             'status' => ReportRunStatus::Completed,

@@ -182,6 +182,23 @@ class UpdateOrganizationReportSettingsRequest extends FormRequest
             return true;
         }
 
+        // Ensure windows are provided in chronological order (rotation of sorted starts).
+        $starts = array_column($parsedWindows, 'start');
+        $sortedStarts = $starts;
+        sort($sortedStarts);
+        $minStart = min($starts);
+        $minIndex = array_search($minStart, $starts, true);
+
+        if ($minIndex === false) {
+            return false;
+        }
+
+        $rotated = array_merge(array_slice($starts, $minIndex), array_slice($starts, 0, $minIndex));
+
+        if ($rotated !== $sortedStarts) {
+            return false;
+        }
+
         for ($index = 0; $index < $windowCount; $index++) {
             $nextIndex = ($index + 1) % $windowCount;
             $start = $parsedWindows[$index]['start'];
