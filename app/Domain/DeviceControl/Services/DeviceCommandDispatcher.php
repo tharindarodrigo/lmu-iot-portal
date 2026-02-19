@@ -17,6 +17,10 @@ use Illuminate\Support\Str;
 
 final readonly class DeviceCommandDispatcher
 {
+    private const int MAX_MQTT_PUBLISH_ATTEMPTS = 2;
+
+    private const int MQTT_PUBLISH_RETRY_DELAY_MICROSECONDS = 250_000;
+
     public function __construct(
         private MqttCommandPublisher $mqttPublisher,
         private LogManager $logManager,
@@ -110,7 +114,7 @@ final readonly class DeviceCommandDispatcher
                 'payload_size' => strlen($encodedPayload),
             ]);
 
-            $this->mqttPublisher->publish($mqttTopic, $encodedPayload, $resolvedHost, $resolvedPort);
+            $this->publishToMqttWithRetry($mqttTopic, $encodedPayload, $resolvedHost, $resolvedPort, $commandLog->id);
 
             $commandLog->update([
                 'status' => CommandStatus::Sent,
@@ -212,6 +216,47 @@ final readonly class DeviceCommandDispatcher
         $payload['_meta'] = $meta;
 
         return $payload;
+    }
+
+    private function publishToMqttWithRetry(string $mqttTopic, string $payload, string $host, int $port, int $commandLogId): void
+    {
+        for ($attempt = 1; $attempt <= self::MAX_MQTT_PUBLISH_ATTEMPTS; $attempt++) {
+            try {
+                $this->mqttPublisher->publish($mqttTopic, $payload, $host, $port);
+
+                return;
+            } catch (\Throwable $exception) {
+                $isLastAttempt = $attempt >= self::MAX_MQTT_PUBLISH_ATTEMPTS;
+                $shouldRetry = ! $isLastAttempt && $this->shouldRetryPublish($exception);
+
+                if (! $shouldRetry) {
+                    throw $exception;
+                }
+
+                $this->log()->warning('Transient MQTT publish failure, retrying', [
+                    'command_log_id' => $commandLogId,
+                    'attempt' => $attempt,
+                    'next_attempt' => $attempt + 1,
+                    'mqtt_topic' => $mqttTopic,
+                    'mqtt_host' => $host,
+                    'mqtt_port' => $port,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                usleep(self::MQTT_PUBLISH_RETRY_DELAY_MICROSECONDS);
+            }
+        }
+    }
+
+    private function shouldRetryPublish(\Throwable $exception): bool
+    {
+        $errorMessage = strtolower($exception->getMessage());
+
+        return str_contains($errorMessage, 'socket read failed')
+            || str_contains($errorMessage, 'connection closed')
+            || str_contains($errorMessage, 'timed out')
+            || str_contains($errorMessage, 'broken pipe')
+            || str_contains($errorMessage, 'reset by peer');
     }
 
     private function log(): \Psr\Log\LoggerInterface

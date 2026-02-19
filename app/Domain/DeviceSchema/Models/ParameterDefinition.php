@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\DeviceSchema\Models;
 
 use App\Domain\DeviceSchema\Enums\ControlWidgetType;
+use App\Domain\DeviceSchema\Enums\ParameterCategory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Services\JsonLogicEvaluator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
+ * @property string $key
+ * @property string $label
+ * @property int $schema_version_topic_id
  * @property ParameterDataType $type
+ * @property ParameterCategory $category
+ * @property array<string, mixed>|null $validation_rules
+ * @property array<string, mixed>|null $control_ui
  */
 class ParameterDefinition extends Model
 {
@@ -28,6 +35,7 @@ class ParameterDefinition extends Model
     {
         return [
             'type' => ParameterDataType::class,
+            'category' => ParameterCategory::class,
             'required' => 'bool',
             'is_critical' => 'bool',
             'is_active' => 'bool',
