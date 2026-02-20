@@ -42,7 +42,8 @@ return [
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
             ],
             'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                // Allow local environments with self-signed certs (e.g. Herd/Reverb over HTTPS).
+                'verify' => env('REVERB_VERIFY_SSL', true),
             ],
         ],
 
