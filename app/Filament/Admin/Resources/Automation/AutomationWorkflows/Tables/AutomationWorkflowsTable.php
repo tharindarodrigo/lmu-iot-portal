@@ -10,6 +10,7 @@ use App\Filament\Admin\Resources\Automation\AutomationWorkflows\AutomationWorkfl
 use App\Filament\Admin\Resources\Shared\Organizations\OrganizationResource;
 use Filament\Actions;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\SelectColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -45,6 +46,10 @@ class AutomationWorkflowsTable
                     ->label('Active Version')
                     ->formatStateUsing(fn (mixed $state): string => is_scalar($state) ? "v{$state}" : '—')
                     ->sortable(),
+
+                SelectColumn::make('status')
+                    ->options(self::statusOptions())
+                    ->label('Status'),
 
                 TextColumn::make('updated_at')
                     ->dateTime()

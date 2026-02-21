@@ -18,6 +18,33 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+read_env_value() {
+    local key="$1"
+    local fallback="$2"
+    local env_file="$repo_root/.env"
+
+    if [[ -f "$env_file" ]]; then
+        local match
+        match="$(grep -E "^${key}=" "$env_file" | tail -n 1 || true)"
+
+        if [[ -n "$match" ]]; then
+            local value
+            value="${match#*=}"
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+
+            if [[ -n "$value" ]]; then
+                echo "$value"
+                return
+            fi
+        fi
+    fi
+
+    echo "$fallback"
+}
+
 is_process_running() {
     local pid="${1:-}"
     local search_term="${2:-}"
@@ -70,6 +97,10 @@ artisan_path="$repo_root/artisan"
 state_dir="$repo_root/storage/platform"
 log_dir="$repo_root/storage/logs/platform"
 manifest_path="$state_dir/manifest"
+default_reverb_hostname="$(basename "$repo_root").test"
+reverb_server_host="$(read_env_value "REVERB_SERVER_HOST" "0.0.0.0")"
+reverb_server_port="$(read_env_value "REVERB_SERVER_PORT" "8090")"
+reverb_hostname="$(read_env_value "REVERB_HOST" "$default_reverb_hostname")"
 
 mkdir -p "$state_dir" "$log_dir"
 
@@ -107,7 +138,7 @@ echo "Starting NATS broker..."
 (cd "$repo_root" && docker compose -f docker-compose.nats.yml up -d)
 
 services=(
-    $'reverb\tphp artisan reverb:start --port=8090\treverb.log'
+    $'reverb\tphp artisan reverb:start --host='"$reverb_server_host"' --port='"$reverb_server_port"' --hostname='"$reverb_hostname"$'\treverb.log'
     $'listen-states\tphp artisan iot:listen-for-device-states\tlisten-states.log'
     $'listen-presence\tphp artisan iot:listen-for-device-presence\tlisten-presence.log'
     $'ingest-telemetry\tphp artisan iot:ingest-telemetry\tingest-telemetry.log'
