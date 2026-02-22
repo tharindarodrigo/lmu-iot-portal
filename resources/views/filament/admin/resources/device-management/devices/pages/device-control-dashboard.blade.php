@@ -469,23 +469,24 @@
                             return;
                         }
 
-                        if (!window.Pusher) {
-                            this.addEvent('error', 'Error', 'WebSocket client not available.');
-                            return;
-                        }
-
                         window.__deviceControlDeviceUuid = deviceUuid;
                         window.__deviceControlPusherBound = true;
 
-                        if (!window.__deviceControlPusher) {
+                        const echoPusher = window.Echo?.connector?.pusher ?? null;
+
+                        if (echoPusher) {
+                            window.__deviceControlPusher = echoPusher;
+                        } else if (!window.__deviceControlPusher && window.Pusher) {
                             const configuredHost = @js(config('broadcasting.connections.reverb.options.host'));
                             const configuredPort = Number(@js(config('broadcasting.connections.reverb.options.port')));
                             const configuredScheme = @js(config('broadcasting.connections.reverb.options.scheme'));
                             const originScheme = window.location.protocol.replace(':', '');
-                            const wsScheme = configuredScheme || originScheme || 'http';
-                            const wsHost = configuredHost && configuredHost !== '127.0.0.1'
-                                ? configuredHost
-                                : window.location.hostname;
+                            const runtimeHost = window.location.hostname;
+                            const isLocalRuntimeHost = runtimeHost === 'localhost' || runtimeHost === '127.0.0.1' || runtimeHost.endsWith('.test');
+                            const wsScheme = isLocalRuntimeHost ? originScheme : (configuredScheme || originScheme || 'http');
+                            const wsHost = isLocalRuntimeHost || !configuredHost || configuredHost === '127.0.0.1'
+                                ? runtimeHost
+                                : configuredHost;
                             const wsPort = Number.isFinite(configuredPort) && configuredPort > 0
                                 ? configuredPort
                                 : (window.location.port ? Number(window.location.port) : (wsScheme === 'https' ? 443 : 80));
@@ -501,9 +502,30 @@
                             });
                         }
 
+                        if (!window.__deviceControlPusher) {
+                            this.addEvent('error', 'Error', 'WebSocket client not available.');
+                            return;
+                        }
+
                         window.__deviceControlPusher.connection.bind('connected', () => {
                             window.dispatchEvent(new CustomEvent('device-control-event', {
                                 detail: { type: 'info', deviceUuid, data: { message: 'WebSocket connected.' } },
+                            }));
+                        });
+
+                        window.__deviceControlPusher.connection.bind('error', (error) => {
+                            const errorMessage = error?.error?.data?.message
+                                ?? error?.error?.message
+                                ?? 'WebSocket connection error.';
+
+                            window.dispatchEvent(new CustomEvent('device-control-event', {
+                                detail: { type: 'error', deviceUuid, data: { message: errorMessage } },
+                            }));
+                        });
+
+                        window.__deviceControlPusher.connection.bind('unavailable', () => {
+                            window.dispatchEvent(new CustomEvent('device-control-event', {
+                                detail: { type: 'error', deviceUuid, data: { message: 'WebSocket unavailable.' } },
                             }));
                         });
 

@@ -8,68 +8,26 @@ usage() {
     cat <<'EOF'
 Usage: ./scripts/platform-up.sh [--vite]
 
+Starts the full Docker platform stack defined in compose.yaml:
+- laravel.test (web app)
+- pgsql (TimescaleDB)
+- redis
+- nats
+- mailpit
+- reverb
+- iot-listen-states
+- iot-listen-presence
+- iot-ingest-telemetry
+- horizon
+- scheduler
+
 Options:
-  --vite    Start Vite dev server (npm run dev)
-  -h, --help
+  --vite    Also start Vite dev server inside laravel.test
 EOF
 }
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
-}
-
-read_env_value() {
-    local key="$1"
-    local fallback="$2"
-    local env_file="$repo_root/.env"
-
-    if [[ -f "$env_file" ]]; then
-        local match
-        match="$(grep -E "^${key}=" "$env_file" | tail -n 1 || true)"
-
-        if [[ -n "$match" ]]; then
-            local value
-            value="${match#*=}"
-            value="${value%\"}"
-            value="${value#\"}"
-            value="${value%\'}"
-            value="${value#\'}"
-
-            if [[ -n "$value" ]]; then
-                echo "$value"
-                return
-            fi
-        fi
-    fi
-
-    echo "$fallback"
-}
-
-is_process_running() {
-    local pid="${1:-}"
-    local search_term="${2:-}"
-
-    if [[ -z "$pid" ]] || [[ ! "$pid" =~ ^[0-9]+$ ]]; then
-        return 1
-    fi
-
-    if ! kill -0 "$pid" >/dev/null 2>&1; then
-        return 1
-    fi
-
-    if [[ -n "$search_term" ]]; then
-        local actual_cmd
-        actual_cmd=$(ps -p "$pid" -o command= 2>/dev/null || echo "")
-
-        # Use a more flexible check: it should contain both 'php' and parts of the command
-        # or just the search term if it's specific enough.
-        # We'll use a simple substring check.
-        if [[ "$actual_cmd" != *"$search_term"* ]]; then
-            return 1
-        fi
-    fi
-
-    return 0
 }
 
 include_vite=0
@@ -93,16 +51,7 @@ done
 
 script_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
-artisan_path="$repo_root/artisan"
-state_dir="$repo_root/storage/platform"
-log_dir="$repo_root/storage/logs/platform"
-manifest_path="$state_dir/manifest"
-default_reverb_hostname="$(basename "$repo_root").test"
-reverb_server_host="$(read_env_value "REVERB_SERVER_HOST" "0.0.0.0")"
-reverb_server_port="$(read_env_value "REVERB_SERVER_PORT" "8090")"
-reverb_hostname="$(read_env_value "REVERB_HOST" "$default_reverb_hostname")"
-
-mkdir -p "$state_dir" "$log_dir"
+compose_file="$repo_root/compose.yaml"
 
 if ! command_exists docker; then
     echo "Error: docker is required." >&2
@@ -114,115 +63,22 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command_exists php; then
-    echo "Error: php is required." >&2
+if [[ ! -f "$compose_file" ]]; then
+    echo "Error: compose file not found at $compose_file" >&2
     exit 1
 fi
 
-if [[ ! -f "$artisan_path" ]]; then
-    echo "Error: artisan not found at $artisan_path" >&2
-    exit 1
-fi
+echo "Starting Docker platform stack..."
+(cd "$repo_root" && docker compose -f compose.yaml up -d)
 
 if [[ "$include_vite" -eq 1 ]]; then
-    if ! command_exists npm; then
-        echo "Warning: npm is not available. Skipping Vite." >&2
-        include_vite=0
-    elif [[ ! -d "$repo_root/node_modules" ]]; then
-        echo "Warning: node_modules directory not found. Skipping Vite." >&2
-        include_vite=0
-    fi
+    echo "Starting Vite dev server in laravel.test..."
+    (cd "$repo_root" && docker compose -f compose.yaml exec -d laravel.test sh -lc "npm run dev -- --host 0.0.0.0 --port ${VITE_PORT:-5173}")
 fi
-
-echo "Starting NATS broker..."
-(cd "$repo_root" && docker compose -f docker-compose.nats.yml up -d)
-
-services=(
-    $'reverb\tphp artisan reverb:start --host='"$reverb_server_host"' --port='"$reverb_server_port"' --hostname='"$reverb_hostname"$'\treverb.log'
-    $'listen-states\tphp artisan iot:listen-for-device-states\tlisten-states.log'
-    $'listen-presence\tphp artisan iot:listen-for-device-presence\tlisten-presence.log'
-    $'ingest-telemetry\tphp artisan iot:ingest-telemetry\tingest-telemetry.log'
-    $'horizon\tphp artisan horizon\thorizon.log'
-    $'schedule\tphp artisan schedule:work\tschedule.log'
-)
-
-if [[ "$include_vite" -eq 1 ]]; then
-    services+=($'vite\tnpm run dev\tvite.log')
-fi
-
-summary_lines=()
-failed_count=0
-
-start_service() {
-    local name="$1"
-    local command="$2"
-    local log_name="$3"
-    local pid_file="$state_dir/$name.pid"
-    local log_file="$log_dir/$log_name"
-    local status=""
-    local pid="-"
-
-    if [[ -f "$pid_file" ]]; then
-        local existing_pid
-        existing_pid="$(tr -d '[:space:]' < "$pid_file")"
-
-        if is_process_running "$existing_pid" "$command"; then
-            status="running"
-            pid="$existing_pid"
-            summary_lines+=("$name|$status|$pid|$log_file|$command")
-            return
-        fi
-
-        rm -f "$pid_file"
-    fi
-
-    touch "$log_file"
-
-    nohup bash -c "cd '$repo_root' && exec $command" >> "$log_file" 2>&1 &
-    local started_pid=$!
-
-    sleep 1
-
-    if is_process_running "$started_pid" "$command"; then
-        printf '%s\n' "$started_pid" > "$pid_file"
-        status="started"
-        pid="$started_pid"
-    else
-        status="failed"
-        failed_count=$((failed_count + 1))
-        rm -f "$pid_file"
-    fi
-
-    summary_lines+=("$name|$status|$pid|$log_file|$command")
-}
-
-for entry in "${services[@]}"; do
-    IFS=$'\t' read -r name command log_name <<< "$entry"
-    start_service "$name" "$command" "$log_name"
-done
-
-{
-    echo "# name|pid|command|log"
-    for line in "${summary_lines[@]}"; do
-        IFS='|' read -r name status pid log_file command <<< "$line"
-
-        if [[ "$pid" =~ ^[0-9]+$ ]]; then
-            echo "$name|$pid|$command|$log_file"
-        fi
-    done
-} > "$manifest_path"
 
 echo
-echo "Platform startup summary:"
-for line in "${summary_lines[@]}"; do
-    IFS='|' read -r name status pid log_file command <<< "$line"
-    printf '  - %-16s %-8s pid=%-8s log=%s\n' "$name" "$status" "$pid" "$log_file"
-done
+echo "Platform status:"
+(cd "$repo_root" && docker compose -f compose.yaml ps)
 
 echo
-if [[ "$failed_count" -gt 0 ]]; then
-    echo "Startup completed with $failed_count failure(s)." >&2
-    exit 1
-fi
-
 echo "Platform is up."
