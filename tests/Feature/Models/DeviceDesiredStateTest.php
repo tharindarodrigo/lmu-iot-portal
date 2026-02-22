@@ -44,7 +44,11 @@ test('desired state is cast to array', function (): void {
 
     $state->refresh();
 
-    expect($state->desired_state)->toBe($desired);
+    $actual = $state->desired_state;
+    ksort($actual);
+    ksort($desired);
+
+    expect($actual)->toBe($desired);
 });
 
 test('device has one desired state', function (): void {

@@ -12,6 +12,7 @@ use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Events\DeviceStateReceived;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 use function Laravel\Prompts\intro;
 use function Laravel\Prompts\outro;
@@ -44,6 +45,12 @@ class ManualDevicePublishCommand extends Command
                 return 1;
             }
         } else {
+            if (! Str::isUuid($uuid)) {
+                $this->error("Device with UUID {$uuid} not found.");
+
+                return 1;
+            }
+
             /** @var Device|null $device */
             $device = Device::query()
                 ->where('uuid', $uuid)

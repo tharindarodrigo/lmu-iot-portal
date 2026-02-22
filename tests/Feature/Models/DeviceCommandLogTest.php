@@ -78,7 +78,11 @@ test('command payload is cast to array', function (): void {
 
     $log->refresh();
 
-    expect($log->command_payload)->toBe($payload);
+    $actual = $log->command_payload;
+    ksort($actual);
+    ksort($payload);
+
+    expect($actual)->toBe($payload);
 });
 
 test('response payload is cast to array', function (): void {

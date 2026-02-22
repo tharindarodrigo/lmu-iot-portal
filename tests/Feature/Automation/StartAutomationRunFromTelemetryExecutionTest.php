@@ -476,8 +476,7 @@ it('executes query condition and alert nodes when query value exceeds threshold'
         ->and($run?->steps()->where('node_id', 'alert-1')->where('status', 'completed')->exists())->toBeTrue();
 
     Notification::assertSentOnDemand(AutomationWorkflowAlertNotification::class);
-
-    expect(Notification::sentOnDemand(AutomationWorkflowAlertNotification::class))->toHaveCount(1);
+    Notification::assertSentOnDemandTimes(AutomationWorkflowAlertNotification::class, 1);
 });
 
 it('skips repeated alerts within cooldown window while recording skip reason', function (): void {
@@ -505,7 +504,7 @@ it('skips repeated alerts within cooldown window while recording skip reason', f
         telemetryLogId: $secondTriggerLog->id,
     ))->handle();
 
-    expect(Notification::sentOnDemand(AutomationWorkflowAlertNotification::class))->toHaveCount(1);
+    Notification::assertSentOnDemandTimes(AutomationWorkflowAlertNotification::class, 1);
 
     $secondRun = $fixture['workflow']->runs()->latest('id')->first();
 
