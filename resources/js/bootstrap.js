@@ -22,15 +22,26 @@ function shouldEnableEcho() {
 	return document.querySelector('meta[name="enable-echo"]')?.getAttribute('content') === 'true';
 }
 
+function isLocalRuntimeHost(host) {
+	return host === 'localhost' || host === '127.0.0.1' || host.endsWith('.test');
+}
+
 function resolveWebSocketConfig() {
-	const scheme = import.meta.env.VITE_REVERB_SCHEME ?? 'http';
+	const runtimeHost = window.location.hostname;
+	const runtimeScheme = window.location.protocol === 'https:' ? 'https' : 'http';
+	const isLocalRuntime = isLocalRuntimeHost(runtimeHost);
+	const configuredScheme = import.meta.env.VITE_REVERB_SCHEME;
+	const scheme = isLocalRuntime ? runtimeScheme : configuredScheme ?? runtimeScheme;
 	const configuredHost = import.meta.env.VITE_REVERB_HOST;
-	const fallbackHost = window.location.hostname;
-	const host = configuredHost && configuredHost !== '127.0.0.1' ? configuredHost : fallbackHost;
-	const configuredPort = import.meta.env.VITE_REVERB_PORT;
+	const host = isLocalRuntime || !configuredHost || configuredHost === '127.0.0.1'
+		? runtimeHost
+		: configuredHost;
+	const configuredPort = Number(import.meta.env.VITE_REVERB_PORT);
 	const defaultPort = scheme === 'https' ? 443 : 80;
 	const locationPort = window.location.port ? Number(window.location.port) : undefined;
-	const port = configuredPort ? Number(configuredPort) : locationPort ?? defaultPort;
+	const port = Number.isInteger(configuredPort) && configuredPort > 0
+		? configuredPort
+		: locationPort ?? defaultPort;
 
 	return {
 		scheme,

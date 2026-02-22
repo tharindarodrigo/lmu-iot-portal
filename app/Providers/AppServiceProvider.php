@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Database\TimescalePostgresConnection;
 use App\Domain\Automation\Contracts\TriggerMatcher;
 use App\Domain\Automation\Listeners\QueueTelemetryAutomationRuns;
 use App\Domain\Automation\Models\AutomationWorkflow;
@@ -35,6 +36,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -47,6 +49,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        Connection::resolverFor('pgsql', function ($connection, $database, $prefix, $config) {
+            return new TimescalePostgresConnection($connection, $database, $prefix, $config);
+        });
+
         $this->app->bind(NatsPublisherFactory::class, BasisNatsPublisherFactory::class);
         $this->app->bind(NatsDeviceStateStore::class, BasisNatsDeviceStateStore::class);
         $this->app->bind(MqttCommandPublisher::class, PhpMqttCommandPublisher::class);

@@ -10,6 +10,7 @@ use Basis\Nats\Configuration;
 use Basis\Nats\Message\Payload;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
+use Laravel\Telescope\Telescope;
 
 class ListenForDevicePresence extends Command
 {
@@ -21,6 +22,8 @@ class ListenForDevicePresence extends Command
 
     public function handle(DevicePresenceService $presenceService): int
     {
+        $this->disableTelescopeRecording();
+
         $host = $this->resolveHost();
         $port = $this->resolvePort();
         $subjectPrefix = $this->resolveSubjectPrefix();
@@ -86,6 +89,8 @@ class ListenForDevicePresence extends Command
                 $client->process(1);
             } catch (\Throwable $e) {
                 if (str_contains($e->getMessage(), 'No handler')) {
+                    usleep(200_000);
+
                     continue;
                 }
 
@@ -153,5 +158,12 @@ class ListenForDevicePresence extends Command
         $suffix = config('iot.presence.subject_suffix', 'presence');
 
         return is_string($suffix) && trim($suffix) !== '' ? str_replace('/', '.', trim($suffix)) : 'presence';
+    }
+
+    private function disableTelescopeRecording(): void
+    {
+        if (class_exists(Telescope::class)) {
+            Telescope::stopRecording();
+        }
     }
 }

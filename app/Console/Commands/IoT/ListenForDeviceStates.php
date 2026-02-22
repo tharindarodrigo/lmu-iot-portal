@@ -11,6 +11,7 @@ use Basis\Nats\Message\Payload;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use JsonException;
+use Laravel\Telescope\Telescope;
 
 class ListenForDeviceStates extends Command
 {
@@ -22,6 +23,8 @@ class ListenForDeviceStates extends Command
 
     public function handle(): int
     {
+        $this->disableTelescopeRecording();
+
         $host = $this->resolveHost();
         $port = $this->resolvePort();
 
@@ -117,6 +120,8 @@ class ListenForDeviceStates extends Command
                 $client->process(1);
             } catch (\Throwable $e) {
                 if (str_contains($e->getMessage(), 'No handler')) {
+                    usleep(200_000);
+
                     continue;
                 }
 
@@ -176,5 +181,12 @@ class ListenForDeviceStates extends Command
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
+    }
+
+    private function disableTelescopeRecording(): void
+    {
+        if (class_exists(Telescope::class)) {
+            Telescope::stopRecording();
+        }
     }
 }

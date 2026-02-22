@@ -11,6 +11,7 @@ use App\Events\DeviceStateReceived;
 use Basis\Nats\Client;
 use Basis\Nats\Configuration;
 use Illuminate\Console\Command;
+use Laravel\Telescope\Telescope;
 
 use function Laravel\Prompts\search;
 
@@ -25,6 +26,8 @@ class MockDeviceCommand extends Command
 
     public function handle(): int
     {
+        $this->disableTelescopeRecording();
+
         $uuid = $this->argument('device_uuid');
         $host = $this->resolveHost();
         $port = $this->resolvePort();
@@ -142,6 +145,8 @@ class MockDeviceCommand extends Command
                 $client->process(1);
             } catch (\Throwable $e) {
                 if (str_contains($e->getMessage(), 'No handler')) {
+                    usleep(200_000);
+
                     continue;
                 }
 
@@ -215,5 +220,12 @@ class MockDeviceCommand extends Command
             ->where('id', $deviceId)
             ->with(['deviceType', 'schemaVersion.topics.parameters'])
             ->first();
+    }
+
+    private function disableTelescopeRecording(): void
+    {
+        if (class_exists(Telescope::class)) {
+            Telescope::stopRecording();
+        }
     }
 }

@@ -14,6 +14,7 @@ use Basis\Nats\Message\Payload;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Laravel\Telescope\Telescope;
 
 class IngestTelemetryCommand extends Command
 {
@@ -27,6 +28,8 @@ class IngestTelemetryCommand extends Command
 
     public function handle(): int
     {
+        $this->disableTelescopeRecording();
+
         $host = $this->resolveHost();
         $port = $this->resolvePort();
         $subject = $this->resolveSubject();
@@ -106,6 +109,8 @@ class IngestTelemetryCommand extends Command
                 $client->process(1);
             } catch (\Throwable $exception) {
                 if (str_contains($exception->getMessage(), 'No handler')) {
+                    usleep(200_000);
+
                     continue;
                 }
 
@@ -195,5 +200,12 @@ class IngestTelemetryCommand extends Command
         $value = config($key, $fallback);
 
         return is_numeric($value) ? (int) $value : $fallback;
+    }
+
+    private function disableTelescopeRecording(): void
+    {
+        if (class_exists(Telescope::class)) {
+            Telescope::stopRecording();
+        }
     }
 }

@@ -6,12 +6,10 @@
 
 ### Prerequisites
 
-- **PHP 8.4+** (via [Laravel Herd](https://herd.laravel.com/) recommended)
+- **Docker Desktop** (or Docker Engine + Compose)
+- **Git**
 - **Composer** 2.x
 - **Node.js** 20+ & **NPM**
-- **PostgreSQL** 16+ with the **TimescaleDB** extension
-- **Redis** (for queues/cache via Horizon)
-- **Docker** (for the NATS broker)
 
 ### 1. Clone & Install Dependencies
 
@@ -34,16 +32,20 @@ Edit `.env` and set your database credentials:
 
 ```dotenv
 DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
+DB_HOST=pgsql
 DB_PORT=5432
 DB_DATABASE=lmu_iot_portal
-DB_USERNAME=your_user
-DB_PASSWORD=your_password
+DB_USERNAME=sail
+DB_PASSWORD=password
 ```
 
 ### 3. PostgreSQL & TimescaleDB Setup
 
-The project uses [TimescaleDB](https://www.timescale.com/) for time-series telemetry data. Install the extension on your PostgreSQL instance:
+The project uses [TimescaleDB](https://www.timescale.com/) for time-series telemetry data.
+
+With Docker/Sail, TimescaleDB is included automatically via `timescale/timescaledb` in `compose.yaml`, so you do not need to install it separately on your host.
+
+If you run PostgreSQL outside Docker, install the extension on your PostgreSQL instance:
 
 ```bash
 # macOS (Homebrew)
@@ -69,10 +71,49 @@ SELECT extversion FROM pg_extension WHERE extname = 'timescaledb';
 
 > The migration `2026_02_06_182310_create_device_telemetry_logs_table` automatically enables the extension and creates a hypertable on `device_telemetry_logs.recorded_at` when running on PostgreSQL.
 
-### 4. Database Migration & Seeding
+### 4. Start the Platform Services (Recommended)
+
+Start the full Docker platform stack in one command:
 
 ```bash
-php artisan migrate --seed
+composer platform:up
+```
+
+This starts all required services:
+- `laravel.test` (web app)
+- `pgsql` (TimescaleDB)
+- `redis`
+- `nats`
+- `mailpit`
+- `reverb`
+- `iot-listen-states`
+- `iot-listen-presence`
+- `iot-ingest-telemetry`
+- `horizon`
+- `scheduler`
+
+After first startup, initialize and seed the database:
+
+```bash
+docker compose -f compose.yaml exec laravel.test php artisan migrate --seed
+```
+
+Stop everything:
+
+```bash
+composer platform:down
+```
+
+### 5. Database Migration & Seeding
+
+```bash
+docker compose -f compose.yaml exec laravel.test php artisan migrate --seed
+```
+
+Reset and reseed from scratch (development only):
+
+```bash
+docker compose -f compose.yaml exec laravel.test php artisan migrate:fresh --seed
 ```
 
 This creates all tables, enables TimescaleDB hypertables, syncs permissions, and seeds demo data including:
@@ -81,55 +122,46 @@ This creates all tables, enables TimescaleDB hypertables, syncs permissions, and
 - Device types (thermal sensor, smart fan, dimmable light)
 - Schema versions with parameter definitions
 
-### 5. Build Frontend Assets
+### 6. Build Frontend Assets
 
 ```bash
 npm run build
 
 # OR for development with hot reload:
-npm run dev
-```
-
-### 6. Start the Platform Services (Recommended)
-
-Use the unified runner to start all required local services:
-
-```bash
-./scripts/platform-up.sh
-
-# Optional: include Vite for hot reload
-./scripts/platform-up.sh --vite
-```
-
-Composer aliases are also available:
-
-```bash
-composer platform:up
 composer platform:up:vite
 ```
 
-`platform-up` starts:
-- NATS broker (Docker)
-- Laravel Reverb (`php artisan reverb:start --port=8090`)
-- Device state listener (`php artisan iot:listen-for-device-states`)
-- Device presence listener (`php artisan iot:listen-for-device-presence`)
-- Telemetry ingestion listener (`php artisan iot:ingest-telemetry`)
-- Horizon (`php artisan horizon`)
-- Scheduler worker (`php artisan schedule:work`)
-- Vite (`npm run dev`) only when `--vite` is passed
+### 7. Telemetry Queue Workers (Seamless Flow)
 
-To stop everything:
+Telemetry processing is split into two always-on services:
+
+- `iot-ingest-telemetry` subscribes to NATS and dispatches ingestion jobs to the Redis `ingestion` queue.
+- `horizon` runs the queue workers and processes `default`, `ingestion`, and `simulations` queues (as configured in `config/horizon.php`).
+
+Check worker status and queues:
 
 ```bash
-./scripts/platform-down.sh
-
-# Or:
-composer platform:down
+docker compose -f compose.yaml logs -f iot-ingest-telemetry horizon
 ```
 
-### 7. Start Services Manually (Alternative)
+Scale queue processing when telemetry volume grows:
+
+```bash
+docker compose -f compose.yaml up -d --scale horizon=2
+```
+
+### 8. Start Services Manually (Alternative, Host Runtime)
 
 If you prefer to run services individually:
+
+Set host-based endpoints in `.env` before using this mode:
+
+```dotenv
+DB_HOST=127.0.0.1
+REDIS_HOST=127.0.0.1
+IOT_NATS_HOST=127.0.0.1
+INGESTION_NATS_HOST=127.0.0.1
+```
 
 ```bash
 docker compose -f docker-compose.nats.yml up -d
@@ -152,7 +184,7 @@ The NATS configuration is at `docker/nats/nats.conf` and includes:
 - MQTT support on port 1883
 - HTTP monitoring on port 8222 (mapped to host 8223)
 
-### 8. Configure Git Workflow (Contributors)
+### 9. Configure Git Workflow (Contributors)
 
 ```bash
 ./scripts/setup-dev.sh
@@ -160,7 +192,15 @@ The NATS configuration is at `docker/nats/nats.conf` and includes:
 
 ### Access the Application
 
-If using Laravel Herd:
+If using Docker stack:
+```
+http://localhost:8081
+```
+
+> For Docker mode, use `http://localhost:8081` for the web app and `ws://localhost:8090` for Reverb.  
+> Do not run host (`php artisan ...`) daemons in parallel with Docker daemons.
+
+If using Laravel Herd (host runtime):
 ```
 https://lmu-iot-portal.test
 ```
@@ -180,17 +220,20 @@ For full functionality, you need these services running:
 
 | Service | Command | Purpose |
 |---------|---------|---------|
-| Unified Startup (recommended) | `./scripts/platform-up.sh` | Starts full local stack in one command |
-| Unified Startup + Vite | `./scripts/platform-up.sh --vite` | Full stack + frontend hot reload |
-| Unified Shutdown | `./scripts/platform-down.sh` | Stops managed processes + NATS container |
-| NATS Broker | `docker compose -f docker-compose.nats.yml up -d` | Message broker (MQTT + NATS) |
-| Laravel Reverb | `php artisan reverb:start --port=8090` | WebSocket server for real-time UI |
-| Device State Listener | `php artisan iot:listen-for-device-states` | Bridges device state to dashboard |
-| Device Presence Listener | `php artisan iot:listen-for-device-presence` | Tracks online/offline via presence topics |
-| Telemetry Ingestion Listener | `php artisan iot:ingest-telemetry` | Subscribes to inbound telemetry and queues processing |
-| Horizon | `php artisan horizon` | Queue worker (default + ingestion + simulations) |
-| Scheduler Worker | `php artisan schedule:work` | Runs scheduled maintenance jobs continuously |
-| Vite (dev only) | `npm run dev` | Frontend hot reload |
+| Platform startup (recommended) | `composer platform:up` | Starts full Docker platform including web, broker, listeners, Horizon, and scheduler |
+| Platform shutdown | `composer platform:down` | Stops all platform containers |
+| Show container status | `docker compose -f compose.yaml ps` | Quick health/status view for all services |
+| Telemetry + queue logs | `docker compose -f compose.yaml logs -f iot-ingest-telemetry horizon` | Validate telemetry ingestion and queue worker processing |
+| Scale queue workers | `docker compose -f compose.yaml up -d --scale horizon=2` | Add more Horizon processes for high telemetry throughput |
+| Vite (optional) | `composer platform:up:vite` | Starts platform and launches Vite dev server inside `laravel.test` |
+
+If dashboard realtime appears stale, rebuild assets in Docker and clear cached config:
+
+```bash
+docker compose -f compose.yaml up -d
+docker compose -f compose.yaml exec laravel.test php artisan optimize:clear
+npm run build
+```
 
 ---
 
