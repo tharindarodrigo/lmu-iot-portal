@@ -21,6 +21,8 @@
  */
 
 #include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -31,19 +33,30 @@ const char* WIFI_SSID     = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // MQTT broker — the NATS MQTT bridge address
-const char* MQTT_HOST     = "10.0.0.42";   // Change to your NATS broker IP
-const uint16_t MQTT_PORT  = 1883;
-const char* MQTT_USER     = "";
-const char* MQTT_PASS     = "";
-const char* MQTT_CLIENT   = "dimmable-light-01";
+const char* MQTT_HOST     = "{{MQTT_HOST}}";
+const uint16_t MQTT_PORT  = {{MQTT_PORT}};
+const bool MQTT_USE_TLS   = {{MQTT_USE_TLS}};
+const char* MQTT_SECURITY_MODE = "{{MQTT_SECURITY_MODE}}";
+const char* MQTT_USER     = "{{MQTT_USER}}";
+const char* MQTT_PASS     = "{{MQTT_PASS}}";
+const char* MQTT_CLIENT   = "{{MQTT_CLIENT_ID}}";
 
 // Device identity — must match the platform's external_id
-const char* DEVICE_ID     = "dimmable-light-01";
+const char* DEVICE_ID     = "{{DEVICE_ID}}";
 
 // MQTT topics (built from the schema: baseTopic/identifier/suffix)
-const char* TOPIC_CONTROL  = "devices/dimmable-light/dimmable-light-01/control";
-const char* TOPIC_STATE    = "devices/dimmable-light/dimmable-light-01/state";
-const char* TOPIC_PRESENCE = "devices/dimmable-light-01/presence";
+const char* TOPIC_CONTROL  = "{{CONTROL_TOPIC}}";
+const char* TOPIC_STATE    = "{{STATE_TOPIC}}";
+const char* TOPIC_PRESENCE = "{{PRESENCE_TOPIC}}";
+const char* MQTT_CA_CERT = R"PEM(
+{{MQTT_TLS_CA_CERT_PEM}}
+)PEM";
+const char* MQTT_CLIENT_CERT = R"PEM(
+{{MQTT_TLS_CLIENT_CERT_PEM}}
+)PEM";
+const char* MQTT_CLIENT_KEY = R"PEM(
+{{MQTT_TLS_CLIENT_KEY_PEM}}
+)PEM";
 
 // Hardware pins
 const uint8_t PIN_LED    = 15;
@@ -64,7 +77,8 @@ const unsigned long BUTTON_DEBOUNCE_MS   = 50;   // hardware debounce
 
 /* ─────────────────────── State ─────────────────────── */
 
-WiFiClient   wifiClient;
+WiFiClient wifiClient;
+WiFiClientSecure wifiSecureClient;
 PubSubClient mqttClient(wifiClient);
 
 uint8_t brightnessLevel = 0;
@@ -160,6 +174,31 @@ void connectWiFi() {
 /* ─────────────────────── MQTT Connection ─────────────────────── */
 
 void connectMQTT() {
+  bool useMutualTls = strcmp(MQTT_SECURITY_MODE, "x509_mtls") == 0;
+  bool useTlsTransport = MQTT_USE_TLS || useMutualTls;
+
+  if (useTlsTransport) {
+    mqttClient.setClient(wifiSecureClient);
+
+    if (MQTT_CA_CERT[0] != '\0') {
+      wifiSecureClient.setCACert(MQTT_CA_CERT);
+    } else {
+      wifiSecureClient.setInsecure();
+      Serial.println("[MQTT] Warning: no CA cert configured, TLS peer verification disabled");
+    }
+
+    if (useMutualTls) {
+      if (MQTT_CLIENT_CERT[0] == '\0' || MQTT_CLIENT_KEY[0] == '\0') {
+        Serial.println("[MQTT] Warning: X.509 mode selected but client cert/key is missing");
+      } else {
+        wifiSecureClient.setCertificate(MQTT_CLIENT_CERT);
+        wifiSecureClient.setPrivateKey(MQTT_CLIENT_KEY);
+      }
+    }
+  } else {
+    mqttClient.setClient(wifiClient);
+  }
+
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
 
