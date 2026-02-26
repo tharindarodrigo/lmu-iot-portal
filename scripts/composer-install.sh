@@ -32,11 +32,6 @@ if ! command_exists docker; then
     exit 1
 fi
 
-if ! docker compose version >/dev/null 2>&1; then
-    echo "Error: docker compose is required." >&2
-    exit 1
-fi
-
 if [[ ! -f "$repo_root/composer.json" ]]; then
     echo "Error: composer.json not found in $repo_root" >&2
     exit 1
