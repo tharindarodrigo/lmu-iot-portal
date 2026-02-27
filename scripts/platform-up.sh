@@ -71,6 +71,7 @@ fi
 if [[ ! -f "$repo_root/.env" ]]; then
     echo "No .env file found. Copying .env.example..."
     cp "$repo_root/.env.example" "$repo_root/.env"
+    sed -i '' 's/^APP_NAME=.*/APP_NAME="LMU IoT Portal"/' "$repo_root/.env"
 fi
 
 if [[ ! -d "$repo_root/vendor/laravel/sail" ]]; then
