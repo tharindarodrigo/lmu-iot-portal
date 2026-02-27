@@ -78,9 +78,13 @@ if [[ ! -f "$repo_root/.env" ]]; then
     fi
 fi
 
+host_uid="$(id -u)"
+host_gid="$(id -g)"
+
 if [[ ! -d "$repo_root/vendor/laravel/sail" ]]; then
     echo "Composer dependencies not installed. Installing via Docker..."
     docker run --rm \
+        -u "$host_uid:$host_gid" \
         -v "$repo_root:/app" \
         -w /app \
         composer:latest \
@@ -90,6 +94,7 @@ fi
 if [[ ! -f "$repo_root/public/build/manifest.json" ]]; then
     echo "Vite manifest not found. Installing npm dependencies and building assets via Docker..."
     docker run --rm \
+        -u "$host_uid:$host_gid" \
         -v "$repo_root:/app" \
         -w /app \
         node:lts-alpine \
@@ -105,7 +110,8 @@ echo "Starting Docker platform stack..."
 (cd "$repo_root" && docker compose -f compose.yaml up -d --build)
 
 if [[ "$first_run" -eq 1 ]]; then
-    echo "First-time setup detected. Generating app key and running migrations..."
+    echo "First-time setup detected. Setting permissions, generating app key, and running migrations..."
+    (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test chown -R sail:sail /var/www/html/storage /var/www/html/bootstrap/cache)
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan key:generate --no-interaction)
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan migrate --seed --no-interaction)
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan iot:pki:init --no-interaction)
