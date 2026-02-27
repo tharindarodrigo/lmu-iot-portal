@@ -109,9 +109,11 @@ fi
 echo "Starting Docker platform stack..."
 (cd "$repo_root" && docker compose -f compose.yaml up -d --build)
 
+echo "Fixing storage permissions..."
+(cd "$repo_root" && docker compose -f compose.yaml exec laravel.test chown -R sail:sail /var/www/html/storage /var/www/html/bootstrap/cache)
+
 if [[ "$first_run" -eq 1 ]]; then
-    echo "First-time setup detected. Setting permissions, generating app key, and running migrations..."
-    (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test chown -R sail:sail /var/www/html/storage /var/www/html/bootstrap/cache)
+    echo "First-time setup detected. Generating app key and running migrations..."
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan key:generate --no-interaction)
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan migrate --seed --no-interaction)
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan iot:pki:init --no-interaction)
