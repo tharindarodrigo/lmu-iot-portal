@@ -68,8 +68,44 @@ if [[ ! -f "$compose_file" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$repo_root/.env" ]]; then
+    echo "No .env file found. Copying .env.example..."
+    cp "$repo_root/.env.example" "$repo_root/.env"
+fi
+
+if [[ ! -d "$repo_root/vendor/laravel/sail" ]]; then
+    echo "Composer dependencies not installed. Installing via Docker..."
+    docker run --rm \
+        -v "$repo_root:/app" \
+        -w /app \
+        composer:latest \
+        composer install --ignore-platform-reqs --no-interaction
+fi
+
+if [[ ! -f "$repo_root/public/build/manifest.json" ]]; then
+    echo "Vite manifest not found. Installing npm dependencies and building assets via Docker..."
+    docker run --rm \
+        -v "$repo_root:/app" \
+        -w /app \
+        node:lts-alpine \
+        sh -c "npm install && npm run build"
+fi
+
+first_run=0
+if grep -q '^APP_KEY=$' "$repo_root/.env"; then
+    first_run=1
+fi
+
 echo "Starting Docker platform stack..."
 (cd "$repo_root" && docker compose -f compose.yaml up -d)
+
+if [[ "$first_run" -eq 1 ]]; then
+    echo "First-time setup detected. Generating app key and running migrations..."
+    (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan key:generate --no-interaction)
+    (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan migrate --seed --no-interaction)
+    echo "Restarting containers to pick up new app key..."
+    (cd "$repo_root" && docker compose -f compose.yaml restart)
+fi
 
 if [[ "$include_vite" -eq 1 ]]; then
     echo "Starting Vite dev server in laravel.test..."
