@@ -113,9 +113,16 @@ echo "Fixing storage permissions..."
 (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test chown -R sail:sail /var/www/html/storage /var/www/html/bootstrap/cache)
 
 if [[ "$first_run" -eq 1 ]]; then
-    echo "First-time setup detected. Generating app key and running migrations..."
+    echo "First-time setup detected. Generating app key..."
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan key:generate --no-interaction)
-    (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan migrate --seed --no-interaction)
+fi
+
+echo "Running migrations..."
+(cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan migrate --no-interaction)
+
+if [[ "$first_run" -eq 1 ]]; then
+    echo "Seeding database and initializing PKI..."
+    (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan db:seed --no-interaction)
     (cd "$repo_root" && docker compose -f compose.yaml exec laravel.test php artisan iot:pki:init --no-interaction)
     echo "Restarting containers to pick up new app key..."
     (cd "$repo_root" && docker compose -f compose.yaml restart)
