@@ -17,6 +17,10 @@ return [
 
     'registry_ttl_seconds' => (int) env('INGESTION_REGISTRY_TTL_SECONDS', 30),
 
+    'stage_log_mode' => (string) env('INGESTION_STAGE_LOG_MODE', 'failures'),
+
+    'stage_log_sample_rate' => (float) env('INGESTION_STAGE_LOG_SAMPLE_RATE', 0.0),
+
     'capture_stage_snapshots' => (bool) env('INGESTION_CAPTURE_STAGE_SNAPSHOTS', true),
 
     'capture_success_stage_snapshots' => (bool) env('INGESTION_CAPTURE_SUCCESS_STAGE_SNAPSHOTS', false),

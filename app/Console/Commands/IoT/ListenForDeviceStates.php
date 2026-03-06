@@ -84,21 +84,13 @@ class ListenForDeviceStates extends Command
                     return;
                 }
 
-                Log::channel('device_control')->info('Message reconciled', [
+                Log::channel('device_control')->debug('Message reconciled', [
                     'device_uuid' => $result['device_uuid'],
                     'device_external_id' => $result['device_external_id'],
                     'topic' => $result['topic'],
                     'purpose' => $result['purpose'],
                     'command_log_id' => $result['command_log_id'],
                 ]);
-
-                $this->line(sprintf(
-                    'Received %s [%s] for %s%s',
-                    $result['topic'],
-                    $result['purpose'],
-                    $result['device_external_id'] ?? $result['device_uuid'],
-                    $result['command_log_id'] !== null ? " (command #{$result['command_log_id']})" : '',
-                ));
             } catch (\Throwable $e) {
                 Log::channel('device_control')->error('Listener processing error', [
                     'error' => $e->getMessage(),

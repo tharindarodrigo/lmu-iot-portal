@@ -49,7 +49,7 @@ final readonly class DeviceCommandDispatcher
         $resolvedPort = $this->resolveMqttPort($port);
         $mqttTopic = $this->resolveTopicWithExternalId($device, $topic);
 
-        $this->log()->info('Dispatching command', [
+        $this->log()->debug('Dispatching command', [
             'device_id' => $device->id,
             'device_external_id' => $device->external_id,
             'device_uuid' => $device->uuid,
@@ -106,7 +106,7 @@ final readonly class DeviceCommandDispatcher
         $encodedPayload = is_string($encodedPayload) ? $encodedPayload : '{}';
 
         try {
-            $this->log()->info('Publishing MQTT command', [
+            $this->log()->debug('Publishing MQTT command', [
                 'command_log_id' => $commandLog->id,
                 'mqtt_topic' => $mqttTopic,
                 'mqtt_host' => $resolvedHost,
@@ -123,7 +123,7 @@ final readonly class DeviceCommandDispatcher
 
             $commandLog->refresh();
 
-            $this->log()->info('Command sent successfully', [
+            $this->log()->debug('Command sent successfully', [
                 'command_log_id' => $commandLog->id,
                 'correlation_id' => $correlationId,
                 'nats_subject' => $natsSubject,
@@ -157,8 +157,6 @@ final readonly class DeviceCommandDispatcher
                 'status' => CommandStatus::Failed,
                 'error_message' => $exception->getMessage(),
             ]);
-
-            report($exception);
         }
 
         return $commandLog;

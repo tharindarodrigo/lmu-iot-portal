@@ -26,6 +26,8 @@ beforeEach(function (): void {
         'ingestion.driver' => 'laravel',
         'ingestion.publish_analytics' => true,
         'ingestion.publish_invalid_events' => true,
+        'ingestion.stage_log_mode' => 'failures',
+        'ingestion.stage_log_sample_rate' => 0.0,
         'ingestion.capture_stage_snapshots' => true,
         'ingestion.capture_success_stage_snapshots' => false,
         'iot.presence.write_throttle_seconds' => 0,
@@ -153,7 +155,7 @@ function buildTelemetryContext(bool $active = true): array
     ];
 }
 
-it('processes valid telemetry through all stages and publishes analytics', function (): void {
+it('processes valid telemetry without persisting successful stage logs by default', function (): void {
     $context = buildTelemetryContext(true);
 
     /** @var TelemetryIngestionService $service */
@@ -172,18 +174,11 @@ it('processes valid telemetry through all stages and publishes analytics', funct
 
     $message->refresh();
 
-    expect($message->stageLogs)->toHaveCount(6);
-    expect($message->organization_id)->toBe($context['device']->organization_id)
+    expect($message->stageLogs)->toHaveCount(0)
+        ->and($message->organization_id)->toBe($context['device']->organization_id)
         ->and($message->device_id)->toBe($context['device']->id)
         ->and($message->device_schema_version_id)->toBe($context['device']->device_schema_version_id)
         ->and($message->schema_version_topic_id)->toBe($context['topic']->id);
-
-    $successfulStage = $message->stageLogs()->where('stage', 'persist')->first();
-
-    expect($successfulStage)->not->toBeNull()
-        ->and($successfulStage?->input_snapshot)->toBeNull()
-        ->and($successfulStage?->output_snapshot)->toBeNull()
-        ->and($successfulStage?->change_set)->toBeNull();
 
     $telemetryLog = $message->telemetryLog()->first();
 
@@ -221,8 +216,8 @@ it('halts processing on validation failure and publishes invalid telemetry event
 
     $message->refresh();
 
-    expect($message->stageLogs)->toHaveCount(2);
-    expect($message->organization_id)->toBe($context['device']->organization_id)
+    expect($message->stageLogs)->toHaveCount(1)
+        ->and($message->organization_id)->toBe($context['device']->organization_id)
         ->and($message->device_id)->toBe($context['device']->id)
         ->and($message->device_schema_version_id)->toBe($context['device']->device_schema_version_id)
         ->and($message->schema_version_topic_id)->toBe($context['topic']->id);
@@ -264,7 +259,7 @@ it('records inactive device telemetry but skips post-validation processing', fun
 
     $message->refresh();
 
-    expect($message->stageLogs)->toHaveCount(2);
+    expect($message->stageLogs)->toHaveCount(0);
 
     $telemetryLog = $message->telemetryLog()->first();
 
@@ -404,4 +399,87 @@ it('marks ingestion as failed terminal when post-persist publish side effects fa
     expect($publishStage)->not->toBeNull()
         ->and($publishStage?->status)->toBe(IngestionStatus::FailedTerminal)
         ->and($publishStage?->errors)->toHaveKey('hot_state');
+});
+
+it('persists successful stage logs when stage log mode is all', function (): void {
+    config()->set('ingestion.stage_log_mode', 'all');
+
+    $context = buildTelemetryContext(true);
+
+    /** @var TelemetryIngestionService $service */
+    $service = app(TelemetryIngestionService::class);
+
+    $message = $service->ingest(new IncomingTelemetryEnvelope(
+        sourceSubject: str_replace('/', '.', $context['mqtt_topic']),
+        mqttTopic: $context['mqtt_topic'],
+        payload: ['temp_c' => 10],
+        deviceExternalId: 'sensor-01',
+        receivedAt: now(),
+    ));
+
+    expect($message)->toBeInstanceOf(IngestionMessage::class)
+        ->and($message?->status)->toBe(IngestionStatus::Completed);
+
+    $message->refresh();
+
+    $persistStage = $message->stageLogs()->where('stage', 'persist')->first();
+
+    expect($message->stageLogs)->toHaveCount(6)
+        ->and($persistStage)->not->toBeNull()
+        ->and($persistStage?->input_snapshot)->toBeNull()
+        ->and($persistStage?->output_snapshot)->toBeNull();
+});
+
+it('captures successful stage snapshots only when explicitly enabled', function (): void {
+    config()->set('ingestion.stage_log_mode', 'all');
+    config()->set('ingestion.capture_success_stage_snapshots', true);
+
+    $context = buildTelemetryContext(true);
+
+    /** @var TelemetryIngestionService $service */
+    $service = app(TelemetryIngestionService::class);
+
+    $message = $service->ingest(new IncomingTelemetryEnvelope(
+        sourceSubject: str_replace('/', '.', $context['mqtt_topic']),
+        mqttTopic: $context['mqtt_topic'],
+        payload: ['temp_c' => 10],
+        deviceExternalId: 'sensor-01',
+        receivedAt: now(),
+    ));
+
+    expect($message)->toBeInstanceOf(IngestionMessage::class)
+        ->and($message?->status)->toBe(IngestionStatus::Completed);
+
+    $message->refresh();
+
+    $validateStage = $message->stageLogs()->where('stage', 'validate')->first();
+
+    expect($validateStage)->not->toBeNull()
+        ->and($validateStage?->input_snapshot)->not->toBeNull()
+        ->and($validateStage?->output_snapshot)->not->toBeNull();
+});
+
+it('samples successful stage logs when sampled mode is enabled', function (): void {
+    config()->set('ingestion.stage_log_mode', 'sampled');
+    config()->set('ingestion.stage_log_sample_rate', 1.0);
+
+    $context = buildTelemetryContext(true);
+
+    /** @var TelemetryIngestionService $service */
+    $service = app(TelemetryIngestionService::class);
+
+    $message = $service->ingest(new IncomingTelemetryEnvelope(
+        sourceSubject: str_replace('/', '.', $context['mqtt_topic']),
+        mqttTopic: $context['mqtt_topic'],
+        payload: ['temp_c' => 10],
+        deviceExternalId: 'sensor-01',
+        receivedAt: now(),
+    ));
+
+    expect($message)->toBeInstanceOf(IngestionMessage::class)
+        ->and($message?->status)->toBe(IngestionStatus::Completed);
+
+    $message->refresh();
+
+    expect($message->stageLogs)->toHaveCount(6);
 });

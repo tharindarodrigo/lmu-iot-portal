@@ -53,7 +53,7 @@ class DevicePresenceService
                 ]);
             }
 
-            Log::channel('device_control')->info('Device came online', [
+            Log::channel('device_control')->debug('Device came online', [
                 'device_id' => $freshDevice->id,
                 'device_uuid' => $freshDevice->uuid,
                 'previous_state' => $previousState,
@@ -102,7 +102,7 @@ class DevicePresenceService
             ]);
         }
 
-        Log::channel('device_control')->info('Device went offline', [
+        Log::channel('device_control')->debug('Device went offline', [
             'device_id' => $freshDevice->id,
             'device_uuid' => $freshDevice->uuid,
             'previous_state' => $previousState,

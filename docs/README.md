@@ -11,6 +11,7 @@
 
 - [01 - Overview](shared/01-overview.md)
 - [02 - Architecture](shared/02-architecture.md)
+- [03 - Logging and Diagnostics](shared/03-logging-and-diagnostics.md)
 
 ### Device Management
 

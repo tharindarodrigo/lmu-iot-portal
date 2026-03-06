@@ -10,6 +10,13 @@ Automation runtime uses a dedicated log channel:
 
 This isolates automation diagnostics from general app/device-control logs.
 
+Default production-like posture:
+
+- `AUTOMATION_LOG_LEVEL=warning`
+- temporary escalation to `debug` only while investigating a specific incident
+
+See [`docs/shared/03-logging-and-diagnostics.md`](../shared/03-logging-and-diagnostics.md) for the platform-wide logging policy.
+
 ## Correlation Identifiers
 
 Two correlation IDs are emitted for traceability:
@@ -48,10 +55,8 @@ Logger source:
 
 Key events:
 
-- job started
-- run record created
-- run finished
 - aborted due to missing entities
+- failed run summary
 - exception failure
 
 ### Node Execution Stage
@@ -62,21 +67,20 @@ Logger source:
 
 Key events:
 
-- execution started/finished
-- condition evaluated (pass/fail)
-- command dispatching/completed
-- per-step recorded with duration and status
+- execution failure summaries
+- condition/query/alert/command failure details
+- success-path node execution only when `AUTOMATION_LOG_LEVEL=debug`
 
 ## First-Line Debugging Checklist
 
 1. Confirm telemetry event is being persisted.
-2. Confirm automation matcher logs appear.
+2. Confirm automation matcher debug logs appear if automation debug logging is enabled.
 3. Confirm workflows are matched.
-4. Confirm queue dispatch logs appear.
-5. Confirm job start logs appear.
-6. Confirm condition evaluation logs.
-7. Confirm command dispatch logs.
-8. Confirm run finish status and step count.
+4. Confirm queue dispatch debug logs appear.
+5. Confirm run records are created in `automation_runs`.
+6. Confirm step records exist in `automation_run_steps`.
+7. Confirm any run warning/error summary matches the stored run state.
+8. Confirm downstream command status in `device_command_logs`.
 
 ## Troubleshooting Decision Flow
 
@@ -101,8 +105,8 @@ flowchart TD
 
 Symptoms:
 
-- Listener logs show matched workflows and queueing.
-- No `Automation run job started` logs.
+- Listener debug logs show matched workflows and queueing.
+- No new `automation_runs` records are created.
 
 Likely cause:
 
@@ -159,8 +163,9 @@ Useful records to inspect during debugging:
 
 For active debugging:
 
-- Keep `AUTOMATION_LOG_LEVEL=debug`.
+- temporarily set `AUTOMATION_LOG_LEVEL=debug`
 
-For stable production:
+For stable staging / production:
 
-- Usually `info` is enough, with temporary escalation to `debug` during incidents.
+- keep `AUTOMATION_LOG_LEVEL=warning`
+- rely on `automation_runs` and `automation_run_steps` for normal audit/history

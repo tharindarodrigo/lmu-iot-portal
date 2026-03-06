@@ -61,7 +61,7 @@ class ListenForDevicePresence extends Command
                 return;
             }
 
-            Log::channel('device_control')->info('Presence message received', [
+            Log::channel('device_control')->debug('Presence message received', [
                 'subject' => $sourceSubject,
                 'device_uuid' => $deviceUuid,
                 'state' => $body,
@@ -69,10 +69,8 @@ class ListenForDevicePresence extends Command
 
             if ($body === 'offline') {
                 $presenceService->markOfflineByUuid($deviceUuid);
-                $this->line("Device {$deviceUuid} went offline (LWT)");
             } elseif ($body === 'online') {
                 $presenceService->markOnlineByUuid($deviceUuid);
-                $this->line("Device {$deviceUuid} came online");
             } else {
                 Log::channel('device_control')->warning('Unknown presence payload', [
                     'device_uuid' => $deviceUuid,

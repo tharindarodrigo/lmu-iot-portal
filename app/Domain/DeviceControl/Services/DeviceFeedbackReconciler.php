@@ -73,7 +73,7 @@ class DeviceFeedbackReconciler
         $device = $resolved['device'];
         $topic = $resolved['topic'];
 
-        $this->log()->info('Inbound message matched', [
+        $this->log()->debug('Inbound message matched', [
             'mqtt_topic' => $mqttTopic,
             'device_uuid' => $device->uuid,
             'device_external_id' => $device->external_id,
@@ -89,7 +89,7 @@ class DeviceFeedbackReconciler
         $matchedCommandLog = $this->matchCommandLog($device, $topic, $payload);
 
         if ($matchedCommandLog instanceof DeviceCommandLog) {
-            $this->log()->info('Matched command log for feedback', [
+            $this->log()->debug('Matched command log for feedback', [
                 'command_log_id' => $matchedCommandLog->id,
                 'correlation_id' => $matchedCommandLog->correlation_id,
                 'current_status' => $matchedCommandLog->getRawOriginal('status'),
@@ -162,7 +162,6 @@ class DeviceFeedbackReconciler
 
         $this->log()->debug('Topic registry refreshed', [
             'entries' => count($this->topicRegistry),
-            'topics' => array_keys($this->topicRegistry),
         ]);
     }
 
@@ -278,7 +277,7 @@ class DeviceFeedbackReconciler
 
         $newStatus = $updates['status']->value;
 
-        $this->log()->info('Updating command log from feedback', [
+        $this->log()->debug('Updating command log from feedback', [
             'command_log_id' => $commandLog->id,
             'new_status' => $newStatus,
             'incoming_topic_id' => $incomingTopic->id,
@@ -292,7 +291,7 @@ class DeviceFeedbackReconciler
         $isCompleted = $this->isCompletedStatus($commandLog->status);
 
         if ($isCompleted) {
-            $this->log()->info('Command completed — broadcasting CommandCompleted', [
+            $this->log()->debug('Command completed — broadcasting CommandCompleted', [
                 'command_log_id' => $commandLog->id,
                 'correlation_id' => $commandLog->correlation_id,
                 'device_uuid' => $commandLog->device?->uuid,

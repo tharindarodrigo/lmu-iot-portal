@@ -19,48 +19,60 @@ class CheckDeviceHealth extends Command
 
     public function handle(DevicePresenceService $presenceService): int
     {
-        $secondsOption = $this->option('seconds');
-        $configuredTimeout = config('iot.presence.heartbeat_timeout_seconds', 300);
-        $fallbackTimeout = is_numeric($configuredTimeout) ? (int) $configuredTimeout : 300;
-        $seconds = is_numeric($secondsOption) ? (int) $secondsOption : $fallbackTimeout;
+        try {
+            $secondsOption = $this->option('seconds');
+            $configuredTimeout = config('iot.presence.heartbeat_timeout_seconds', 300);
+            $fallbackTimeout = is_numeric($configuredTimeout) ? (int) $configuredTimeout : 300;
+            $seconds = is_numeric($secondsOption) ? (int) $secondsOption : $fallbackTimeout;
 
-        $resolvedSeconds = max(1, $seconds);
-        $now = now();
-        $timeoutCutoff = $now->copy()->subSeconds($resolvedSeconds);
-        $markedOffline = 0;
-        $evaluatedCount = Device::query()
-            ->where('connection_state', 'online')
-            ->count();
+            $resolvedSeconds = max(1, $seconds);
+            $now = now();
+            $timeoutCutoff = $now->copy()->subSeconds($resolvedSeconds);
+            $markedOffline = 0;
+            $evaluatedCount = Device::query()
+                ->where('connection_state', 'online')
+                ->count();
 
-        Device::query()
-            ->where('connection_state', 'online')
-            ->where(function (Builder $query) use ($now, $timeoutCutoff): void {
-                $query->where('offline_deadline_at', '<=', $now)
-                    ->orWhereNull('last_seen_at');
+            Device::query()
+                ->where('connection_state', 'online')
+                ->where(function (Builder $query) use ($now, $timeoutCutoff): void {
+                    $query->where('offline_deadline_at', '<=', $now)
+                        ->orWhereNull('last_seen_at');
 
-                $query->orWhere(function (Builder $query) use ($timeoutCutoff): void {
-                    $query->whereNull('offline_deadline_at')
-                        ->where('last_seen_at', '<=', $timeoutCutoff);
+                    $query->orWhere(function (Builder $query) use ($timeoutCutoff): void {
+                        $query->whereNull('offline_deadline_at')
+                            ->where('last_seen_at', '<=', $timeoutCutoff);
+                    });
+                })
+                ->orderBy('id')
+                ->chunkById(100, function ($devices) use (&$markedOffline, $presenceService): void {
+                    foreach ($devices as $device) {
+                        $presenceService->markOffline($device);
+                        $markedOffline++;
+                    }
                 });
-            })
-            ->orderBy('id')
-            ->chunkById(100, function ($devices) use (&$markedOffline, $presenceService): void {
-                foreach ($devices as $device) {
-                    $presenceService->markOffline($device);
-                    $markedOffline++;
-                }
-            });
 
-        Log::channel('device_control')->info('Device health check completed', [
-            'evaluated_device_count' => $evaluatedCount,
-            'marked_offline_count' => $markedOffline,
-            'checked_at' => $now->toIso8601String(),
-            'fallback_timeout_seconds' => $resolvedSeconds,
-            'fallback_timeout_cutoff' => $timeoutCutoff->toIso8601String(),
-        ]);
+            if ($markedOffline > 0) {
+                Log::channel('device_control')->warning('Device health check marked devices offline', [
+                    'evaluated_device_count' => $evaluatedCount,
+                    'marked_offline_count' => $markedOffline,
+                    'checked_at' => $now->toIso8601String(),
+                    'fallback_timeout_seconds' => $resolvedSeconds,
+                    'fallback_timeout_cutoff' => $timeoutCutoff->toIso8601String(),
+                ]);
+            }
 
-        $this->info("Marked {$markedOffline} device(s) offline (evaluated: {$evaluatedCount}, heartbeat timeout: {$resolvedSeconds}s, cutoff: {$timeoutCutoff->toIso8601String()}).");
+            $this->info("Marked {$markedOffline} device(s) offline (evaluated: {$evaluatedCount}, heartbeat timeout: {$resolvedSeconds}s, cutoff: {$timeoutCutoff->toIso8601String()}).");
 
-        return self::SUCCESS;
+            return self::SUCCESS;
+        } catch (\Throwable $exception) {
+            Log::channel('device_control')->error('Device health check failed', [
+                'error' => $exception->getMessage(),
+            ]);
+
+            $this->error("Device health check failed: {$exception->getMessage()}");
+
+            return self::FAILURE;
+        }
     }
 }

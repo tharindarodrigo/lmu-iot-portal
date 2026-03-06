@@ -66,7 +66,7 @@ class WorkflowRunExecutor
             'graph_edge_count' => count($graph->edges),
         ];
 
-        $this->log()->info('Automation workflow execution started.', $baseLogContext);
+        $this->log()->debug('Automation workflow execution started.', $baseLogContext);
 
         if ($triggerContexts === []) {
             $this->log()->warning('Automation workflow execution found no matching trigger nodes.', $baseLogContext);
@@ -131,12 +131,21 @@ class WorkflowRunExecutor
 
         $finalStatus = $hasFailures ? AutomationRunStatus::Failed : AutomationRunStatus::Completed;
 
-        $this->log()->info('Automation workflow execution finished.', [
-            ...$baseLogContext,
-            'status' => $finalStatus->value,
-            'step_count' => count($stepSummaries),
-            'failed' => $hasFailures,
-        ]);
+        if ($hasFailures) {
+            $this->log()->warning('Automation workflow execution finished with failures.', [
+                ...$baseLogContext,
+                'status' => $finalStatus->value,
+                'step_count' => count($stepSummaries),
+                'failed' => true,
+            ]);
+        } else {
+            $this->log()->debug('Automation workflow execution finished.', [
+                ...$baseLogContext,
+                'status' => $finalStatus->value,
+                'step_count' => count($stepSummaries),
+                'failed' => false,
+            ]);
+        }
 
         return new WorkflowExecutionResult(
             status: $finalStatus,
@@ -561,7 +570,7 @@ class WorkflowRunExecutor
         $rawEvaluationResult = $this->jsonLogicEvaluator->evaluate($jsonLogic, $evaluationData);
         $passed = $this->resolveBoolean($rawEvaluationResult);
 
-        $this->log()->info('Condition node evaluated.', [
+        $this->log()->debug('Condition node evaluated.', [
             'run_correlation_id' => $runCorrelationId,
             'node_id' => $nodeId,
             'passed' => $passed,
@@ -645,7 +654,7 @@ class WorkflowRunExecutor
         $sources = Arr::get($result, 'sources');
         $sourceCount = is_array($sources) ? count($sources) : 0;
 
-        $this->log()->info('Query node executed successfully.', [
+        $this->log()->debug('Query node executed successfully.', [
             'run_correlation_id' => $runCorrelationId,
             'node_id' => $nodeId,
             'query_value' => Arr::get($result, 'value'),
@@ -802,7 +811,7 @@ class WorkflowRunExecutor
             ];
         }
 
-        $this->log()->info('Alert node dispatched successfully.', [
+        $this->log()->debug('Alert node dispatched successfully.', [
             'run_correlation_id' => $runCorrelationId,
             'node_id' => $nodeId,
             'recipient_count' => count($recipients),
@@ -901,7 +910,7 @@ class WorkflowRunExecutor
             ];
         }
 
-        $this->log()->info('Command node dispatching device command.', [
+        $this->log()->debug('Command node dispatching device command.', [
             'run_correlation_id' => $runCorrelationId,
             'node_id' => $nodeId,
             'target_device_id' => $device->id,
@@ -932,7 +941,7 @@ class WorkflowRunExecutor
             ];
         }
 
-        $this->log()->info('Command node dispatch completed.', [
+        $this->log()->debug('Command node dispatch completed.', [
             'run_correlation_id' => $runCorrelationId,
             'node_id' => $nodeId,
             'command_log_id' => $commandLog->id,
@@ -1233,19 +1242,6 @@ class WorkflowRunExecutor
             'step_correlation_id' => $stepCorrelationId,
         ];
 
-        $this->log()->info('Automation workflow step recorded.', [
-            'run_correlation_id' => $runCorrelationId,
-            'step_correlation_id' => $stepCorrelationId,
-            'automation_run_id' => $run->id,
-            'workflow_version_id' => $run->workflow_version_id,
-            'node_id' => $nodeId,
-            'node_type' => $nodeType,
-            'status' => $status,
-            'duration_ms' => $durationMs,
-            'input_keys' => array_keys($input),
-            'output_keys' => array_keys($output),
-            'error_reason' => $this->resolveErrorReason($error),
-        ]);
     }
 
     private function buildStepCorrelationId(string $runCorrelationId, int $stepSequence, string $nodeId): string
@@ -1366,17 +1362,4 @@ class WorkflowRunExecutor
         return is_string($status) ? $status : CommandStatus::Failed->value;
     }
 
-    /**
-     * @param  array<string, mixed>|null  $error
-     */
-    private function resolveErrorReason(?array $error): ?string
-    {
-        if ($error === null) {
-            return null;
-        }
-
-        $reason = Arr::get($error, 'reason');
-
-        return is_string($reason) ? $reason : null;
-    }
 }

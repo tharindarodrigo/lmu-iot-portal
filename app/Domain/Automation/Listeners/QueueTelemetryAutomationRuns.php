@@ -59,7 +59,7 @@ class QueueTelemetryAutomationRuns
             return;
         }
 
-        $this->log()->info('Automation telemetry event matched workflows.', $logContext);
+        $this->log()->debug('Automation telemetry event matched workflows.', $logContext);
 
         foreach ($workflowVersionIds as $workflowVersionId) {
             $resolvedWorkflowVersionId = (int) $workflowVersionId;

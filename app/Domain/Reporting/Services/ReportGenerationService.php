@@ -92,7 +92,13 @@ class ReportGenerationService
         try {
             $written = Storage::disk($storageDisk)->put($storagePath, $csvContent);
         } catch (\Throwable $exception) {
-            logger()->error('Report CSV write threw an exception', ['report_run_id' => $reportRun->id, 'error' => $exception->getMessage()]);
+            logger()->error('Report CSV write threw an exception', [
+                'report_run_id' => $reportRun->id,
+                'disk' => $storageDisk,
+                'path' => $storagePath,
+                'error' => $exception->getMessage(),
+                'exception_class' => $exception::class,
+            ]);
 
             $reportRun->forceFill([
                 'status' => ReportRunStatus::Failed,

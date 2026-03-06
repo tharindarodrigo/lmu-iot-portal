@@ -361,6 +361,10 @@ class TelemetryIngestionService
         array $changeSet = [],
         array $errors = [],
     ): void {
+        if (! $this->shouldPersistStageLog($ingestionMessage, $status)) {
+            return;
+        }
+
         $captureSnapshots = (bool) config('ingestion.capture_stage_snapshots', true);
         $captureSuccessfulSnapshots = (bool) config('ingestion.capture_success_stage_snapshots', false);
         $shouldCaptureSnapshots = $captureSnapshots
@@ -378,6 +382,64 @@ class TelemetryIngestionService
             'change_set' => $shouldCaptureSnapshots && $changeSet !== [] ? $changeSet : null,
             'errors' => $errors !== [] ? $errors : null,
         ]);
+    }
+
+    private function shouldPersistStageLog(IngestionMessage $ingestionMessage, IngestionStatus $status): bool
+    {
+        if ($status !== IngestionStatus::Completed) {
+            return true;
+        }
+
+        return match ($this->resolveStageLogMode()) {
+            'all' => true,
+            'sampled' => $this->shouldSampleSuccessfulStageLogs($ingestionMessage),
+            default => false,
+        };
+    }
+
+    private function resolveStageLogMode(): string
+    {
+        $configuredMode = config('ingestion.stage_log_mode', 'failures');
+
+        if (! is_string($configuredMode)) {
+            return 'failures';
+        }
+
+        return in_array($configuredMode, ['failures', 'sampled', 'all'], true)
+            ? $configuredMode
+            : 'failures';
+    }
+
+    private function shouldSampleSuccessfulStageLogs(IngestionMessage $ingestionMessage): bool
+    {
+        $configuredSampleRate = config('ingestion.stage_log_sample_rate', 0.0);
+
+        if (! is_numeric($configuredSampleRate)) {
+            return false;
+        }
+
+        $sampleRate = max(0.0, min(1.0, (float) $configuredSampleRate));
+
+        if ($sampleRate === 0.0) {
+            return false;
+        }
+
+        if ($sampleRate === 1.0) {
+            return true;
+        }
+
+        $samplingKey = $ingestionMessage->source_deduplication_key;
+
+        if ($samplingKey === '') {
+            $resolvedKey = $ingestionMessage->getKey();
+            $samplingKey = is_int($resolvedKey) || is_string($resolvedKey)
+                ? (string) $resolvedKey
+                : spl_object_hash($ingestionMessage);
+        }
+
+        $normalizedHash = (float) sprintf('%u', crc32($samplingKey));
+
+        return ($normalizedHash / 4_294_967_295) < $sampleRate;
     }
 
     /**

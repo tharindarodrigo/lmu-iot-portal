@@ -5,6 +5,11 @@ use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
 use Monolog\Processor\PsrLogMessageProcessor;
 
+$applicationEnvironment = (string) env('APP_ENV', 'production');
+$defaultDomainLogLevel = in_array($applicationEnvironment, ['local', 'testing'], true)
+    ? 'debug'
+    : 'warning';
+
 return [
 
     /*
@@ -130,7 +135,7 @@ return [
         'device_control' => [
             'driver' => 'daily',
             'path' => storage_path('logs/device-control.log'),
-            'level' => env('DEVICE_CONTROL_LOG_LEVEL', 'debug'),
+            'level' => env('DEVICE_CONTROL_LOG_LEVEL', $defaultDomainLogLevel),
             'days' => 14,
             'replace_placeholders' => true,
         ],
@@ -138,7 +143,7 @@ return [
         'automation_pipeline' => [
             'driver' => 'daily',
             'path' => storage_path('logs/automation-pipeline.log'),
-            'level' => env('AUTOMATION_LOG_LEVEL', 'debug'),
+            'level' => env('AUTOMATION_LOG_LEVEL', $defaultDomainLogLevel),
             'days' => 14,
             'replace_placeholders' => true,
         ],
