@@ -5,7 +5,6 @@ namespace App\Filament\Portal\Resources\DeviceManagement\Devices\Pages;
 use App\Filament\Portal\Resources\DeviceManagement\Devices\DeviceResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Support\Enums\Width;
 
 class ViewDevice extends ViewRecord
 {
