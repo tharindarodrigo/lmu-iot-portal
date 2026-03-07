@@ -156,20 +156,43 @@ function bindSilentMqttPublisher(): void
 }
 
 /**
+ * @param  array<string, string|null>  $environmentVariables
  * @return array<string, mixed>
  */
-function loadLoggingConfigForEnvironment(string $environment): array
+function loadLoggingConfigForEnvironment(string $environment, array $environmentVariables = []): array
 {
-    $previousEnvironment = getenv('APP_ENV');
-    $hadEnv = $previousEnvironment !== false;
-    $previousEnvValue = $_ENV['APP_ENV'] ?? null;
-    $hadDotEnv = array_key_exists('APP_ENV', $_ENV);
-    $previousServerValue = $_SERVER['APP_ENV'] ?? null;
-    $hadServer = array_key_exists('APP_ENV', $_SERVER);
+    $variables = array_merge([
+        'APP_ENV' => $environment,
+        'DEVICE_CONTROL_LOG_LEVEL' => null,
+        'AUTOMATION_LOG_LEVEL' => null,
+    ], $environmentVariables);
 
-    putenv("APP_ENV={$environment}");
-    $_ENV['APP_ENV'] = $environment;
-    $_SERVER['APP_ENV'] = $environment;
+    /** @var array<string, array{previous_environment: string|false, had_environment: bool, previous_env_value: mixed, had_dotenv: bool, previous_server_value: mixed, had_server: bool}> $previousValues */
+    $previousValues = [];
+
+    foreach ($variables as $name => $value) {
+        $previousEnvironment = getenv($name);
+
+        $previousValues[$name] = [
+            'previous_environment' => $previousEnvironment,
+            'had_environment' => $previousEnvironment !== false,
+            'previous_env_value' => $_ENV[$name] ?? null,
+            'had_dotenv' => array_key_exists($name, $_ENV),
+            'previous_server_value' => $_SERVER[$name] ?? null,
+            'had_server' => array_key_exists($name, $_SERVER),
+        ];
+
+        if ($value === null) {
+            putenv($name);
+            unset($_ENV[$name], $_SERVER[$name]);
+
+            continue;
+        }
+
+        putenv("{$name}={$value}");
+        $_ENV[$name] = $value;
+        $_SERVER[$name] = $value;
+    }
 
     try {
         /** @var array<string, mixed> $config */
@@ -177,22 +200,24 @@ function loadLoggingConfigForEnvironment(string $environment): array
 
         return $config;
     } finally {
-        if ($hadEnv) {
-            putenv("APP_ENV={$previousEnvironment}");
-        } else {
-            putenv('APP_ENV');
-        }
+        foreach ($previousValues as $name => $previousValue) {
+            if ($previousValue['had_environment']) {
+                putenv("{$name}={$previousValue['previous_environment']}");
+            } else {
+                putenv($name);
+            }
 
-        if ($hadDotEnv) {
-            $_ENV['APP_ENV'] = $previousEnvValue;
-        } else {
-            unset($_ENV['APP_ENV']);
-        }
+            if ($previousValue['had_dotenv']) {
+                $_ENV[$name] = $previousValue['previous_env_value'];
+            } else {
+                unset($_ENV[$name]);
+            }
 
-        if ($hadServer) {
-            $_SERVER['APP_ENV'] = $previousServerValue;
-        } else {
-            unset($_SERVER['APP_ENV']);
+            if ($previousValue['had_server']) {
+                $_SERVER[$name] = $previousValue['previous_server_value'];
+            } else {
+                unset($_SERVER[$name]);
+            }
         }
     }
 }
@@ -211,6 +236,16 @@ it('uses debug defaults for local and testing but warning defaults elsewhere for
         ->and(data_get($stagingConfig, 'channels.automation_pipeline.level'))->toBe('warning')
         ->and(data_get($productionConfig, 'channels.device_control.level'))->toBe('warning')
         ->and(data_get($productionConfig, 'channels.automation_pipeline.level'))->toBe('warning');
+});
+
+it('respects explicit domain log level overrides regardless of environment', function (): void {
+    $config = loadLoggingConfigForEnvironment('staging', [
+        'DEVICE_CONTROL_LOG_LEVEL' => 'debug',
+        'AUTOMATION_LOG_LEVEL' => 'error',
+    ]);
+
+    expect(data_get($config, 'channels.device_control.level'))->toBe('debug')
+        ->and(data_get($config, 'channels.automation_pipeline.level'))->toBe('error');
 });
 
 it('writes successful device command lifecycle logs at debug without info chatter', function (): void {
