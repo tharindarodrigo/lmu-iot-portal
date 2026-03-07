@@ -53,7 +53,7 @@ class StartAutomationRunFromTelemetry implements ShouldQueue
             'telemetry_log_id' => (string) $this->telemetryLogId,
         ];
 
-        $this->log()->info('Automation run job started.', $baseLogContext);
+        $this->log()->debug('Automation run job started.', $baseLogContext);
 
         $workflowVersion = AutomationWorkflowVersion::query()
             ->with('workflow')
@@ -90,7 +90,7 @@ class StartAutomationRunFromTelemetry implements ShouldQueue
             'started_at' => now(),
         ]);
 
-        $this->log()->info('Automation run record created.', [
+        $this->log()->debug('Automation run record created.', [
             ...$baseLogContext,
             'automation_run_id' => $run->id,
             'organization_id' => $workflow->organization_id,
@@ -113,17 +113,26 @@ class StartAutomationRunFromTelemetry implements ShouldQueue
 
             $errorSummary = is_array($result->error) ? $result->error : null;
 
-            $this->log()->info('Automation run finished.', [
-                ...$baseLogContext,
-                'automation_run_id' => $run->id,
-                'status' => $result->status->value,
-                'step_count' => count($result->steps),
-                'has_error' => $errorSummary !== null,
-                'error_reason' => $errorSummary !== null ? Arr::get($errorSummary, 'reason') : null,
-            ]);
+            if ($result->status === AutomationRunStatus::Failed) {
+                $this->log()->warning('Automation run finished with failures.', [
+                    ...$baseLogContext,
+                    'automation_run_id' => $run->id,
+                    'status' => $result->status->value,
+                    'step_count' => count($result->steps),
+                    'has_error' => $errorSummary !== null,
+                    'error_reason' => $errorSummary !== null ? Arr::get($errorSummary, 'reason') : null,
+                ]);
+            } else {
+                $this->log()->debug('Automation run finished.', [
+                    ...$baseLogContext,
+                    'automation_run_id' => $run->id,
+                    'status' => $result->status->value,
+                    'step_count' => count($result->steps),
+                    'has_error' => $errorSummary !== null,
+                    'error_reason' => $errorSummary !== null ? Arr::get($errorSummary, 'reason') : null,
+                ]);
+            }
         } catch (\Throwable $exception) {
-            report($exception);
-
             $run->forceFill([
                 'status' => AutomationRunStatus::Failed,
                 'finished_at' => now(),

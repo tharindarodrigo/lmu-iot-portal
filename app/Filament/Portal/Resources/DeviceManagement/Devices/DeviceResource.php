@@ -14,10 +14,10 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -29,6 +29,8 @@ use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 class DeviceResource extends Resource
 {
@@ -51,7 +53,7 @@ class DeviceResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema
-            ->columns(2)
+            ->columns(3)
             ->components([
                 Section::make('Identity')
                     ->schema([
@@ -69,7 +71,7 @@ class DeviceResource extends Resource
                             ->label('External ID')
                             ->maxLength(255),
                     ])
-                    ->columns(2),
+                    ->columnSpan(2),
 
                 Section::make('Configuration')
                     ->schema([
@@ -94,7 +96,7 @@ class DeviceResource extends Resource
                             ->preload()
                             ->disabled(fn (Get $get) => ! $get('device_type_id')),
                     ])
-                    ->columns(2),
+                    ->columnSpan(1),
 
                 Section::make('Status')
                     ->schema([
@@ -102,30 +104,57 @@ class DeviceResource extends Resource
                             ->label('Is Active')
                             ->default(true),
 
-                        TextInput::make('connection_state')
+                        Placeholder::make('effective_connection_state')
                             ->label('Connection State')
-                            ->disabled()
-                            ->placeholder('Unknown'),
+                            ->content(fn (?Device $record): string => $record ? Str::headline($record->effectiveConnectionState()) : 'Unknown'),
+
+                        TextInput::make('presence_timeout_seconds')
+                            ->label('Presence Timeout (seconds)')
+                            ->numeric()
+                            ->integer()
+                            ->minValue(60)
+                            ->maxValue(86400)
+                            ->live()
+                            ->placeholder('Global fallback (300 seconds)')
+                            ->dehydrateStateUsing(fn (mixed $state): ?int => is_numeric($state) ? (int) $state : null)
+                            ->helperText('Blank uses the global fallback of 300 seconds.'),
+
+                        Placeholder::make('effective_presence_timeout')
+                            ->label('Effective Timeout')
+                            ->content(function (Get $get, ?Device $record): string {
+                                $configuredTimeout = config('iot.presence.heartbeat_timeout_seconds', 300);
+                                $fallbackTimeoutSeconds = is_numeric($configuredTimeout) && (int) $configuredTimeout > 0
+                                    ? (int) $configuredTimeout
+                                    : 300;
+                                $override = $get('presence_timeout_seconds');
+                                $effectiveTimeoutSeconds = is_numeric($override) && (int) $override >= 60
+                                    ? (int) $override
+                                    : ($record?->presenceTimeoutSeconds() ?? $fallbackTimeoutSeconds);
+
+                                return "{$effectiveTimeoutSeconds} seconds";
+                            }),
 
                         TextInput::make('last_seen_at')
                             ->label('Last Seen At')
                             ->disabled()
                             ->placeholder('Never'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpan(2),
 
                 Section::make('Metadata')
                     ->schema([
                         KeyValue::make('metadata')
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columnSpan(1),
             ]);
     }
 
     public static function infolist(Schema $schema): Schema
     {
         return $schema
-            ->columns(2)
+            ->columns(3)
             ->components([
                 Section::make('Device Details')
                     ->schema([
@@ -146,39 +175,51 @@ class DeviceResource extends Resource
                             ->label('Schema Version')
                             ->formatStateUsing(fn ($state) => "Version {$state}"),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpan(2),
 
                 Section::make('Status')
                     ->schema([
-                        IconEntry::make('is_active')
+                        TextEntry::make('is_active')
                             ->label('Active')
-                            ->boolean(),
+                            ->badge()
+                            ->formatStateUsing(fn (bool $state): string => $state ? 'Active' : 'Inactive')
+                            ->color(fn (bool $state): string => $state ? 'success' : 'gray'),
 
-                        IconEntry::make('connection_state')
+                        TextEntry::make('effective_connection_state')
                             ->label('Connection State')
-                            ->icon(fn (?string $state): Heroicon => match ($state) {
-                                'online' => Heroicon::Wifi,
-                                'offline' => Heroicon::SignalSlash,
-                                default => Heroicon::QuestionMarkCircle,
-                            })
-                            ->color(fn (?string $state): string => match ($state) {
+                            ->state(fn (Device $record): string => $record->effectiveConnectionState())
+                            ->badge()
+                            ->formatStateUsing(fn (string $state): string => Str::headline($state))
+                            ->color(fn (string $state): string => match ($state) {
                                 'online' => 'success',
                                 'offline' => 'danger',
                                 default => 'gray',
                             }),
 
+                        TextEntry::make('effective_presence_timeout')
+                            ->label('Effective Timeout')
+                            ->state(fn (Device $record): string => "{$record->presenceTimeoutSeconds()} seconds"),
+
                         TextEntry::make('last_seen_at')
                             ->label('Last Seen')
                             ->since()
                             ->placeholder('Never'),
+
+                        TextEntry::make('offline_deadline_at')
+                            ->label('Offline Deadline')
+                            ->state(fn (Device $record) => $record->resolvedOfflineDeadlineAt())
+                            ->dateTime()
+                            ->placeholder('Pending first signal'),
                     ])
-                    ->columns(2),
+                    ->columnSpan(1),
 
                 Section::make('Metadata')
                     ->schema([
                         KeyValueEntry::make('metadata')
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
 
                 Section::make('Command Payload Samples')
                     ->description('Example JSON payloads this device expects on command (subscribe) topics, using schema defaults.')
@@ -206,7 +247,8 @@ class DeviceResource extends Resource
                                 })->all();
                             })
                             ->visible(fn (Device $record): bool => $record->getAttribute('device_schema_version_id') !== null),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
 
                 Section::make('MQTT Publish Payload Samples')
                     ->description('Example topics + JSON payload structure the device should publish (Device → Platform). Copy and paste into your MQTT client.')
@@ -241,7 +283,8 @@ class DeviceResource extends Resource
                                 return implode("\n\n", $samples);
                             })
                             ->visible(fn (Device $record): bool => $record->getAttribute('device_schema_version_id') !== null),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -264,8 +307,9 @@ class DeviceResource extends Resource
                     ->boolean()
                     ->sortable(),
 
-                IconColumn::make('connection_state')
+                IconColumn::make('effective_connection_state')
                     ->label('Status')
+                    ->state(fn (Device $record): string => $record->effectiveConnectionState())
                     ->icon(fn (?string $state): Heroicon => match ($state) {
                         'online' => Heroicon::Wifi,
                         'offline' => Heroicon::SignalSlash,
@@ -276,12 +320,7 @@ class DeviceResource extends Resource
                         'offline' => 'danger',
                         default => 'gray',
                     })
-                    ->tooltip(fn (?string $state): string => match ($state) {
-                        'online' => 'Online',
-                        'offline' => 'Offline',
-                        default => 'Unknown',
-                    })
-                    ->sortable(),
+                    ->tooltip(fn (Device $record): string => $record->presenceStatusTooltip()),
 
                 TextColumn::make('last_seen_at')
                     ->label('Last Seen')
@@ -294,6 +333,21 @@ class DeviceResource extends Resource
                     ->relationship('deviceType', 'name')
                     ->searchable()
                     ->preload(),
+                SelectFilter::make('effective_connection_state')
+                    ->label('Status')
+                    ->options([
+                        'online' => 'Online',
+                        'offline' => 'Offline',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+
+                        if (! is_string($value) || ! in_array($value, ['online', 'offline'], true)) {
+                            return $query;
+                        }
+
+                        return $query->whereEffectiveConnectionState($value);
+                    }),
             ])
             ->recordActions([
                 ViewAction::make(),

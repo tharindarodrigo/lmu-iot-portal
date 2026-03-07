@@ -97,8 +97,6 @@ class IngestTelemetryCommand extends Command
                 ProcessInboundTelemetryJob::dispatch($envelope->toArray())
                     ->onConnection($queueConnection)
                     ->onQueue($queue);
-
-                $this->line("Queued telemetry message from {$sourceSubject}");
             } catch (\Throwable $exception) {
                 $this->error("Queue dispatch failed for {$sourceSubject}: {$exception->getMessage()}");
             }

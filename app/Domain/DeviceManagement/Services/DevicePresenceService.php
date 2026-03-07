@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\Log;
 
 class DevicePresenceService
 {
+    public function __construct(
+        private readonly DevicePresencePolicy $presencePolicy,
+    ) {}
+
     public function markOnline(Device $device, ?Carbon $seenAt = null): void
     {
         $resolvedSeenAt = $seenAt ?? now();
@@ -22,9 +26,16 @@ class DevicePresenceService
 
         $previousState = $freshDevice->connection_state;
 
+        if (! $this->presencePolicy->shouldPersistOnlineHeartbeat($freshDevice, $resolvedSeenAt)) {
+            return;
+        }
+
+        $offlineDeadlineAt = $this->presencePolicy->offlineDeadlineFor($freshDevice, $resolvedSeenAt);
+
         $freshDevice->updateQuietly([
             'connection_state' => 'online',
             'last_seen_at' => $resolvedSeenAt,
+            'offline_deadline_at' => $offlineDeadlineAt,
         ]);
 
         if ($previousState !== 'online') {
@@ -42,7 +53,7 @@ class DevicePresenceService
                 ]);
             }
 
-            Log::channel('device_control')->info('Device came online', [
+            Log::channel('device_control')->debug('Device came online', [
                 'device_id' => $freshDevice->id,
                 'device_uuid' => $freshDevice->uuid,
                 'previous_state' => $previousState,
@@ -61,16 +72,21 @@ class DevicePresenceService
         $previousState = $freshDevice->connection_state;
 
         if ($previousState === 'offline') {
+            if ($freshDevice->storedOfflineDeadlineAt() !== null) {
+                $freshDevice->updateQuietly([
+                    'offline_deadline_at' => null,
+                ]);
+            }
+
             return;
         }
 
         $freshDevice->updateQuietly([
             'connection_state' => 'offline',
+            'offline_deadline_at' => null,
         ]);
 
-        $resolvedLastSeenAt = $seenAt ?? ($freshDevice->last_seen_at
-            ? Carbon::parse((string) $freshDevice->last_seen_at)
-            : null);
+        $resolvedLastSeenAt = $seenAt ?? $freshDevice->lastSeenAt();
 
         try {
             event(new DeviceConnectionChanged(
@@ -86,7 +102,7 @@ class DevicePresenceService
             ]);
         }
 
-        Log::channel('device_control')->info('Device went offline', [
+        Log::channel('device_control')->debug('Device went offline', [
             'device_id' => $freshDevice->id,
             'device_uuid' => $freshDevice->uuid,
             'previous_state' => $previousState,
@@ -138,7 +154,17 @@ class DevicePresenceService
 
     private function refreshDevice(Device $device): ?Device
     {
-        $freshDevice = $device->fresh();
+        $freshDevice = Device::query()
+            ->select([
+                'id',
+                'uuid',
+                'connection_state',
+                'last_seen_at',
+                'offline_deadline_at',
+                'presence_timeout_seconds',
+            ])
+            ->whereKey($device->getKey())
+            ->first();
 
         if ($freshDevice === null) {
             Log::channel('device_control')->warning('Presence update skipped for missing device', [

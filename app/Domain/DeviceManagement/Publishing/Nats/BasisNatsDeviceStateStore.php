@@ -6,6 +6,7 @@ namespace App\Domain\DeviceManagement\Publishing\Nats;
 
 use Basis\Nats\Client;
 use Basis\Nats\Configuration;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
@@ -40,7 +41,7 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
             });
         } catch (Throwable $exception) {
             if ($this->isJetStreamUnavailable($exception)) {
-                logger()->warning('NATS KV hot-state write skipped: JetStream/KV unavailable.', [
+                Log::channel('device_control')->warning('NATS KV hot-state write skipped: JetStream/KV unavailable.', [
                     'bucket' => self::BUCKET_NAME,
                     'device_uuid' => $deviceUuid,
                     'topic' => $topic,

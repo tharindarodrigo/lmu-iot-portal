@@ -10,6 +10,11 @@ class ViewDevice extends ViewRecord
 {
     protected static string $resource = DeviceResource::class;
 
+    public function getMaxContentWidth(): string
+    {
+        return 'full';
+    }
+
     protected function getHeaderActions(): array
     {
         return [

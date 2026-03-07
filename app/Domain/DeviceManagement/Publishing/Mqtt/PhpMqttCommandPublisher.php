@@ -92,7 +92,7 @@ final class PhpMqttCommandPublisher implements MqttCommandPublisher
             $this->sendPublish($socket, $mqttTopic, $payload);
             $this->readPuback($socket);
 
-            Log::channel('device_control')->info('MQTT PUBACK received — message delivered', [
+            Log::channel('device_control')->debug('MQTT PUBACK received — message delivered', [
                 'topic' => $mqttTopic,
                 'host' => $host,
                 'port' => $port,

@@ -8,4 +8,9 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateDevice extends CreateRecord
 {
     protected static string $resource = DeviceResource::class;
+
+    public function getMaxContentWidth(): string
+    {
+        return 'full';
+    }
 }
