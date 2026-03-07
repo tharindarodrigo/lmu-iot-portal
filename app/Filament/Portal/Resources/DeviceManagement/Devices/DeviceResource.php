@@ -53,7 +53,7 @@ class DeviceResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema
-            ->columns(2)
+            ->columns(3)
             ->components([
                 Section::make('Identity')
                     ->schema([
@@ -71,7 +71,7 @@ class DeviceResource extends Resource
                             ->label('External ID')
                             ->maxLength(255),
                     ])
-                    ->columns(2),
+                    ->columnSpan(2),
 
                 Section::make('Configuration')
                     ->schema([
@@ -96,7 +96,7 @@ class DeviceResource extends Resource
                             ->preload()
                             ->disabled(fn (Get $get) => ! $get('device_type_id')),
                     ])
-                    ->columns(2),
+                    ->columnSpan(1),
 
                 Section::make('Status')
                     ->schema([
@@ -139,20 +139,22 @@ class DeviceResource extends Resource
                             ->disabled()
                             ->placeholder('Never'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpan(2),
 
                 Section::make('Metadata')
                     ->schema([
                         KeyValue::make('metadata')
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columnSpan(1),
             ]);
     }
 
     public static function infolist(Schema $schema): Schema
     {
         return $schema
-            ->columns(2)
+            ->columns(3)
             ->components([
                 Section::make('Device Details')
                     ->schema([
@@ -173,7 +175,8 @@ class DeviceResource extends Resource
                             ->label('Schema Version')
                             ->formatStateUsing(fn ($state) => "Version {$state}"),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpan(2),
 
                 Section::make('Status')
                     ->schema([
@@ -209,13 +212,14 @@ class DeviceResource extends Resource
                             ->dateTime()
                             ->placeholder('Pending first signal'),
                     ])
-                    ->columns(2),
+                    ->columnSpan(1),
 
                 Section::make('Metadata')
                     ->schema([
                         KeyValueEntry::make('metadata')
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
 
                 Section::make('Command Payload Samples')
                     ->description('Example JSON payloads this device expects on command (subscribe) topics, using schema defaults.')
@@ -243,7 +247,8 @@ class DeviceResource extends Resource
                                 })->all();
                             })
                             ->visible(fn (Device $record): bool => $record->getAttribute('device_schema_version_id') !== null),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
 
                 Section::make('MQTT Publish Payload Samples')
                     ->description('Example topics + JSON payload structure the device should publish (Device → Platform). Copy and paste into your MQTT client.')
@@ -278,7 +283,8 @@ class DeviceResource extends Resource
                                 return implode("\n\n", $samples);
                             })
                             ->visible(fn (Device $record): bool => $record->getAttribute('device_schema_version_id') !== null),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
             ]);
     }
 

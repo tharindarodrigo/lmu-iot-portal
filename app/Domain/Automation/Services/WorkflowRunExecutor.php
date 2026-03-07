@@ -1361,5 +1361,4 @@ class WorkflowRunExecutor
 
         return is_string($status) ? $status : CommandStatus::Failed->value;
     }
-
 }
