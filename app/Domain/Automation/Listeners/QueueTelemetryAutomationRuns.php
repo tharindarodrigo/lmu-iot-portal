@@ -7,11 +7,13 @@ namespace App\Domain\Automation\Listeners;
 use App\Domain\Automation\Contracts\TriggerMatcher;
 use App\Domain\Automation\Jobs\StartAutomationRunFromTelemetry;
 use App\Events\TelemetryReceived;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\Str;
+use Laravel\Pennant\Feature;
 use Psr\Log\LoggerInterface;
 
-class QueueTelemetryAutomationRuns
+class QueueTelemetryAutomationRuns implements ShouldQueue
 {
     public function __construct(
         private readonly TriggerMatcher $triggerMatcher,
@@ -21,10 +23,10 @@ class QueueTelemetryAutomationRuns
     public function handle(TelemetryReceived $event): void
     {
         if (! (bool) config('automation.enabled', true)) {
-            $this->log()->debug('Automation telemetry listener skipped because pipeline is disabled.', [
-                'telemetry_log_id' => $this->resolveKeyAsString($event->telemetryLog->getKey()),
-            ]);
+            return;
+        }
 
+        if (! Feature::active('automation.pipeline.telemetry_fanout')) {
             return;
         }
 
@@ -54,20 +56,11 @@ class QueueTelemetryAutomationRuns
         ];
 
         if ($workflowVersionIds->isEmpty()) {
-            $this->log()->debug('Automation telemetry event produced no matching workflows.', $logContext);
-
             return;
         }
 
-        $this->log()->debug('Automation telemetry event matched workflows.', $logContext);
-
         foreach ($workflowVersionIds as $workflowVersionId) {
             $resolvedWorkflowVersionId = (int) $workflowVersionId;
-
-            $this->log()->debug('Queueing automation run from telemetry event.', [
-                ...$logContext,
-                'workflow_version_id' => $resolvedWorkflowVersionId,
-            ]);
 
             StartAutomationRunFromTelemetry::dispatch(
                 workflowVersionId: $resolvedWorkflowVersionId,
@@ -85,6 +78,24 @@ class QueueTelemetryAutomationRuns
             : 'automation_pipeline';
 
         return $this->logManager->channel($logChannel);
+    }
+
+    public function viaConnection(): string
+    {
+        $queueConnection = config('automation.queue_connection', config('queue.default', 'database'));
+
+        return is_string($queueConnection) && $queueConnection !== ''
+            ? $queueConnection
+            : 'database';
+    }
+
+    public function viaQueue(): string
+    {
+        $queue = config('automation.queue', 'default');
+
+        return is_string($queue) && $queue !== ''
+            ? $queue
+            : 'default';
     }
 
     private function resolveKeyAsString(mixed $value): ?string

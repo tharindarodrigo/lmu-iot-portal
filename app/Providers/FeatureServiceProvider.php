@@ -24,6 +24,8 @@ class FeatureServiceProvider extends ServiceProvider
             return is_string($driver) && $driver !== '' ? $driver : 'laravel';
         });
 
+        Feature::define('ingestion.pipeline.broadcast_realtime', fn (): bool => (bool) config('ingestion.broadcast_realtime', true));
         Feature::define('ingestion.pipeline.publish_analytics', fn (): bool => (bool) config('ingestion.publish_analytics', true));
+        Feature::define('automation.pipeline.telemetry_fanout', fn (): bool => (bool) config('automation.telemetry_fanout_enabled', true));
     }
 }

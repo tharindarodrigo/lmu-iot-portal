@@ -86,14 +86,6 @@ class DatabaseTriggerMatcher implements TriggerMatcher
             ->unique()
             ->values();
 
-        $this->log()->debug('Automation trigger matcher evaluated telemetry triggers.', [
-            ...$baseLogContext,
-            'organization_id' => $device->organization_id,
-            'candidate_count' => $candidates->count(),
-            'matched_count' => $matchedWorkflowVersionIds->count(),
-            'matched_workflow_version_ids' => $matchedWorkflowVersionIds->all(),
-        ]);
-
         return $matchedWorkflowVersionIds;
     }
 

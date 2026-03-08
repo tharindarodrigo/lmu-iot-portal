@@ -31,6 +31,10 @@ class TelemetryIncoming implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
+        if (! (bool) config('iot.broadcast.raw_telemetry', false)) {
+            return [];
+        }
+
         return [
             new Channel('telemetry'),
         ];

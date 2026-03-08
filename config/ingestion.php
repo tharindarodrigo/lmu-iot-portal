@@ -7,6 +7,8 @@ return [
 
     'driver' => (string) env('INGESTION_PIPELINE_DRIVER', 'laravel'),
 
+    'broadcast_realtime' => (bool) env('INGESTION_PIPELINE_BROADCAST_REALTIME', true),
+
     'publish_analytics' => (bool) env('INGESTION_PIPELINE_PUBLISH_ANALYTICS', true),
 
     'publish_invalid_events' => (bool) env('INGESTION_PIPELINE_PUBLISH_INVALID', true),
@@ -14,6 +16,15 @@ return [
     'queue_connection' => (string) env('INGESTION_PIPELINE_QUEUE_CONNECTION', 'redis'),
 
     'queue' => (string) env('INGESTION_PIPELINE_QUEUE', 'ingestion'),
+
+    'side_effects_queue_connection' => (string) env(
+        'INGESTION_PIPELINE_SIDE_EFFECTS_QUEUE_CONNECTION',
+        (string) env('INGESTION_PIPELINE_QUEUE_CONNECTION', 'redis'),
+    ),
+
+    'side_effects_queue' => (string) env('INGESTION_PIPELINE_SIDE_EFFECTS_QUEUE', 'telemetry-side-effects'),
+
+    'metadata_ttl_seconds' => (int) env('INGESTION_METADATA_TTL_SECONDS', 300),
 
     'registry_ttl_seconds' => (int) env('INGESTION_REGISTRY_TTL_SECONDS', 30),
 

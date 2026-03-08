@@ -65,6 +65,8 @@ it('broadcasts organization-scoped realtime payload data for dashboard widgets',
     expect($channels)->toHaveCount(1)
         ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
         ->and($channels[0]->name)->toBe('private-iot-dashboard.organization.'.$device->organization_id)
+        ->and($event->connection)->toBe(config('ingestion.side_effects_queue_connection'))
+        ->and($event->broadcastQueue())->toBe(config('ingestion.side_effects_queue'))
         ->and($event->broadcastAs())->toBe('telemetry.received')
         ->and($payload['organization_id'] ?? null)->toBe($device->organization_id)
         ->and($payload['device_uuid'] ?? null)->toBe($device->uuid)
@@ -74,4 +76,48 @@ it('broadcasts organization-scoped realtime payload data for dashboard widgets',
         ->and($payload['transformed_values']['V3'] ?? null)->toBe(231.4)
         ->and(array_key_exists('raw_payload', $payload))->toBeFalse()
         ->and(array_key_exists('validation_errors', $payload))->toBeFalse();
+});
+
+it('disables dashboard realtime broadcast channels when the ingestion realtime kill switch is off', function (): void {
+    config()->set('ingestion.broadcast_realtime', false);
+
+    $schemaVersion = DeviceSchemaVersion::factory()->active()->create();
+
+    $topic = SchemaVersionTopic::factory()->publish()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'telemetry',
+        'suffix' => 'telemetry',
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'V1',
+        'label' => 'Voltage V1',
+        'json_path' => 'voltages.V1',
+        'type' => ParameterDataType::Decimal,
+        'required' => true,
+        'is_critical' => false,
+        'mutation_expression' => null,
+        'validation_error_code' => null,
+        'sequence' => 1,
+        'is_active' => true,
+    ]);
+
+    $device = Device::factory()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+    ]);
+
+    $log = app(TelemetryLogRecorder::class)->record(
+        device: $device,
+        payload: [
+            'voltages' => [
+                'V1' => 229.6,
+            ],
+        ],
+        topicSuffix: 'telemetry',
+    );
+
+    $event = new TelemetryReceived($log->fresh(['device']));
+
+    expect($event->broadcastOn())->toBe([]);
 });

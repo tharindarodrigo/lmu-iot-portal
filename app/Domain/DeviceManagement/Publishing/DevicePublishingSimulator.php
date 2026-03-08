@@ -6,6 +6,7 @@ namespace App\Domain\DeviceManagement\Publishing;
 
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
+use App\Domain\DeviceManagement\Services\DevicePresenceService;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
@@ -15,6 +16,7 @@ final readonly class DevicePublishingSimulator
 {
     public function __construct(
         private NatsPublisherFactory $publisherFactory,
+        private DevicePresenceService $presenceService,
     ) {}
 
     /**
@@ -69,6 +71,7 @@ final readonly class DevicePublishingSimulator
 
                 try {
                     $publisher->publish($natsSubject, $encodedPayload);
+                    $this->presenceService->markOnline($device);
 
                     event(new TelemetryIncoming(
                         topic: $mqttTopic,

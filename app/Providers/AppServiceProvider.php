@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Providers;
 
 use App\Database\TimescalePostgresConnection;
@@ -9,8 +11,12 @@ use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\Automation\Services\DatabaseTriggerMatcher;
 use App\Domain\DataIngestion\Contracts\AnalyticsPublisher;
 use App\Domain\DataIngestion\Contracts\HotStateStore;
+use App\Domain\DataIngestion\Listeners\QueueTelemetryAnalyticsPublishes;
+use App\Domain\DataIngestion\Listeners\QueueTelemetryHotStateWrites;
+use App\Domain\DataIngestion\Services\DeviceTelemetryTopicResolver;
 use App\Domain\DataIngestion\Services\NatsAnalyticsPublisher;
 use App\Domain\DataIngestion\Services\NatsKvHotStateStore;
+use App\Domain\DataIngestion\Services\TelemetrySchemaMetadataCache;
 use App\Domain\DeviceManagement\Publishing\Mqtt\MqttCommandPublisher;
 use App\Domain\DeviceManagement\Publishing\Mqtt\PhpMqttCommandPublisher;
 use App\Domain\DeviceManagement\Publishing\Nats\BasisNatsDeviceStateStore;
@@ -59,6 +65,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(HotStateStore::class, NatsKvHotStateStore::class);
         $this->app->bind(AnalyticsPublisher::class, NatsAnalyticsPublisher::class);
         $this->app->bind(TriggerMatcher::class, DatabaseTriggerMatcher::class);
+        $this->app->singleton(DeviceTelemetryTopicResolver::class);
+        $this->app->singleton(TelemetrySchemaMetadataCache::class);
 
         if ($this->app->environment('local')) {
             $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);
@@ -117,5 +125,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Event::listen(TelemetryReceived::class, QueueTelemetryAutomationRuns::class);
+        Event::listen(TelemetryReceived::class, QueueTelemetryHotStateWrites::class);
+        Event::listen(TelemetryReceived::class, QueueTelemetryAnalyticsPublishes::class);
     }
 }

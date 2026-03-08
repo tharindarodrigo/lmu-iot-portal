@@ -4,27 +4,41 @@ declare(strict_types=1);
 
 namespace App\Events;
 
+use App\Domain\DataIngestion\Concerns\InteractsWithTelemetrySideEffectsQueue;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
+use Laravel\Pennant\Feature;
 
-class TelemetryReceived implements ShouldBroadcastNow
+class TelemetryReceived implements ShouldBroadcast
 {
     use InteractsWithSockets;
+    use InteractsWithTelemetrySideEffectsQueue;
     use SerializesModels;
+
+    public string $connection;
+
+    public string $queue;
 
     public function __construct(
         public DeviceTelemetryLog $telemetryLog,
-    ) {}
+    ) {
+        $this->connection = $this->resolveTelemetrySideEffectsConnection();
+        $this->queue = $this->resolveTelemetrySideEffectsQueue();
+    }
 
     /**
      * @return array<int, PrivateChannel>
      */
     public function broadcastOn(): array
     {
+        if (! Feature::active('ingestion.pipeline.broadcast_realtime')) {
+            return [];
+        }
+
         $this->telemetryLog->loadMissing('device:id,uuid,external_id,organization_id');
         $organizationId = $this->telemetryLog->device?->organization_id;
 
@@ -40,6 +54,11 @@ class TelemetryReceived implements ShouldBroadcastNow
     public function broadcastAs(): string
     {
         return 'telemetry.received';
+    }
+
+    public function broadcastQueue(): string
+    {
+        return $this->queue;
     }
 
     /**

@@ -86,6 +86,7 @@ return [
     'waits' => [
         'redis:default' => 60,
         'redis:ingestion' => 60,
+        'redis:telemetry-side-effects' => 60,
         'redis-simulations:simulations' => 60,
     ],
 
@@ -182,12 +183,11 @@ return [
     */
 
     'defaults' => [
-        'supervisor-1' => [
+        'supervisor-default' => [
             'connection' => 'redis',
-            'queue' => ['default', 'ingestion'],
-            'balance' => 'auto',
-            'autoScalingStrategy' => 'time',
-            'maxProcesses' => 1,
+            'queue' => ['default'],
+            'balance' => 'simple',
+            'processes' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 128,
@@ -196,41 +196,80 @@ return [
             'nice' => 0,
         ],
 
-        'supervisor-simulations' => [
-            'connection' => 'redis-simulations',
-            'queue' => ['simulations'],
+        'supervisor-ingestion' => [
+            'connection' => 'redis',
+            'queue' => ['ingestion'],
             'balance' => 'simple',
-            'maxProcesses' => 2,
+            'processes' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 256,
             'tries' => 1,
-            // Simulation jobs can run for a long time (sleep between iterations).
-            'timeout' => 45_000,
+            'timeout' => 120,
+            'nice' => 0,
+        ],
+
+        'supervisor-side-effects' => [
+            'connection' => 'redis',
+            'queue' => ['telemetry-side-effects'],
+            'balance' => 'simple',
+            'processes' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 120,
+            'nice' => 0,
+        ],
+
+        'supervisor-simulations' => [
+            'connection' => 'redis-simulations',
+            'queue' => ['simulations'],
+            'balance' => 'simple',
+            'processes' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 240,
             'nice' => 0,
         ],
     ],
 
     'environments' => [
         'production' => [
-            'supervisor-1' => [
-                'maxProcesses' => 10,
-                'balanceMaxShift' => 1,
-                'balanceCooldown' => 3,
+            'supervisor-default' => [
+                'processes' => (int) env('HORIZON_DEFAULT_PROCESSES', 10),
+            ],
+
+            'supervisor-ingestion' => [
+                'processes' => (int) env('HORIZON_INGESTION_PROCESSES', 8),
+            ],
+
+            'supervisor-side-effects' => [
+                'processes' => (int) env('HORIZON_SIDE_EFFECTS_PROCESSES', 8),
             ],
 
             'supervisor-simulations' => [
-                'maxProcesses' => 5,
+                'processes' => (int) env('HORIZON_SIMULATION_PROCESSES', 8),
             ],
         ],
 
         'local' => [
-            'supervisor-1' => [
-                'maxProcesses' => 3,
+            'supervisor-default' => [
+                'processes' => (int) env('HORIZON_DEFAULT_PROCESSES', 3),
+            ],
+
+            'supervisor-ingestion' => [
+                'processes' => (int) env('HORIZON_INGESTION_PROCESSES', 4),
+            ],
+
+            'supervisor-side-effects' => [
+                'processes' => (int) env('HORIZON_SIDE_EFFECTS_PROCESSES', 4),
             ],
 
             'supervisor-simulations' => [
-                'maxProcesses' => 2,
+                'processes' => (int) env('HORIZON_SIMULATION_PROCESSES', 4),
             ],
         ],
     ],

@@ -7,6 +7,7 @@ use App\Domain\Automation\Jobs\StartAutomationRunFromTelemetry;
 use App\Domain\Automation\Listeners\QueueTelemetryAutomationRuns;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use App\Events\TelemetryReceived;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
@@ -72,4 +73,66 @@ it('does not queue automation runs when automation pipeline is disabled', functi
     app(QueueTelemetryAutomationRuns::class)->handle(new TelemetryReceived($telemetryLog));
 
     Queue::assertNothingPushed();
+});
+
+it('does not queue automation runs when telemetry automation fan-out is disabled', function (): void {
+    Queue::fake();
+
+    config()->set('automation.telemetry_fanout_enabled', false);
+
+    $telemetryLog = DeviceTelemetryLog::factory()->create();
+
+    app()->bind(TriggerMatcher::class, fn () => new class implements TriggerMatcher
+    {
+        public function matchTelemetryTriggers(DeviceTelemetryLog $telemetryLog): Collection
+        {
+            return collect([101]);
+        }
+    });
+
+    app(QueueTelemetryAutomationRuns::class)->handle(new TelemetryReceived($telemetryLog));
+
+    Queue::assertNothingPushed();
+});
+
+it('still queues automation runs when dashboard realtime broadcast is disabled', function (): void {
+    Queue::fake();
+
+    config()->set('ingestion.broadcast_realtime', false);
+
+    $telemetryLog = DeviceTelemetryLog::factory()->create();
+
+    app()->bind(TriggerMatcher::class, fn () => new class implements TriggerMatcher
+    {
+        public function matchTelemetryTriggers(DeviceTelemetryLog $telemetryLog): Collection
+        {
+            return collect([101]);
+        }
+    });
+
+    app(QueueTelemetryAutomationRuns::class)->handle(new TelemetryReceived($telemetryLog));
+
+    Queue::assertPushed(StartAutomationRunFromTelemetry::class, 1);
+});
+
+it('still broadcasts dashboard realtime channels when telemetry automation fan-out is disabled', function (): void {
+    config()->set('automation.telemetry_fanout_enabled', false);
+
+    $telemetryLog = DeviceTelemetryLog::factory()->create();
+
+    $event = new TelemetryReceived($telemetryLog->fresh(['device']));
+
+    expect($event->broadcastOn())->not->toBe([]);
+});
+
+it('configures the telemetry automation listener for the automation queue', function (): void {
+    config()->set('automation.queue_connection', 'redis');
+    config()->set('automation.queue', 'automation');
+
+    $listener = app(QueueTelemetryAutomationRuns::class);
+
+    expect(app('events')->hasListeners(TelemetryReceived::class))->toBeTrue()
+        ->and($listener)->toBeInstanceOf(ShouldQueue::class)
+        ->and($listener->viaConnection())->toBe('redis')
+        ->and($listener->viaQueue())->toBe('automation');
 });
