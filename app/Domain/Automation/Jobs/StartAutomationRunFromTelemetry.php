@@ -32,10 +32,10 @@ class StartAutomationRunFromTelemetry implements ShouldQueue
         public readonly ?string $eventCorrelationId = null,
     ) {
         $queueConnection = config('automation.queue_connection', config('queue.default', 'database'));
-        $queue = config('automation.queue', 'default');
+        $queue = config('automation.queue', 'automation');
 
         $resolvedConnection = is_string($queueConnection) && $queueConnection !== '' ? $queueConnection : 'database';
-        $resolvedQueue = is_string($queue) && $queue !== '' ? $queue : 'default';
+        $resolvedQueue = is_string($queue) && $queue !== '' ? $queue : 'automation';
 
         $this->onConnection($resolvedConnection);
         $this->onQueue($resolvedQueue);

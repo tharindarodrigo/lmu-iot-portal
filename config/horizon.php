@@ -87,6 +87,7 @@ return [
         'redis:default' => 60,
         'redis:ingestion' => 60,
         'redis:telemetry-side-effects' => 60,
+        'redis:automation' => 60,
         'redis-simulations:simulations' => 60,
     ],
 
@@ -222,6 +223,19 @@ return [
             'nice' => 0,
         ],
 
+        'supervisor-automation' => [
+            'connection' => 'redis',
+            'queue' => ['automation'],
+            'balance' => 'simple',
+            'processes' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 120,
+            'nice' => 0,
+        ],
+
         'supervisor-simulations' => [
             'connection' => 'redis-simulations',
             'queue' => ['simulations'],
@@ -233,6 +247,30 @@ return [
             'tries' => 1,
             'timeout' => 240,
             'nice' => 0,
+        ],
+    ],
+
+    'auto_balancing' => [
+        'enabled' => (bool) env('HORIZON_AUTO_BALANCING_ENABLED', false),
+        'strategy' => env('HORIZON_AUTO_SCALING_STRATEGY', 'time'),
+        'balance_max_shift' => (int) env('HORIZON_AUTO_BALANCE_MAX_SHIFT', 1),
+        'balance_cooldown' => (int) env('HORIZON_AUTO_BALANCE_COOLDOWN', 3),
+        'supervisors' => [
+            'default' => [
+                'max_processes' => (int) env('HORIZON_DEFAULT_MAX_PROCESSES', env('HORIZON_DEFAULT_PROCESSES', 3)),
+            ],
+            'ingestion' => [
+                'max_processes' => (int) env('HORIZON_INGESTION_MAX_PROCESSES', env('HORIZON_INGESTION_PROCESSES', 4)),
+            ],
+            'side_effects' => [
+                'max_processes' => (int) env('HORIZON_SIDE_EFFECTS_MAX_PROCESSES', env('HORIZON_SIDE_EFFECTS_PROCESSES', 4)),
+            ],
+            'automation' => [
+                'max_processes' => (int) env('HORIZON_AUTOMATION_MAX_PROCESSES', env('HORIZON_AUTOMATION_PROCESSES', 4)),
+            ],
+            'simulations' => [
+                'max_processes' => (int) env('HORIZON_SIMULATION_MAX_PROCESSES', env('HORIZON_SIMULATION_PROCESSES', 4)),
+            ],
         ],
     ],
 
@@ -248,6 +286,10 @@ return [
 
             'supervisor-side-effects' => [
                 'processes' => (int) env('HORIZON_SIDE_EFFECTS_PROCESSES', 8),
+            ],
+
+            'supervisor-automation' => [
+                'processes' => (int) env('HORIZON_AUTOMATION_PROCESSES', 8),
             ],
 
             'supervisor-simulations' => [
@@ -266,6 +308,10 @@ return [
 
             'supervisor-side-effects' => [
                 'processes' => (int) env('HORIZON_SIDE_EFFECTS_PROCESSES', 4),
+            ],
+
+            'supervisor-automation' => [
+                'processes' => (int) env('HORIZON_AUTOMATION_PROCESSES', 4),
             ],
 
             'supervisor-simulations' => [

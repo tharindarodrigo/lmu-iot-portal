@@ -38,6 +38,18 @@ return [
 
     'default_raw_retention_days' => (int) env('INGESTION_DEFAULT_RAW_RETENTION_DAYS', 90),
 
+    'telemetry_chunk_interval' => (string) env('INGESTION_TELEMETRY_CHUNK_INTERVAL', '1 day'),
+
+    'telemetry_compress_after' => (string) env('INGESTION_TELEMETRY_COMPRESS_AFTER', '7 days'),
+
+    'telemetry_retention' => (string) env('INGESTION_TELEMETRY_RETENTION', '90 days'),
+
+    'ingestion_message_retention_days' => (int) env('INGESTION_MESSAGES_RETENTION_DAYS', 14),
+
+    'ingestion_stage_log_retention_days' => (int) env('INGESTION_STAGE_LOG_RETENTION_DAYS', 7),
+
+    'storage_prune_batch_size' => (int) env('INGESTION_STORAGE_PRUNE_BATCH_SIZE', 1000),
+
     'nats' => [
         'host' => (string) env('INGESTION_NATS_HOST', (string) env('IOT_NATS_HOST', '127.0.0.1')),
         'port' => (int) env('INGESTION_NATS_PORT', (int) env('IOT_NATS_PORT', 4223)),

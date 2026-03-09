@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\IoT;
 
-use App\Domain\DeviceManagement\Jobs\SimulateDevicePublishingJob;
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceManagement\Publishing\FleetTelemetryLoadGenerator;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\Shared\Models\Organization;
 use Illuminate\Console\Command;
@@ -18,12 +18,14 @@ class SimulateFleetCommand extends Command
                             {--all : Include non-temporary devices in the selected organization}
                             {--devices=0 : Limit the number of devices to queue (0 = all)}
                             {--count=1 : Number of publish iterations per device}
-                            {--interval=0 : Seconds between publishes for each queued device}
-                            {--topic-id= : Restrict simulation to a single publish topic ID}';
+                            {--interval=0 : Seconds between full-fleet iterations}
+                            {--topic-id= : Restrict simulation to a single publish topic ID}
+                            {--host= : NATS broker host}
+                            {--port= : NATS broker port}';
 
-    protected $description = 'Queue telemetry simulation jobs for an organization fleet, targeting temporary devices by default';
+    protected $description = 'Run a long-lived fleet telemetry load generator for an organization, targeting temporary devices by default';
 
-    public function handle(): int
+    public function handle(FleetTelemetryLoadGenerator $generator): int
     {
         $organization = $this->resolveOrganization((string) $this->argument('organization'));
 
@@ -39,6 +41,10 @@ class SimulateFleetCommand extends Command
         $simulateAllDevices = (bool) $this->option('all');
         $topicOption = $this->option('topic-id');
         $schemaVersionTopicId = is_numeric($topicOption) ? (int) $topicOption : null;
+        $hostOption = $this->option('host');
+        $portOption = $this->option('port');
+        $host = is_string($hostOption) && trim($hostOption) !== '' ? trim($hostOption) : null;
+        $port = is_numeric($portOption) ? (int) $portOption : null;
 
         $publishCapableDevicesQuery = $this->publishCapableDevicesQuery(
             organization: $organization,
@@ -58,7 +64,7 @@ class SimulateFleetCommand extends Command
         $effectiveDeviceCount = $deviceLimit > 0
             ? min($deviceLimit, $matchedScopedDevices)
             : $matchedScopedDevices;
-        $effectiveDispatchCount = $effectiveDeviceCount * $publishCount;
+        $effectiveDeviceIterations = $effectiveDeviceCount * $publishCount;
 
         $this->displayPreflight(
             organization: $organization,
@@ -66,7 +72,9 @@ class SimulateFleetCommand extends Command
             matchedTemporaryDevices: $matchedTemporaryDevices,
             matchedTotalDevices: $matchedTotalDevices,
             effectiveDeviceCount: $effectiveDeviceCount,
-            effectiveDispatchCount: $effectiveDispatchCount,
+            effectiveDeviceIterations: $effectiveDeviceIterations,
+            host: $host,
+            port: $port,
         );
 
         if ($matchedScopedDevices === 0) {
@@ -79,32 +87,30 @@ class SimulateFleetCommand extends Command
             return self::SUCCESS;
         }
 
-        $queuedJobs = 0;
-        $remainingDevices = $effectiveDeviceCount;
-
-        $scopedDevicesQuery
-            ->select('devices.id')
+        $devices = $scopedDevicesQuery
+            ->with(['deviceType', 'schemaVersion.topics.parameters'])
             ->orderBy('devices.id')
-            ->chunkById(500, function ($devices) use (&$queuedJobs, &$remainingDevices, $publishCount, $intervalSeconds, $schemaVersionTopicId): bool|null {
-                foreach ($devices as $device) {
-                    if ($remainingDevices <= 0) {
-                        return false;
-                    }
+            ->when($effectiveDeviceCount > 0, fn (Builder $query): Builder => $query->limit($effectiveDeviceCount))
+            ->get();
 
-                    $queuedJobs += SimulateDevicePublishingJob::dispatchIterations(
-                        deviceId: $device->id,
-                        count: $publishCount,
-                        intervalSeconds: $intervalSeconds,
-                        schemaVersionTopicId: $schemaVersionTopicId,
-                    );
+        $this->trap([SIGTERM, SIGINT], function () use ($generator): void {
+            $generator->stop();
+            $this->warn('Shutdown signal received. Finishing the current fleet iteration before exit.');
+        });
 
-                    $remainingDevices--;
-                }
+        $summary = $generator->run(
+            devices: $devices,
+            count: $publishCount,
+            intervalSeconds: $intervalSeconds,
+            schemaVersionTopicId: $schemaVersionTopicId,
+            host: $host,
+            port: $port,
+        );
 
-                return null;
-            });
-
-        $this->info("Queued {$queuedJobs} fleet simulation job(s).");
+        $this->info('Fleet load generation complete.');
+        $this->line("Completed iterations: {$summary['completed_iterations']}");
+        $this->line("Published device iterations: {$summary['published_device_iterations']}");
+        $this->line("Published messages: {$summary['published_messages']}");
 
         return self::SUCCESS;
     }
@@ -132,12 +138,15 @@ class SimulateFleetCommand extends Command
         int $matchedTemporaryDevices,
         int $matchedTotalDevices,
         int $effectiveDeviceCount,
-        int $effectiveDispatchCount,
+        int $effectiveDeviceIterations,
+        ?string $host,
+        ?int $port,
     ): void {
         $organizationSlug = trim((string) $organization->slug);
-        $simulationQueue = $this->resolveStringConfig('queue.connections.redis-simulations.queue', 'simulations');
         $ingestionQueueConnection = $this->resolveStringConfig('ingestion.queue_connection', $this->resolveStringConfig('queue.default', 'database'));
         $ingestionQueue = $this->resolveStringConfig('ingestion.queue', 'ingestion');
+        $brokerHost = $host ?? $this->resolveStringConfig('iot.nats.host', '127.0.0.1');
+        $brokerPort = $port ?? $this->resolveIntConfig('iot.nats.port', 4223);
 
         if ($organizationSlug === '') {
             $organizationSlug = '-';
@@ -148,8 +157,9 @@ class SimulateFleetCommand extends Command
         $this->line("Matched temporary devices: {$matchedTemporaryDevices}");
         $this->line("Matched total devices: {$matchedTotalDevices}");
         $this->line("Effective device count: {$effectiveDeviceCount}");
-        $this->line("Effective dispatch count: {$effectiveDispatchCount}");
-        $this->line("Simulation queue: redis-simulations/{$simulationQueue}");
+        $this->line("Effective device iterations: {$effectiveDeviceIterations}");
+        $this->line('Execution mode: in-process long-lived publisher');
+        $this->line("Broker target: {$brokerHost}:{$brokerPort}");
         $this->line("Ingestion queue: {$ingestionQueueConnection}/{$ingestionQueue}");
     }
 
@@ -159,6 +169,15 @@ class SimulateFleetCommand extends Command
 
         return is_string($value) && trim($value) !== ''
             ? trim($value)
+            : $fallback;
+    }
+
+    private function resolveIntConfig(string $key, int $fallback): int
+    {
+        $value = config($key, $fallback);
+
+        return is_numeric($value)
+            ? (int) $value
             : $fallback;
     }
 

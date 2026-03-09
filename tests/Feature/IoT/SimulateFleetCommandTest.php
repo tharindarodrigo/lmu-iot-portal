@@ -6,19 +6,17 @@ use App\Domain\DeviceManagement\Jobs\SimulateDevicePublishingJob;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceManagement\Models\TemporaryDevice;
+use App\Domain\DeviceManagement\Publishing\FleetTelemetryLoadGenerator;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Shared\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
+use Mockery\MockInterface;
 
 uses(RefreshDatabase::class);
-
-afterEach(function (): void {
-    Carbon::setTestNow();
-});
 
 /**
  * @return array{
@@ -71,13 +69,36 @@ function createFleetSimulationFixture(int $temporaryDeviceCount = 2, int $perman
     ];
 }
 
-it('queues only temporary devices by default and prints a preflight summary', function (): void {
+it('runs only temporary devices by default and prints a direct-execution preflight summary', function (): void {
     Queue::fake();
 
     $fixture = createFleetSimulationFixture();
     $organization = $fixture['organization'];
     $temporaryDevices = $fixture['temporaryDevices'];
-    $permanentDevice = $fixture['permanentDevices']->sole();
+
+    $generator = mock(FleetTelemetryLoadGenerator::class, function (MockInterface $mock) use ($temporaryDevices): void {
+        $mock->shouldReceive('run')
+            ->once()
+            ->withArgs(function (Collection $devices, int $count, int $intervalSeconds, ?int $schemaVersionTopicId, ?string $host, ?int $port) use ($temporaryDevices): bool {
+                return $devices->pluck('id')->all() === $temporaryDevices->pluck('id')->all()
+                    && $count === 3
+                    && $intervalSeconds === 0
+                    && $schemaVersionTopicId === null
+                    && $host === null
+                    && $port === null;
+            })
+            ->andReturn([
+                'device_count' => 2,
+                'completed_iterations' => 3,
+                'published_device_iterations' => 6,
+                'published_messages' => 6,
+            ]);
+    });
+
+    app()->instance(FleetTelemetryLoadGenerator::class, $generator);
+
+    $configuredBrokerHost = (string) config('iot.nats.host');
+    $configuredBrokerPort = (int) config('iot.nats.port');
 
     $this->artisan('iot:simulate-fleet', [
         'organization' => $organization->slug,
@@ -89,20 +110,18 @@ it('queues only temporary devices by default and prints a preflight summary', fu
         ->expectsOutput('Matched temporary devices: 2')
         ->expectsOutput('Matched total devices: 3')
         ->expectsOutput('Effective device count: 2')
-        ->expectsOutput('Effective dispatch count: 6')
-        ->expectsOutput('Simulation queue: redis-simulations/simulations')
+        ->expectsOutput('Effective device iterations: 6')
+        ->expectsOutput('Execution mode: in-process long-lived publisher')
+        ->expectsOutput("Broker target: {$configuredBrokerHost}:{$configuredBrokerPort}")
         ->expectsOutput('Ingestion queue: redis/ingestion')
-        ->expectsOutput('Queued 6 fleet simulation job(s).')
+        ->expectsOutput('Fleet load generation complete.')
+        ->expectsOutput('Completed iterations: 3')
+        ->expectsOutput('Published device iterations: 6')
+        ->expectsOutput('Published messages: 6')
         ->assertSuccessful();
 
-    Queue::assertPushedTimes(SimulateDevicePublishingJob::class, 6);
-    Queue::assertPushed(SimulateDevicePublishingJob::class, function (SimulateDevicePublishingJob $job) use ($temporaryDevices): bool {
-        return $job->count === 1
-            && $job->intervalSeconds === 0
-            && $job->schemaVersionTopicId === null
-            && in_array($job->deviceId, $temporaryDevices->pluck('id')->all(), true);
-    });
-    Queue::assertNotPushed(SimulateDevicePublishingJob::class, fn (SimulateDevicePublishingJob $job): bool => $job->deviceId === $permanentDevice->id);
+    Queue::assertNothingPushed();
+    Queue::assertNotPushed(SimulateDevicePublishingJob::class);
 });
 
 it('includes non-temporary devices when all is requested', function (): void {
@@ -110,7 +129,35 @@ it('includes non-temporary devices when all is requested', function (): void {
 
     $fixture = createFleetSimulationFixture();
     $organization = $fixture['organization'];
-    $permanentDevice = $fixture['permanentDevices']->sole();
+    $deviceIds = $fixture['temporaryDevices']->pluck('id')
+        ->merge($fixture['permanentDevices']->pluck('id'))
+        ->sort()
+        ->values()
+        ->all();
+
+    $generator = mock(FleetTelemetryLoadGenerator::class, function (MockInterface $mock) use ($deviceIds): void {
+        $mock->shouldReceive('run')
+            ->once()
+            ->withArgs(function (Collection $devices, int $count, int $intervalSeconds, ?int $schemaVersionTopicId, ?string $host, ?int $port): bool {
+                return $count === 2
+                    && $intervalSeconds === 0
+                    && $schemaVersionTopicId === null
+                    && $host === null
+                    && $port === null;
+            })
+            ->andReturnUsing(function (Collection $devices) use ($deviceIds): array {
+                expect($devices->pluck('id')->sort()->values()->all())->toBe($deviceIds);
+
+                return [
+                    'device_count' => 3,
+                    'completed_iterations' => 2,
+                    'published_device_iterations' => 6,
+                    'published_messages' => 6,
+                ];
+            });
+    });
+
+    app()->instance(FleetTelemetryLoadGenerator::class, $generator);
 
     $this->artisan('iot:simulate-fleet', [
         'organization' => $organization->id,
@@ -118,17 +165,12 @@ it('includes non-temporary devices when all is requested', function (): void {
         '--count' => 2,
         '--interval' => 0,
     ])
-        ->expectsOutput("Resolved organization: {$organization->name} (ID: {$organization->id}, slug: {$organization->slug})")
         ->expectsOutput('Scope: all')
-        ->expectsOutput('Matched temporary devices: 2')
-        ->expectsOutput('Matched total devices: 3')
         ->expectsOutput('Effective device count: 3')
-        ->expectsOutput('Effective dispatch count: 6')
-        ->expectsOutput('Queued 6 fleet simulation job(s).')
+        ->expectsOutput('Effective device iterations: 6')
         ->assertSuccessful();
 
-    Queue::assertPushedTimes(SimulateDevicePublishingJob::class, 6);
-    Queue::assertPushed(SimulateDevicePublishingJob::class, fn (SimulateDevicePublishingJob $job): bool => $job->deviceId === $permanentDevice->id);
+    Queue::assertNothingPushed();
 });
 
 it('warns when no temporary devices match and all is required to include permanent devices', function (): void {
@@ -146,61 +188,32 @@ it('warns when no temporary devices match and all is required to include permane
         ->expectsOutput('Matched temporary devices: 0')
         ->expectsOutput('Matched total devices: 2')
         ->expectsOutput('Effective device count: 0')
-        ->expectsOutput('Effective dispatch count: 0')
+        ->expectsOutput('Effective device iterations: 0')
         ->expectsOutput('No temporary devices matched this organization. Use --all to include non-temporary devices.')
         ->assertSuccessful();
 
     Queue::assertNothingPushed();
 });
 
-it('dispatches short delayed jobs for paced runs instead of long-running sleeping jobs', function (): void {
-    Queue::fake();
-    Carbon::setTestNow(Carbon::parse('2026-03-08 15:00:00'));
-
-    $fixture = createFleetSimulationFixture(temporaryDeviceCount: 1, permanentDeviceCount: 0);
-    $organization = $fixture['organization'];
-    $device = $fixture['temporaryDevices']->sole();
-
-    $this->artisan('iot:simulate-fleet', [
-        'organization' => $organization->slug,
-        '--count' => 3,
-        '--interval' => 5,
-    ])->assertSuccessful();
-
-    Queue::assertPushedTimes(SimulateDevicePublishingJob::class, 3);
-    Queue::assertPushed(SimulateDevicePublishingJob::class, function (SimulateDevicePublishingJob $job) use ($device): bool {
-        return $job->deviceId === $device->id
-            && $job->count === 1
-            && $job->intervalSeconds === 0
-            && $job->delay === null;
-    });
-    Queue::assertPushed(SimulateDevicePublishingJob::class, function (SimulateDevicePublishingJob $job) use ($device): bool {
-        return $job->deviceId === $device->id
-            && $job->delay instanceof \DateTimeInterface
-            && Carbon::instance($job->delay)->equalTo(Carbon::parse('2026-03-08 15:00:05'));
-    });
-    Queue::assertPushed(SimulateDevicePublishingJob::class, function (SimulateDevicePublishingJob $job) use ($device): bool {
-        return $job->deviceId === $device->id
-            && $job->delay instanceof \DateTimeInterface
-            && Carbon::instance($job->delay)->equalTo(Carbon::parse('2026-03-08 15:00:10'));
-    });
-});
-
-it('configures dedicated fixed-process horizon supervisors for default ingestion and simulations', function (): void {
+it('configures dedicated fixed-process horizon supervisors for default ingestion side effects automation and simulations', function (): void {
     expect(config('horizon.defaults.supervisor-default.queue'))->toBe(['default'])
         ->and(config('horizon.defaults.supervisor-default.processes'))->toBe(1)
         ->and(config('horizon.defaults.supervisor-ingestion.queue'))->toBe(['ingestion'])
         ->and(config('horizon.defaults.supervisor-ingestion.processes'))->toBe(1)
         ->and(config('horizon.defaults.supervisor-side-effects.queue'))->toBe(['telemetry-side-effects'])
         ->and(config('horizon.defaults.supervisor-side-effects.processes'))->toBe(1)
+        ->and(config('horizon.defaults.supervisor-automation.queue'))->toBe(['automation'])
+        ->and(config('horizon.defaults.supervisor-automation.processes'))->toBe(1)
         ->and(config('horizon.defaults.supervisor-simulations.queue'))->toBe(['simulations'])
         ->and(config('horizon.defaults.supervisor-simulations.processes'))->toBe(1)
         ->and(config('horizon.defaults.supervisor-simulations.timeout'))->toBe(240)
         ->and(config('horizon.environments.local.supervisor-ingestion.processes'))->toBe(4)
         ->and(config('horizon.environments.local.supervisor-side-effects.processes'))->toBe(4)
+        ->and(config('horizon.environments.local.supervisor-automation.processes'))->toBe(4)
         ->and(config('horizon.environments.local.supervisor-simulations.processes'))->toBe(4)
         ->and(config('horizon.environments.production.supervisor-ingestion.processes'))->toBe(8)
         ->and(config('horizon.environments.production.supervisor-side-effects.processes'))->toBe(8)
+        ->and(config('horizon.environments.production.supervisor-automation.processes'))->toBe(8)
         ->and(config('horizon.environments.production.supervisor-simulations.processes'))->toBe(8)
         ->and(config('queue.connections.redis-simulations.retry_after'))->toBe(300);
 });

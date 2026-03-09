@@ -11,11 +11,11 @@ use App\Domain\DataIngestion\Models\IngestionMessage;
 use App\Domain\DataIngestion\Models\IngestionStageLog;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Domain\Shared\Services\RuntimeSettingManager;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use App\Events\TelemetryReceived;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use Laravel\Pennant\Feature;
 
 class TelemetryIngestionService
 {
@@ -26,23 +26,16 @@ class TelemetryIngestionService
         private readonly TelemetryMutationService $mutationService,
         private readonly TelemetryDerivationService $derivationService,
         private readonly TelemetryPersistenceService $persistenceService,
+        private readonly RuntimeSettingManager $runtimeSettingManager,
     ) {}
 
     public function ingest(IncomingTelemetryEnvelope $envelope): ?IngestionMessage
     {
-        $featureValues = Feature::values([
-            'ingestion.pipeline.enabled',
-            'ingestion.pipeline.driver',
-        ]);
-
-        if (($featureValues['ingestion.pipeline.enabled'] ?? false) !== true) {
+        if (! $this->runtimeSettingManager->booleanValue('ingestion.pipeline.enabled')) {
             return null;
         }
 
-        $featureDriver = $featureValues['ingestion.pipeline.driver'] ?? 'laravel';
-        $driver = is_string($featureDriver) ? $featureDriver : 'laravel';
-
-        if ($driver !== 'laravel') {
+        if ($this->runtimeSettingManager->stringValue('ingestion.pipeline.driver') !== 'laravel') {
             return null;
         }
 
@@ -86,6 +79,36 @@ class TelemetryIngestionService
 
         /** @var SchemaVersionTopic $topic */
         $topic = $resolved['topic'];
+
+        if (! $this->runtimeSettingManager->booleanValue('ingestion.pipeline.enabled', $device->organization_id)) {
+            $this->finalizeMessage($ingestionMessage, [
+                'organization_id' => $device->organization_id,
+                'device_id' => $device->id,
+                'device_schema_version_id' => $device->device_schema_version_id,
+                'schema_version_topic_id' => $topic->id,
+                'status' => IngestionStatus::FailedTerminal,
+                'error_summary' => [
+                    'reason' => 'organization_pipeline_disabled',
+                ],
+            ]);
+
+            return $ingestionMessage;
+        }
+
+        if ($this->runtimeSettingManager->stringValue('ingestion.pipeline.driver', $device->organization_id) !== 'laravel') {
+            $this->finalizeMessage($ingestionMessage, [
+                'organization_id' => $device->organization_id,
+                'device_id' => $device->id,
+                'device_schema_version_id' => $device->device_schema_version_id,
+                'schema_version_topic_id' => $topic->id,
+                'status' => IngestionStatus::FailedTerminal,
+                'error_summary' => [
+                    'reason' => 'organization_driver_unsupported',
+                ],
+            ]);
+
+            return $ingestionMessage;
+        }
 
         $schemaVersion = $device->schemaVersion;
         $messageContext = [

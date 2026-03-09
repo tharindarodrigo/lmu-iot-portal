@@ -14,3 +14,4 @@ Schedule::command('horizon:snapshot')->everyFiveMinutes();
 Schedule::command('iot:expire-stale-commands')->everyMinute();
 Schedule::command('iot:check-device-health')->everyMinute();
 Schedule::command('iot:purge-temporary-devices')->hourly();
+Schedule::command('ingestion:apply-storage-lifecycle')->daily();

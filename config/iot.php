@@ -45,7 +45,7 @@ return [
     ],
 
     'broadcast' => [
-        'raw_telemetry' => (bool) env('IOT_BROADCAST_RAW_TELEMETRY', (string) env('APP_ENV', 'production') === 'local'),
+        'raw_telemetry' => (bool) env('IOT_BROADCAST_RAW_TELEMETRY', false),
     ],
 
     'temporary_devices' => [

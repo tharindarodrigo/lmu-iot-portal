@@ -6,27 +6,39 @@ namespace App\Domain\Automation\Listeners;
 
 use App\Domain\Automation\Contracts\TriggerMatcher;
 use App\Domain\Automation\Jobs\StartAutomationRunFromTelemetry;
+use App\Domain\Automation\Services\TelemetryAutomationDispatchThrottle;
+use App\Domain\Shared\Services\RuntimeSettingManager;
 use App\Events\TelemetryReceived;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\Str;
-use Laravel\Pennant\Feature;
 use Psr\Log\LoggerInterface;
 
 class QueueTelemetryAutomationRuns implements ShouldQueue
 {
     public function __construct(
         private readonly TriggerMatcher $triggerMatcher,
+        private readonly TelemetryAutomationDispatchThrottle $dispatchThrottle,
         private readonly LogManager $logManager,
+        private readonly RuntimeSettingManager $runtimeSettingManager,
     ) {}
+
+    public function shouldQueue(TelemetryReceived $event): bool
+    {
+        if (! (bool) config('automation.enabled', true)) {
+            return false;
+        }
+
+        if (! $this->runtimeSettingManager->booleanValue('automation.pipeline.telemetry_fanout', $event->telemetryLog->device?->organization_id)) {
+            return false;
+        }
+
+        return $this->triggerMatcher->hasCandidateTelemetryTriggers($event->telemetryLog);
+    }
 
     public function handle(TelemetryReceived $event): void
     {
-        if (! (bool) config('automation.enabled', true)) {
-            return;
-        }
-
-        if (! Feature::active('automation.pipeline.telemetry_fanout')) {
+        if (! $this->shouldQueue($event)) {
             return;
         }
 
@@ -44,23 +56,16 @@ class QueueTelemetryAutomationRuns implements ShouldQueue
             return;
         }
 
-        $logContext = [
-            'event_correlation_id' => $eventCorrelationId,
-            'telemetry_log_id' => $telemetryLogId,
-            'device_id' => $telemetryLog->device_id,
-            'schema_version_topic_id' => $telemetryLog->schema_version_topic_id,
-            'matched_workflow_version_ids' => $workflowVersionIds->values()->all(),
-            'match_count' => $workflowVersionIds->count(),
-            'queue_connection' => config('automation.queue_connection', config('queue.default', 'database')),
-            'queue' => config('automation.queue', 'default'),
-        ];
-
         if ($workflowVersionIds->isEmpty()) {
             return;
         }
 
         foreach ($workflowVersionIds as $workflowVersionId) {
             $resolvedWorkflowVersionId = (int) $workflowVersionId;
+
+            if (! $this->dispatchThrottle->shouldDispatch($resolvedWorkflowVersionId, $telemetryLog)) {
+                continue;
+            }
 
             StartAutomationRunFromTelemetry::dispatch(
                 workflowVersionId: $resolvedWorkflowVersionId,
@@ -91,11 +96,11 @@ class QueueTelemetryAutomationRuns implements ShouldQueue
 
     public function viaQueue(): string
     {
-        $queue = config('automation.queue', 'default');
+        $queue = config('automation.queue', 'automation');
 
         return is_string($queue) && $queue !== ''
             ? $queue
-            : 'default';
+            : 'automation';
     }
 
     private function resolveKeyAsString(mixed $value): ?string

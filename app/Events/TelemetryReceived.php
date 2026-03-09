@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Events;
 
 use App\Domain\DataIngestion\Concerns\InteractsWithTelemetrySideEffectsQueue;
+use App\Domain\IoTDashboard\Application\RealtimeStreamChannel;
+use App\Domain\Shared\Services\RuntimeSettingManager;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
-use Laravel\Pennant\Feature;
 
 class TelemetryReceived implements ShouldBroadcast
 {
@@ -35,19 +36,18 @@ class TelemetryReceived implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
-        if (! Feature::active('ingestion.pipeline.broadcast_realtime')) {
+        if (! app(RuntimeSettingManager::class)->booleanValue('ingestion.pipeline.broadcast_realtime', $this->telemetryLog->device?->organization_id)) {
             return [];
         }
 
-        $this->telemetryLog->loadMissing('device:id,uuid,external_id,organization_id');
-        $organizationId = $this->telemetryLog->device?->organization_id;
+        $channelName = RealtimeStreamChannel::forTelemetryLog($this->telemetryLog);
 
-        if (! is_numeric($organizationId)) {
+        if (! is_string($channelName)) {
             return [];
         }
 
         return [
-            new PrivateChannel('iot-dashboard.organization.'.(int) $organizationId),
+            new PrivateChannel($channelName),
         ];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Events;
 
+use App\Domain\Shared\Services\RuntimeSettingManager;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -31,7 +32,7 @@ class TelemetryIncoming implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        if (! (bool) config('iot.broadcast.raw_telemetry', false)) {
+        if (! app(RuntimeSettingManager::class)->booleanValue('iot.diagnostics.raw_telemetry_stream')) {
             return [];
         }
 

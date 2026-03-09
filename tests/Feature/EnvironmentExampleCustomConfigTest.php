@@ -7,6 +7,7 @@ it('documents the custom platform environment variables in the example file', fu
         ...environmentVariablesFromConfigFile(config_path('iot.php')),
         ...environmentVariablesFromConfigFile(config_path('ingestion.php')),
         ...environmentVariablesFromConfigFile(config_path('automation.php')),
+        ...environmentVariablesFromConfigFile(config_path('horizon.php')),
         ...environmentVariablesFromConfigFile(config_path('reporting.php')),
         'DEVICE_CONTROL_LOG_LEVEL',
         'AUTOMATION_LOG_LEVEL',

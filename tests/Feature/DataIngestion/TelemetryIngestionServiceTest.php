@@ -15,6 +15,7 @@ use App\Domain\DeviceSchema\Models\DerivedParameterDefinition;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Domain\Shared\Services\RuntimeSettingManager;
 use App\Events\TelemetryReceived;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -154,7 +155,9 @@ it('processes valid telemetry without persisting successful stage logs by defaul
 });
 
 it('persists telemetry and still dispatches downstream side effects when analytics publishing is disabled', function (): void {
-    config()->set('ingestion.publish_analytics', false);
+    app(RuntimeSettingManager::class)->setGlobalOverrides([
+        'ingestion.pipeline.publish_analytics' => false,
+    ]);
 
     $context = buildTelemetryContext(true);
 
