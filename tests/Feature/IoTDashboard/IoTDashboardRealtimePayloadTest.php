@@ -116,6 +116,8 @@ it('includes device-topic realtime stream metadata in widget bootstrap payloads'
 });
 
 it('disables dashboard realtime broadcast channels when the ingestion realtime kill switch is off', function (): void {
+    Event::fake([TelemetryReceived::class]);
+
     app(RuntimeSettingManager::class)->setGlobalOverrides([
         'ingestion.pipeline.broadcast_realtime' => false,
     ]);

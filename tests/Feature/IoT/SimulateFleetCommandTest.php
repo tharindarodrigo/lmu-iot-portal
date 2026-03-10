@@ -196,6 +196,13 @@ it('warns when no temporary devices match and all is required to include permane
 });
 
 it('configures dedicated fixed-process horizon supervisors for default ingestion side effects automation and simulations', function (): void {
+    $configuredProductionProcesses = [
+        'ingestion' => (int) env('HORIZON_INGESTION_PROCESSES', 8),
+        'side_effects' => (int) env('HORIZON_SIDE_EFFECTS_PROCESSES', 8),
+        'automation' => (int) env('HORIZON_AUTOMATION_PROCESSES', 8),
+        'simulations' => (int) env('HORIZON_SIMULATION_PROCESSES', 8),
+    ];
+
     expect(config('horizon.defaults.supervisor-default.queue'))->toBe(['default'])
         ->and(config('horizon.defaults.supervisor-default.processes'))->toBe(1)
         ->and(config('horizon.defaults.supervisor-ingestion.queue'))->toBe(['ingestion'])
@@ -211,9 +218,9 @@ it('configures dedicated fixed-process horizon supervisors for default ingestion
         ->and(config('horizon.environments.local.supervisor-side-effects.processes'))->toBe(4)
         ->and(config('horizon.environments.local.supervisor-automation.processes'))->toBe(4)
         ->and(config('horizon.environments.local.supervisor-simulations.processes'))->toBe(4)
-        ->and(config('horizon.environments.production.supervisor-ingestion.processes'))->toBe(8)
-        ->and(config('horizon.environments.production.supervisor-side-effects.processes'))->toBe(8)
-        ->and(config('horizon.environments.production.supervisor-automation.processes'))->toBe(8)
-        ->and(config('horizon.environments.production.supervisor-simulations.processes'))->toBe(8)
+        ->and(config('horizon.environments.production.supervisor-ingestion.processes'))->toBe($configuredProductionProcesses['ingestion'])
+        ->and(config('horizon.environments.production.supervisor-side-effects.processes'))->toBe($configuredProductionProcesses['side_effects'])
+        ->and(config('horizon.environments.production.supervisor-automation.processes'))->toBe($configuredProductionProcesses['automation'])
+        ->and(config('horizon.environments.production.supervisor-simulations.processes'))->toBe($configuredProductionProcesses['simulations'])
         ->and(config('queue.connections.redis-simulations.retry_after'))->toBe(300);
 });

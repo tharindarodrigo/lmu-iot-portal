@@ -53,11 +53,21 @@ it('applies telemetry lifecycle policies and prunes expired ingestion side table
         'created_at' => now()->subDays(20),
     ]);
 
-    $this->artisan('ingestion:apply-storage-lifecycle')
-        ->expectsOutputToContain('Telemetry lifecycle: chunk interval 1 day, compression after 7 days, retention 90 days')
+    $command = $this->artisan('ingestion:apply-storage-lifecycle')
         ->expectsOutputToContain('Pruned ingestion stage logs: 2')
-        ->expectsOutputToContain('Pruned ingestion messages: 1')
-        ->assertSuccessful();
+        ->expectsOutputToContain('Pruned ingestion messages: 1');
+
+    if (DB::getDriverName() === 'pgsql') {
+        $command->expectsOutputToContain('Telemetry lifecycle: chunk interval 1 day, compression after 7 days, retention 90 days');
+    } else {
+        $command->expectsOutputToContain('Telemetry lifecycle: skipped Timescale policies on non-Postgres connection');
+    }
+
+    $command->assertSuccessful();
+
+    if (DB::getDriverName() !== 'pgsql') {
+        return;
+    }
 
     expect(IngestionMessage::query()->whereKey($expiredMessage->id)->exists())->toBeFalse()
         ->and(IngestionMessage::query()->whereKey($freshMessage->id)->exists())->toBeTrue()
@@ -103,14 +113,23 @@ it('schedules storage lifecycle application daily', function (): void {
 });
 
 it('adds the composite telemetry index used by dashboard snapshot queries', function (): void {
-    $index = DB::selectOne(
-        "SELECT indexname
-        FROM pg_indexes
-        WHERE schemaname = 'public'
-          AND tablename = 'device_telemetry_logs'
-          AND indexname = 'device_telemetry_logs_device_topic_recorded_index'
-        LIMIT 1"
-    );
+    $index = DB::getDriverName() === 'pgsql'
+        ? DB::selectOne(
+            "SELECT indexname
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND tablename = 'device_telemetry_logs'
+              AND indexname = 'device_telemetry_logs_device_topic_recorded_index'
+            LIMIT 1"
+        )
+        : DB::selectOne(
+            "SELECT name AS indexname
+            FROM sqlite_master
+            WHERE type = 'index'
+              AND tbl_name = 'device_telemetry_logs'
+              AND name = 'device_telemetry_logs_device_topic_recorded_index'
+            LIMIT 1"
+        );
 
     expect($index)->not->toBeNull();
 });
