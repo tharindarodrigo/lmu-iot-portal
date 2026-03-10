@@ -2,6 +2,24 @@
 
 declare(strict_types=1);
 
+use Dotenv\Dotenv;
+
+it('contains a valid dotenv example file', function (): void {
+    $contents = file_get_contents(base_path('.env.example'));
+
+    expect($contents)->not->toBeFalse();
+
+    if ($contents === false) {
+        return;
+    }
+
+    $variables = Dotenv::parse($contents);
+
+    expect($variables['INGESTION_TELEMETRY_CHUNK_INTERVAL'])->toBe('1 day')
+        ->and($variables['INGESTION_TELEMETRY_COMPRESS_AFTER'])->toBe('7 days')
+        ->and($variables['INGESTION_TELEMETRY_RETENTION'])->toBe('90 days');
+});
+
 it('documents the custom platform environment variables in the example file', function (): void {
     $customConfigVariables = [
         ...environmentVariablesFromConfigFile(config_path('iot.php')),
