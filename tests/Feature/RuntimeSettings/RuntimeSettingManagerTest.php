@@ -91,3 +91,33 @@ it('prefers organization overrides over global values and falls back when reset'
         ->and($manager->booleanValue('ingestion.pipeline.publish_analytics', $organization->id))->toBeFalse()
         ->and(Feature::for($organization)->active('ingestion.pipeline.publish_analytics'))->toBeFalse();
 });
+
+it('resolves organization overrides when given a numeric string organization id', function (): void {
+    $manager = app(RuntimeSettingManager::class);
+    $organization = Organization::factory()->create();
+
+    $manager->setOrganizationOverrides($organization, [
+        'ingestion.pipeline.publish_analytics' => false,
+    ]);
+
+    $organizationId = (string) $organization->getKey();
+
+    expect($manager->booleanValue('ingestion.pipeline.publish_analytics', $organizationId))->toBeFalse()
+        ->and($manager->resolvedSetting('ingestion.pipeline.publish_analytics', $organizationId)['source'])
+        ->toBe(RuntimeSettingRegistry::SOURCE_ORGANIZATION);
+});
+
+it('does not reuse cached runtime settings across scoped container lifecycles', function (): void {
+    $firstManager = app(RuntimeSettingManager::class);
+
+    expect($firstManager->booleanValue('ingestion.pipeline.broadcast_realtime'))->toBeTrue();
+
+    Feature::for(null)->activate('runtime-settings.override.ingestion.pipeline.broadcast_realtime', false);
+
+    app()->forgetScopedInstances();
+
+    $secondManager = app(RuntimeSettingManager::class);
+
+    expect($secondManager)->not->toBe($firstManager)
+        ->and($secondManager->booleanValue('ingestion.pipeline.broadcast_realtime'))->toBeFalse();
+});

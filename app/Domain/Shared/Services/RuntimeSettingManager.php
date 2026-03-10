@@ -44,7 +44,7 @@ class RuntimeSettingManager
      *     organization_override_value: mixed
      * }>
      */
-    public function resolvedSettings(Organization|int|null $organization = null): array
+    public function resolvedSettings(Organization|int|string|null $organization = null): array
     {
         $resolved = [];
 
@@ -66,7 +66,7 @@ class RuntimeSettingManager
      *     organization_override_value: mixed
      * }
      */
-    public function resolvedSetting(string $key, Organization|int|null $organization = null): array
+    public function resolvedSetting(string $key, Organization|int|string|null $organization = null): array
     {
         $cacheKey = $this->resolvedSettingCacheKey($key, $organization);
 
@@ -118,7 +118,7 @@ class RuntimeSettingManager
     /**
      * @return array<string, mixed>
      */
-    public function effectiveValues(Organization|int|null $organization = null): array
+    public function effectiveValues(Organization|int|string|null $organization = null): array
     {
         $values = [];
 
@@ -129,12 +129,12 @@ class RuntimeSettingManager
         return $values;
     }
 
-    public function booleanValue(string $key, Organization|int|null $organization = null): bool
+    public function booleanValue(string $key, Organization|int|string|null $organization = null): bool
     {
         return (bool) $this->resolvedSetting($key, $organization)['effective_value'];
     }
 
-    public function stringValue(string $key, Organization|int|null $organization = null): string
+    public function stringValue(string $key, Organization|int|string|null $organization = null): string
     {
         $value = $this->resolvedSetting($key, $organization)['effective_value'];
         $defaultValue = $this->registry->defaultValue($key);
@@ -144,7 +144,7 @@ class RuntimeSettingManager
             : (is_string($defaultValue) ? $defaultValue : '');
     }
 
-    public function intValue(string $key, Organization|int|null $organization = null): int
+    public function intValue(string $key, Organization|int|string|null $organization = null): int
     {
         $value = $this->resolvedSetting($key, $organization)['effective_value'];
         $defaultValue = $this->registry->defaultValue($key);
@@ -227,7 +227,7 @@ class RuntimeSettingManager
     /**
      * @return array{exists: bool, value: mixed}
      */
-    private function storedOverride(string $key, Organization|int|null $organization = null): array
+    private function storedOverride(string $key, Organization|int|string|null $organization = null): array
     {
         $scope = $this->serializeScope($organization);
 
@@ -267,21 +267,38 @@ class RuntimeSettingManager
         return "runtime-settings.override.{$key}";
     }
 
-    private function serializeScope(Organization|int|null $organization = null): ?string
+    private function serializeScope(Organization|int|string|null $organization = null): ?string
     {
-        if ($organization instanceof Organization) {
-            return Feature::serializeScope($organization);
-        }
-
-        if (is_int($organization) && $organization > 0) {
-            return Organization::class.'|'.$organization;
-        }
-
         if ($organization === null) {
             return Feature::serializeScope(null);
         }
 
+        if ($organization instanceof Organization) {
+            return Feature::serializeScope($organization);
+        }
+
+        $organizationId = $this->normalizeOrganizationId($organization);
+
+        if ($organizationId !== null) {
+            return Organization::class.'|'.$organizationId;
+        }
+
         return null;
+    }
+
+    private function normalizeOrganizationId(int|string $organization): ?int
+    {
+        if (is_int($organization)) {
+            return $organization > 0 ? $organization : null;
+        }
+
+        if (! ctype_digit($organization)) {
+            return null;
+        }
+
+        $organizationId = (int) $organization;
+
+        return $organizationId > 0 ? $organizationId : null;
     }
 
     private function tableName(): string
@@ -337,7 +354,7 @@ class RuntimeSettingManager
         return $this->overrideCache[$scope];
     }
 
-    private function resolvedSettingCacheKey(string $key, Organization|int|null $organization = null): string
+    private function resolvedSettingCacheKey(string $key, Organization|int|string|null $organization = null): string
     {
         return $key.'|'.($this->serializeScope($organization) ?? 'missing');
     }

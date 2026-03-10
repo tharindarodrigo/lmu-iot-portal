@@ -69,7 +69,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(AnalyticsPublisher::class, NatsAnalyticsPublisher::class);
         $this->app->bind(TriggerMatcher::class, DatabaseTriggerMatcher::class);
         $this->app->singleton(RuntimeSettingRegistry::class);
-        $this->app->singleton(RuntimeSettingManager::class);
+        $this->app->scoped(RuntimeSettingManager::class);
         $this->app->singleton(HorizonRuntimeConfigurator::class);
         $this->app->singleton(DeviceTelemetryTopicResolver::class);
         $this->app->singleton(TelemetrySchemaMetadataCache::class);

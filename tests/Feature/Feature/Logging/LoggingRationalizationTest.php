@@ -283,6 +283,11 @@ it('does not emit automation listener debug chatter on matched telemetry events'
 
     app()->bind(TriggerMatcher::class, fn () => new class implements TriggerMatcher
     {
+        public function hasCandidateTelemetryTriggers(DeviceTelemetryLog $telemetryLog): bool
+        {
+            return true;
+        }
+
         public function matchTelemetryTriggers(DeviceTelemetryLog $telemetryLog): Collection
         {
             return collect([101, 202]);
