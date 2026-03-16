@@ -108,7 +108,7 @@ class DeviceForm
                             ->searchable()
                             ->preload()
                             ->placeholder('No parent hub')
-                            ->helperText('Assign this device to a hub for migration rehearsal visibility and health tracking.'),
+                            ->helperText('Assign this device to a hub for grouped visibility and health tracking.'),
 
                         Placeholder::make('onboarding_hint')
                             ->label('Onboarding Hint')

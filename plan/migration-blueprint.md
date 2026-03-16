@@ -69,6 +69,7 @@ The migration must:
 - Treat advanced digital twin tooling as a later product track, not a blocker for migration.
 - Treat Teejay-specific dashboard and report requirements as generic reusable capabilities where possible.
 - Use `WITCO` as the first tenant onboarding pilot after the generic local rehearsal path is stable, and use it to prove real physical devices plus signal bindings rather than iMoni-shaped platform devices.
+- Keep the default local seed focused on the active tenant pilot and reusable global migration catalog entries instead of rehearsal-only peripheral devices.
 
 ## Principles
 

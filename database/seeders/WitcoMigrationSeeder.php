@@ -26,6 +26,22 @@ class WitcoMigrationSeeder extends Seeder
 {
     public const ORGANIZATION_SLUG = 'witco';
 
+    private const HUB_DEVICE_TYPE_KEY = 'legacy_hub';
+
+    private const HUB_DEVICE_TYPE_NAME = 'Legacy Hub';
+
+    private const HUB_BASE_TOPIC = 'devices/legacy-hub';
+
+    private const HUB_SCHEMA_NAME = 'Legacy Hub Presence';
+
+    private const STATUS_DEVICE_TYPE_KEY = 'imoni_status';
+
+    private const STATUS_DEVICE_TYPE_NAME = 'IMONI Status';
+
+    private const STATUS_BASE_TOPIC = 'devices/imoni-status';
+
+    private const STATUS_SCHEMA_NAME = 'IMONI Status';
+
     private const STATUS_PERIPHERAL_TYPE_HEX = '00';
 
     /**
@@ -62,15 +78,6 @@ class WitcoMigrationSeeder extends Seeder
         '869244041759568-a1',
         '869244041767199-ps',
         '869244041759279-a2',
-        '869244041754866-water-tank-alarm-level',
-        '869244041754866-th-rh-input-server-room',
-        '869244041759568-cctv-system-alarm',
-        '869244041759568-access-control-system-alarm',
-        '869244041767199-fire-alarm-panel',
-        '869244041767199-ups-alarm-status',
-        '869244041759279-rear-door-status',
-        '869244041759279-main-door-status',
-        '869244041759279-th-rh-gf-ups-room',
     ];
 
     /**
@@ -78,6 +85,12 @@ class WitcoMigrationSeeder extends Seeder
      */
     private const OBSOLETE_DEVICE_TYPE_KEYS = [
         'witco_imoni_lite',
+        'witco_legacy_hub',
+        'witco_status',
+        'migration_legacy_hub',
+        'migration_imoni_peripheral_00',
+        'migration_imoni_peripheral_11',
+        'migration_imoni_peripheral_12',
     ];
 
     /**
@@ -142,12 +155,13 @@ class WitcoMigrationSeeder extends Seeder
             ['name' => 'WITCO'],
         );
 
+        $this->pruneObsoleteSchemaArtifacts();
+
         $hubSchemaVersion = $this->upsertSchemaVersion(
-            organization: $organization,
-            deviceTypeKey: 'witco_legacy_hub',
-            deviceTypeName: 'WITCO Legacy Hub',
-            baseTopic: 'migration/witco/hubs',
-            schemaName: 'WITCO Hub Contract',
+            deviceTypeKey: self::HUB_DEVICE_TYPE_KEY,
+            deviceTypeName: self::HUB_DEVICE_TYPE_NAME,
+            baseTopic: self::HUB_BASE_TOPIC,
+            schemaName: self::HUB_SCHEMA_NAME,
             topicKey: 'heartbeat',
             topicLabel: 'Heartbeat',
             topicSuffix: 'heartbeat',
@@ -165,11 +179,10 @@ class WitcoMigrationSeeder extends Seeder
         );
 
         $statusSchemaVersion = $this->upsertSchemaVersion(
-            organization: $organization,
-            deviceTypeKey: 'witco_status',
-            deviceTypeName: 'WITCO Status',
-            baseTopic: 'migration/witco/status',
-            schemaName: 'WITCO Status Contract',
+            deviceTypeKey: self::STATUS_DEVICE_TYPE_KEY,
+            deviceTypeName: self::STATUS_DEVICE_TYPE_NAME,
+            baseTopic: self::STATUS_BASE_TOPIC,
+            schemaName: self::STATUS_SCHEMA_NAME,
             topicKey: 'telemetry',
             topicLabel: 'Telemetry',
             topicSuffix: 'telemetry',
@@ -187,9 +200,14 @@ class WitcoMigrationSeeder extends Seeder
                     ],
                     'mutation_expression' => [
                         'if' => [
-                            ['var' => 'val'],
-                            1,
+                            [
+                                '===' => [
+                                    ['var' => 'val'],
+                                    1,
+                                ],
+                            ],
                             0,
+                            1,
                         ],
                     ],
                     'sequence' => 1,
@@ -213,7 +231,6 @@ class WitcoMigrationSeeder extends Seeder
                     'name' => $hubConfig['name'],
                     'metadata' => [
                         'migration_role' => 'hub',
-                        'migration_tenant' => self::ORGANIZATION_SLUG,
                         'source_adapter' => 'imoni',
                         'imei' => $hubConfig['imei'],
                     ],
@@ -225,7 +242,6 @@ class WitcoMigrationSeeder extends Seeder
         }
 
         $this->pruneObsoleteChildren($organization);
-        $this->pruneObsoleteSchemaArtifacts($organization);
 
         $statusTopic = $statusSchemaVersion->topics()->where('key', 'telemetry')->first();
         $statusParameter = $statusTopic?->parameters()->where('key', 'status')->first();
@@ -249,8 +265,7 @@ class WitcoMigrationSeeder extends Seeder
                 name: $mapping['label'],
                 metadata: [
                     'migration_role' => 'physical_device',
-                    'migration_tenant' => self::ORGANIZATION_SLUG,
-                    'binding_source_adapter' => 'imoni',
+                    'source_adapter' => 'imoni',
                 ],
             );
 
@@ -275,7 +290,6 @@ class WitcoMigrationSeeder extends Seeder
      * @param  array<int, array<string, mixed>>  $parameters
      */
     private function upsertSchemaVersion(
-        Organization $organization,
         string $deviceTypeKey,
         string $deviceTypeName,
         string $baseTopic,
@@ -288,7 +302,7 @@ class WitcoMigrationSeeder extends Seeder
     ): DeviceSchemaVersion {
         $deviceType = DeviceType::query()->updateOrCreate(
             [
-                'organization_id' => $organization->id,
+                'organization_id' => null,
                 'key' => $deviceTypeKey,
             ],
             [
@@ -320,14 +334,14 @@ class WitcoMigrationSeeder extends Seeder
             ],
             [
                 'status' => 'active',
-                'notes' => 'WITCO migration onboarding schema.',
+                'notes' => 'Migration onboarding schema.',
             ],
         );
 
         if ($schemaVersion->status !== 'active') {
             $schemaVersion->update([
                 'status' => 'active',
-                'notes' => 'WITCO migration onboarding schema.',
+                'notes' => 'Migration onboarding schema.',
             ]);
         }
 
@@ -341,7 +355,7 @@ class WitcoMigrationSeeder extends Seeder
                 'direction' => TopicDirection::Publish,
                 'purpose' => $purpose,
                 'suffix' => $topicSuffix,
-                'description' => 'WITCO migration onboarding topic.',
+                'description' => 'Migration onboarding topic.',
                 'qos' => 1,
                 'retain' => false,
                 'sequence' => 0,
@@ -407,10 +421,9 @@ class WitcoMigrationSeeder extends Seeder
         return self::ORGANIZATION_SLUG.'-'.Str::slug($mapping['label']);
     }
 
-    private function pruneObsoleteSchemaArtifacts(Organization $organization): void
+    private function pruneObsoleteSchemaArtifacts(): void
     {
         $obsoleteDeviceTypes = DeviceType::query()
-            ->where('organization_id', $organization->id)
             ->whereIn('key', self::OBSOLETE_DEVICE_TYPE_KEYS)
             ->get();
 
@@ -431,7 +444,6 @@ class WitcoMigrationSeeder extends Seeder
             ->delete();
 
         Device::withTrashed()
-            ->where('organization_id', $organization->id)
             ->whereIn('device_type_id', $obsoleteTypeIds)
             ->get()
             ->each(fn (Device $device) => $device->forceDelete());

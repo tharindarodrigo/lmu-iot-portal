@@ -68,7 +68,7 @@ JS;
     return json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
 }
 
-it('normalizes iMoni peripheral payloads into stable child ids and mqtt topics', function (): void {
+it('normalizes iMoni peripheral payloads into source topics for laravel-side bindings', function (): void {
     $samplePayload = [
         'imei' => '869244049087921',
         'deviceId' => '869244049087921',
@@ -108,20 +108,21 @@ it('normalizes iMoni peripheral payloads into stable child ids and mqtt topics',
         'accepted' => true,
     ])->and($topics)->toBe([
         'devices/869244049087921/presence',
-        'migration/imoni-lite/869244049087921-00/telemetry',
-        'migration/ioext1/869244049087921-11/telemetry',
-        'migration/ioext2/869244049087921-12/telemetry',
+        'migration/source/imoni/869244049087921/00/telemetry',
+        'migration/source/imoni/869244049087921/11/telemetry',
+        'migration/source/imoni/869244049087921/12/telemetry',
     ])->and($result['summary'])->toMatchArray([
+        'route' => 'source_peripheral_topics',
         'published_child_count' => 3,
         'published_children' => [
-            '869244049087921-00',
-            '869244049087921-11',
-            '869244049087921-12',
+            '869244049087921:00',
+            '869244049087921:11',
+            '869244049087921:12',
         ],
-    ])->and($childPayloads->pluck('_meta.child_external_id')->all())->toBe([
-        '869244049087921-00',
-        '869244049087921-11',
-        '869244049087921-12',
+    ])->and($childPayloads->pluck('_meta.source_key')->all())->toBe([
+        '869244049087921:00',
+        '869244049087921:11',
+        '869244049087921:12',
     ])->and($childPayloads->pluck('_meta.peripheral_type_hex')->all())->toBe([
         '00',
         '11',

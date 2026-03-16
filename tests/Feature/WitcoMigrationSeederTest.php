@@ -85,7 +85,10 @@ it('seeds witco hubs with mapped peripheral child devices only', function (): vo
         ->first();
 
     expect($statusTopic)->not->toBeNull()
-        ->and($statusTopic?->resolvedTopic($statusDevice))->toBe('migration/witco/status/witco-water-tank-alarm-level/telemetry')
+        ->and($statusDevice?->deviceType?->organization_id)->toBeNull()
+        ->and($statusDevice?->deviceType?->key)->toBe('imoni_status')
+        ->and($statusDevice?->schemaVersion?->schema?->name)->toBe('IMONI Status')
+        ->and($statusTopic?->resolvedTopic($statusDevice))->toBe('devices/imoni-status/witco-water-tank-alarm-level/telemetry')
         ->and($statusParameter)->not->toBeNull()
         ->and($statusParameter?->type)->toBe(ParameterDataType::Integer)
         ->and($statusParameter?->resolvedValidationRules())->toMatchArray([
@@ -94,9 +97,14 @@ it('seeds witco hubs with mapped peripheral child devices only', function (): vo
         ])
         ->and($statusParameter?->getAttribute('mutation_expression'))->toMatchArray([
             'if' => [
-                ['var' => 'val'],
-                1,
+                [
+                    '===' => [
+                        ['var' => 'val'],
+                        1,
+                    ],
+                ],
                 0,
+                1,
             ],
         ])
         ->and($statusTopic?->parameters()->orderBy('sequence')->pluck('key')->all())->toBe(['status'])
@@ -166,10 +174,10 @@ it('marks a witco hub online and ingests source-routed telemetry into physical s
         ->and($waterTankAlarm->telemetryLogs()->count())->toBe(1)
         ->and($serverRoomInput->telemetryLogs()->count())->toBe(1)
         ->and($waterTankAlarm->telemetryLogs()->first()?->transformed_values)->toMatchArray([
-            'status' => 1,
+            'status' => 0,
         ])
         ->and($serverRoomInput->telemetryLogs()->first()?->transformed_values)->toMatchArray([
-            'status' => 0,
+            'status' => 1,
         ]);
 
     Event::assertDispatched(TelemetryReceived::class, 2);
@@ -224,5 +232,7 @@ it('removes obsolete witco imoni lite device types, schemas, versions, devices, 
         ->and(DeviceSchema::withTrashed()->whereKey($obsoleteSchema->id)->exists())->toBeFalse()
         ->and(DeviceSchemaVersion::query()->whereKey($obsoleteSchemaVersion->id)->exists())->toBeFalse()
         ->and(Device::withTrashed()->whereKey($obsoleteDevice->id)->exists())->toBeFalse()
-        ->and(DeviceTelemetryLog::query()->where('device_schema_version_id', $obsoleteSchemaVersion->id)->exists())->toBeFalse();
+        ->and(DeviceTelemetryLog::query()->where('device_schema_version_id', $obsoleteSchemaVersion->id)->exists())->toBeFalse()
+        ->and(DeviceType::query()->where('key', 'legacy_hub')->whereNull('organization_id')->exists())->toBeTrue()
+        ->and(DeviceType::query()->where('key', 'imoni_status')->whereNull('organization_id')->exists())->toBeTrue();
 });
