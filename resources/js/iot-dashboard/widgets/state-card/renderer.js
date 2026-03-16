@@ -37,13 +37,50 @@ function resolveLatestPoint(series) {
     return points[points.length - 1];
 }
 
+function resolvePresenceState(widget) {
+    const connectionState = typeof widget?.device_connection_state === 'string'
+        ? widget.device_connection_state.trim().toLowerCase()
+        : '';
+
+    if (connectionState === 'online') {
+        return {
+            label: 'Online',
+            color: '#22c55e',
+        };
+    }
+
+    if (connectionState === 'offline') {
+        return {
+            label: 'Offline',
+            color: '#ef4444',
+        };
+    }
+
+    return {
+        label: 'Unknown',
+        color: '#64748b',
+    };
+}
+
 export function renderStateCardMarkup(widget, series) {
     const latestPoint = resolveLatestPoint(series);
+    const presenceState = resolvePresenceState(widget);
+    const metaMarkup = `
+        <div class="iot-state-card__meta">
+            <div class="iot-state-card__timestamp">${escapeHtml(formatTimestamp(latestPoint?.timestamp ?? null))}</div>
+            <span
+                class="iot-state-card__presence-dot"
+                style="--presence-color: ${escapeHtml(presenceState.color)};"
+                title="${escapeHtml(presenceState.label)}"
+                aria-label="${escapeHtml(presenceState.label)}"
+            ></span>
+        </div>
+    `;
 
     if (!latestPoint) {
         return `
             <div class="iot-state-card">
-                <div class="iot-state-card__timestamp">No recent data</div>
+                ${metaMarkup}
                 <div class="iot-state-card__empty">NO DATA</div>
             </div>
         `;
@@ -84,7 +121,7 @@ export function renderStateCardMarkup(widget, series) {
 
     return `
         <div class="iot-state-card">
-            <div class="iot-state-card__timestamp">${escapeHtml(formatTimestamp(latestPoint.timestamp))}</div>
+            ${metaMarkup}
             <div class="iot-state-card__body">
                 ${indicatorMarkup}
             </div>

@@ -29,7 +29,7 @@ class IoTDashboardSnapshotsController extends Controller
             'widgets' => fn ($query) => $query
                 ->with([
                     'topic:id,label,suffix',
-                    'device:id,uuid,name,organization_id',
+                    'device:id,uuid,name,organization_id,connection_state,last_seen_at,offline_deadline_at,presence_timeout_seconds',
                 ])
                 ->orderBy('sequence')
                 ->orderBy('id'),

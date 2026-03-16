@@ -90,15 +90,35 @@ export function stateTimelineOption(widget, series) {
             name: entry.label,
             type: 'line',
             step: 'end',
-            showSymbol: false,
+            showSymbol: true,
+            symbol: 'circle',
+            symbolSize: 7,
             lineStyle: {
-                width: 3,
+                width: 4,
+                color: entry.color,
+                opacity: 1,
+            },
+            itemStyle: {
+                color: (params) => {
+                    const stateColor = params?.data?.stateColor;
+
+                    return typeof stateColor === 'string' && stateColor.trim() !== ''
+                        ? stateColor.trim()
+                        : entry.color;
+                },
+                borderColor: '#ffffff',
+                borderWidth: 1.5,
+            },
+            areaStyle: {
+                opacity: 0.12,
+                color: entry.color,
             },
             emphasis: { focus: 'series' },
             data: (Array.isArray(entry.points) ? entry.points : []).map((point) => ({
                 value: [point.timestamp, point.value],
                 rawValue: point.rawValue ?? null,
                 stateLabel: point.stateLabel ?? null,
+                stateColor: point.stateColor ?? entry.color,
             })),
         })),
     };
