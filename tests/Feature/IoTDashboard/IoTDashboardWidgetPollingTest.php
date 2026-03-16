@@ -116,6 +116,8 @@ function createDashboardSnapshotBaseContext(): array
         'organization_id' => $organization->id,
         'device_type_id' => $deviceType->id,
         'device_schema_version_id' => $schemaVersion->id,
+        'connection_state' => 'online',
+        'last_seen_at' => now()->subMinute(),
     ]);
 
     return [$organization, $dashboard, $topic, $device];
@@ -600,6 +602,7 @@ it('returns the latest mapped state for state card widgets', function (): void {
 
     $response->assertOk()
         ->assertJsonPath('widgets.0.type', 'state_card')
+        ->assertJsonPath('widgets.0.device_connection_state', 'online')
         ->assertJsonPath('widgets.0.series.0.points.0.value', 2)
         ->assertJsonPath('widgets.0.series.0.points.0.state_label', 'CLOSED');
 });

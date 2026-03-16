@@ -64,9 +64,13 @@ class StateCardSnapshotResolver implements WidgetSnapshotResolver
             ];
         }
 
+        $device = $widget->device;
+
         return [
             'widget_id' => (int) $widget->id,
             'generated_at' => now()->toIso8601String(),
+            'device_connection_state' => $device?->effectiveConnectionState(),
+            'device_last_seen_at' => $device?->lastSeenAt()?->toIso8601String(),
             'series' => $series,
         ];
     }

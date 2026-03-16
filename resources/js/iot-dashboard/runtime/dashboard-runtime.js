@@ -519,6 +519,13 @@ class DashboardRuntime {
             return;
         }
 
+        widget.device_connection_state = typeof snapshot.device_connection_state === 'string'
+            ? snapshot.device_connection_state
+            : widget.device_connection_state;
+        widget.device_last_seen_at = typeof snapshot.device_last_seen_at === 'string'
+            ? snapshot.device_last_seen_at
+            : widget.device_last_seen_at;
+
         this.applySnapshotSeries(widget, snapshot.series);
     }
 

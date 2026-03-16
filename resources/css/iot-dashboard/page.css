@@ -85,6 +85,13 @@
     padding: 1.25rem 1rem;
 }
 
+.iot-state-card__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
 .iot-state-card__timestamp {
     font-size: 0.72rem;
     line-height: 1rem;
@@ -93,6 +100,16 @@
 
 :is(.dark, .dark *) .iot-state-card__timestamp {
     color: var(--gray-400);
+}
+
+.iot-state-card__presence-dot {
+    --presence-color: #64748b;
+    width: 0.72rem;
+    height: 0.72rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: var(--presence-color);
+    box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--presence-color) 18%, transparent 82%);
 }
 
 .iot-state-card__body {
