@@ -2,6 +2,7 @@ import { normalizeNumericValue } from './theme';
 import { GridLayoutManager } from './grid-layout-manager';
 import { PollingManager } from './polling-manager';
 import { RealtimeManager } from './realtime-manager';
+import { historySelectionSnapshotRange, isAbsoluteHistorySelection } from '../history-range-state';
 import { lineChartOption } from '../widgets/line-chart/renderer';
 import { barChartOption } from '../widgets/bar-chart/renderer';
 import { gaugeChartOption } from '../widgets/gauge-chart/renderer';
@@ -51,6 +52,12 @@ function isStateCardWidget(widget) {
     return widget?.type === WIDGET_TYPES.stateCard;
 }
 
+function isHistoryChartWidget(widget) {
+    return widget?.type === WIDGET_TYPES.lineChart
+        || widget?.type === WIDGET_TYPES.barChart
+        || widget?.type === WIDGET_TYPES.stateTimeline;
+}
+
 function isStateWidget(widget) {
     return widget?.type === WIDGET_TYPES.stateCard || widget?.type === WIDGET_TYPES.stateTimeline;
 }
@@ -90,6 +97,7 @@ class DashboardRuntime {
         this.pendingRealtimePayloads = new Map();
         this.realtimeFlushTimers = new Map();
         this.lastRealtimeAppliedAt = new Map();
+        this.historyRange = config?.history_range ?? null;
     }
 
     boot() {
@@ -167,6 +175,7 @@ class DashboardRuntime {
 
             const widget = {
                 ...rawWidget,
+                history_mode: this.historyRange?.mode ?? null,
                 seriesData: normalizeSeriesConfiguration(rawWidget),
             };
 
@@ -188,9 +197,22 @@ class DashboardRuntime {
 
         this.pollingManager.sync(
             widgets,
-            (widget) => this.realtimeManager.shouldPollWidget(widget),
+            (widget) => !this.usesFixedHistoryRange(widget) && this.realtimeManager.shouldPollWidget(widget),
             (widgetIds) => this.requestPollingSnapshots(widgetIds),
         );
+    }
+
+    updateHistoryRange(historyRange) {
+        this.historyRange = historyRange ?? null;
+
+        this.widgets.forEach((widget) => {
+            widget.history_mode = this.historyRange?.mode ?? null;
+        });
+
+        this.clearAllRealtimeBuffers();
+        this.requestInitialSnapshots();
+        this.realtimeManager.update(Array.from(this.widgets.values()));
+        this.syncPolling();
     }
 
     mountGrid() {
@@ -455,6 +477,7 @@ class DashboardRuntime {
         }
 
         const url = new URL(this.config.snapshot_url, window.location.origin);
+        this.appendHistoryRangeParams(url);
         const activeWidgetIds = Array.from(this.widgets.keys()).sort((left, right) => left - right);
         const requestedWidgetIds = [...widgetIds].sort((left, right) => left - right);
         const requestsAllWidgets = activeWidgetIds.length === requestedWidgetIds.length
@@ -474,8 +497,11 @@ class DashboardRuntime {
             return;
         }
 
+        const url = new URL(widget.snapshot_url, window.location.origin);
+        this.appendHistoryRangeParams(url);
+
         window.axios
-            .get(widget.snapshot_url)
+            .get(url.toString())
             .then((response) => {
                 this.applySnapshotResponse(widget, response.data);
             })
@@ -577,6 +603,21 @@ class DashboardRuntime {
         this.pendingRealtimePayloads.clear();
         this.realtimeFlushTimers.clear();
         this.lastRealtimeAppliedAt.clear();
+    }
+
+    appendHistoryRangeParams(url) {
+        const historyRange = historySelectionSnapshotRange(this.historyRange);
+
+        if (!historyRange) {
+            return;
+        }
+
+        url.searchParams.set('history_from_at', historyRange.history_from_at);
+        url.searchParams.set('history_until_at', historyRange.history_until_at);
+    }
+
+    usesFixedHistoryRange(widget) {
+        return isAbsoluteHistorySelection(this.historyRange) && isHistoryChartWidget(widget);
     }
 
     clearRealtimeBufferForWidget(widgetId, preserveLastApplied = false) {
@@ -819,7 +860,12 @@ class DashboardRuntime {
             ? widget.device.uuid
             : null;
 
-        if (!widget.use_websocket || widgetTopicId !== topicId || widget?.type === WIDGET_TYPES.barChart) {
+        if (
+            !widget.use_websocket
+            || widgetTopicId !== topicId
+            || widget?.type === WIDGET_TYPES.barChart
+            || this.usesFixedHistoryRange(widget)
+        ) {
             return false;
         }
 
@@ -867,6 +913,14 @@ export function updateDashboardRuntimeWidgets(widgets) {
     }
 
     runtime.updateWidgets(widgets);
+}
+
+export function updateDashboardRuntimeHistoryRange(historyRange) {
+    if (!runtime) {
+        return;
+    }
+
+    runtime.updateHistoryRange(historyRange);
 }
 
 export function destroyDashboardRuntime() {
