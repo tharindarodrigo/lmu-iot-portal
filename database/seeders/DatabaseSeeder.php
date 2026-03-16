@@ -32,13 +32,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             UserSeeder::class,
             OrganizationSeeder::class,
-            DeviceSchemaSeeder::class,
-            MigrationRehearsalSeeder::class,
             WitcoMigrationSeeder::class,
-            DeviceControlSeeder::class,
-            DeviceTelemetrySeeder::class,
-            AutomationSeeder::class,
-            IoTDashboardSeeder::class,
         ]);
     }
 }

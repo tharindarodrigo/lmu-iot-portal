@@ -90,6 +90,7 @@ Story: As a migration engineer, I can onboard WITCO locally by binding normalize
 Acceptance:
 - WITCO hubs are seeded as real parent devices.
 - WITCO customer-facing devices use platform-owned external IDs that represent the physical device, not the raw iMoni peripheral.
+- The default local seed contains only the WITCO pilot plus reusable global migration catalog entities, not rehearsal-only peripheral devices.
 - Node-RED publishes normalized source topics for WITCO iMoni traffic without creating iMoni-shaped user devices.
 - Laravel binds WITCO source slots to physical device parameters through a reusable binding layer.
 - Hub presence and bound physical-device telemetry persist through the existing Laravel ingestion pipeline.
@@ -100,6 +101,7 @@ Sub-tasks:
 3. Publish WITCO normalized source topics from Node-RED and bind slot values to physical device parameters in Laravel
 4. Skip empty legacy parameter mappings in the first onboarding pass and track them as follow-up cleanup
 5. Add Pest coverage for WITCO seeding, source-topic binding resolution, and local ingestion
+6. Replace seeded rehearsal-only peripheral catalog entries with global reusable hub and `IMONI Status` catalog entries
 
 ---
 

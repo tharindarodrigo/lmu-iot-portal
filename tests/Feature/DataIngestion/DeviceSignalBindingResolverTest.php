@@ -43,7 +43,7 @@ it('expands a source topic payload into bound physical device envelopes', functi
             'witco-water-tank-alarm-level',
         ])
         ->and($payloadsByDevice->get('witco-water-tank-alarm-level'))->toMatchArray([
-            'mqtt_topic' => 'migration/witco/status/witco-water-tank-alarm-level/telemetry',
+            'mqtt_topic' => 'devices/imoni-status/witco-water-tank-alarm-level/telemetry',
             'payload' => [
                 'status' => 1,
                 '_meta' => [
@@ -55,7 +55,7 @@ it('expands a source topic payload into bound physical device envelopes', functi
             ],
         ])
         ->and($payloadsByDevice->get('witco-th-rh-input-server-room'))->toMatchArray([
-            'mqtt_topic' => 'migration/witco/status/witco-th-rh-input-server-room/telemetry',
+            'mqtt_topic' => 'devices/imoni-status/witco-th-rh-input-server-room/telemetry',
             'payload' => [
                 'status' => 0,
                 '_meta' => [
