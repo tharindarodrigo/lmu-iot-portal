@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\IoTDashboard\Widgets\StateTimeline;
 
+use App\Domain\IoTDashboard\Application\DashboardHistoryRange;
 use App\Domain\IoTDashboard\Contracts\WidgetConfig;
 use App\Domain\IoTDashboard\Contracts\WidgetSnapshotResolver;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
@@ -20,8 +21,11 @@ class StateTimelineSnapshotResolver implements WidgetSnapshotResolver
     /**
      * @return array<string, mixed>
      */
-    public function resolve(IoTDashboardWidget $widget, WidgetConfig $config): array
-    {
+    public function resolve(
+        IoTDashboardWidget $widget,
+        WidgetConfig $config,
+        ?DashboardHistoryRange $historyRange = null,
+    ): array {
         if (! $config instanceof StateTimelineConfig) {
             throw new InvalidArgumentException('State timeline widgets require StateTimelineConfig.');
         }
@@ -34,6 +38,7 @@ class StateTimelineSnapshotResolver implements WidgetSnapshotResolver
                 deviceId: $deviceId,
                 lookbackMinutes: $config->lookbackMinutes(),
                 maxPoints: $config->maxPoints(),
+                historyRange: $historyRange,
             );
 
         $series = [];
@@ -79,11 +84,21 @@ class StateTimelineSnapshotResolver implements WidgetSnapshotResolver
         int $deviceId,
         int $lookbackMinutes,
         int $maxPoints,
+        ?DashboardHistoryRange $historyRange,
     ): Collection {
-        return DeviceTelemetryLog::query()
+        $query = DeviceTelemetryLog::query()
             ->where('schema_version_topic_id', $schemaVersionTopicId)
-            ->where('device_id', $deviceId)
-            ->where('recorded_at', '>=', now()->subMinutes($lookbackMinutes))
+            ->where('device_id', $deviceId);
+
+        if ($historyRange instanceof DashboardHistoryRange) {
+            $query
+                ->where('recorded_at', '>=', $historyRange->fromAt())
+                ->where('recorded_at', '<=', $historyRange->untilAt());
+        } else {
+            $query->where('recorded_at', '>=', now()->subMinutes($lookbackMinutes));
+        }
+
+        return $query
             ->orderByDesc('recorded_at')
             ->limit($maxPoints)
             ->get(['id', 'recorded_at', 'transformed_values'])

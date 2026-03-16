@@ -8,21 +8,17 @@ use App\Domain\IoTDashboard\Application\WidgetRegistry;
 use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ShowIoTDashboardSnapshotsRequest;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 
 class IoTDashboardSnapshotsController extends Controller
 {
-    /**
-     * @return JsonResponse
-     */
     public function __invoke(
-        Request $request,
+        ShowIoTDashboardSnapshotsRequest $request,
         IoTDashboard $dashboard,
         WidgetRegistry $widgetRegistry,
-    ) {
+    ): JsonResponse {
         Gate::authorize('view', $dashboard);
 
         $dashboard->loadMissing([
@@ -35,22 +31,9 @@ class IoTDashboardSnapshotsController extends Controller
                 ->orderBy('id'),
         ]);
 
-        $widgetId = $request->integer('widget');
-        $requestedWidgetIds = $request->input('widgets', []);
-
-        if (! is_array($requestedWidgetIds)) {
-            $requestedWidgetIds = [];
-        }
-
-        /** @var Collection<int, mixed> $widgetIdCandidates */
-        $widgetIdCandidates = collect($requestedWidgetIds);
-
-        $widgetIds = $widgetIdCandidates
-            ->filter(fn (mixed $value): bool => is_numeric($value) && (int) $value > 0)
-            ->map(fn (mixed $value): int => (int) $value)
-            ->unique()
-            ->values()
-            ->all();
+        $widgetId = $request->widgetId();
+        $widgetIds = $request->widgetIds();
+        $historyRange = $request->historyRange();
 
         $widgets = $dashboard->widgets
             ->when(
@@ -64,9 +47,9 @@ class IoTDashboardSnapshotsController extends Controller
             ->values();
 
         $snapshots = $widgets
-            ->map(function (IoTDashboardWidget $widget) use ($widgetRegistry): array {
+            ->map(function (IoTDashboardWidget $widget) use ($historyRange, $widgetRegistry): array {
                 $definition = $widgetRegistry->forWidget($widget);
-                $snapshot = $definition->resolveSnapshot($widget);
+                $snapshot = $definition->resolveSnapshot($widget, $historyRange);
 
                 return [
                     'id' => (int) $widget->id,

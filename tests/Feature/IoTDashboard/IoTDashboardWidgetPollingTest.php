@@ -904,7 +904,6 @@ it('applies threshold colors to status summary tiles based on resolved values', 
     $response->assertOk()
         ->assertJsonPath('widgets.0.series.0.color', '#22c55e');
 });
-
 it('ignores history ranges for non-history widgets', function (): void {
     $admin = User::factory()->create(['is_super_admin' => true]);
     $this->actingAs($admin);
