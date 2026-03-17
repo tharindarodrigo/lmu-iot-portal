@@ -90,7 +90,6 @@ function createDashboardSnapshotBaseContext(): array
             'validation_error_code' => null,
         ]);
     }
-
     ParameterDefinition::factory()->create([
         'schema_version_topic_id' => $topic->id,
         'key' => 'status',
@@ -99,27 +98,6 @@ function createDashboardSnapshotBaseContext(): array
         'type' => ParameterDataType::Integer,
         'category' => ParameterCategory::State,
         'sequence' => 14,
-        'required' => false,
-        'is_active' => true,
-        'validation_rules' => ['min' => 0, 'max' => 1],
-        'control_ui' => [
-            'state_mappings' => [
-                ['value' => 0, 'label' => 'OFF', 'color' => '#ef4444'],
-                ['value' => 1, 'label' => 'ON', 'color' => '#22c55e'],
-            ],
-        ],
-        'mutation_expression' => null,
-        'validation_error_code' => null,
-    ]);
-
-    ParameterDefinition::factory()->create([
-        'schema_version_topic_id' => $topic->id,
-        'key' => 'status',
-        'label' => 'Status',
-        'json_path' => '$.status',
-        'type' => ParameterDataType::Integer,
-        'category' => ParameterCategory::State,
-        'sequence' => 12,
         'required' => false,
         'is_active' => true,
         'validation_rules' => ['min' => 0, 'max' => 1],
