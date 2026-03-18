@@ -12,6 +12,9 @@ use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Filament\Admin\Resources\DeviceManagement\DeviceTypes\DeviceTypeResource;
+use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\DeviceSchemaResource;
+use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\DeviceSchemaVersionResource;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteBulkAction;
@@ -252,9 +255,33 @@ class ParameterDefinitionsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('key')
             ->columns([
+                TextColumn::make('topic.schemaVersion.schema.deviceType.name')
+                    ->label('Device Type')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->url(fn (ParameterDefinition $record): ?string => $record->topic?->schemaVersion?->schema?->device_type_id
+                        ? DeviceTypeResource::getUrl('view', ['record' => $record->topic->schemaVersion->schema->device_type_id])
+                        : null),
+
+                TextColumn::make('topic.schemaVersion.schema.name')
+                    ->label('Device Schema')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->url(fn (ParameterDefinition $record): ?string => $record->topic?->schemaVersion?->device_schema_id
+                        ? DeviceSchemaResource::getUrl('view', ['record' => $record->topic->schemaVersion->device_schema_id])
+                        : null),
+
+                TextColumn::make('topic.schemaVersion.version')
+                    ->label('Schema Version')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->url(fn (ParameterDefinition $record): ?string => $record->topic?->device_schema_version_id
+                        ? DeviceSchemaVersionResource::getUrl('view', ['record' => $record->topic->device_schema_version_id])
+                        : null),
+
                 TextColumn::make('topic.label')
                     ->label('Topic')
-                    ->searchable(),
+                    ->searchable()
+                    ->url(fn (ParameterDefinition $record): ?string => $record->topic?->device_schema_version_id
+                        ? DeviceSchemaVersionResource::getUrl('view', ['record' => $record->topic->device_schema_version_id])
+                        : null),
 
                 TextColumn::make('key')
                     ->searchable(),

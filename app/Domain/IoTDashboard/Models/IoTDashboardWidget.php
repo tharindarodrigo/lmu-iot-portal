@@ -13,6 +13,9 @@ use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarChartConfig;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeChartConfig;
 use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
+use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
+use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
+use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
 use Database\Factories\Domain\IoTDashboard\Models\IoTDashboardWidgetFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,7 +23,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class IoTDashboardWidget extends Model
 {
-    /** @use HasFactory<\Database\Factories\Domain\IoTDashboard\Models\IoTDashboardWidgetFactory> */
+    /** @use HasFactory<IoTDashboardWidgetFactory> */
     use HasFactory;
 
     protected $table = 'iot_dashboard_widgets';
@@ -85,6 +88,9 @@ class IoTDashboardWidget extends Model
             WidgetType::LineChart => LineChartConfig::fromArray([]),
             WidgetType::BarChart => BarChartConfig::fromArray([]),
             WidgetType::GaugeChart => GaugeChartConfig::fromArray([]),
+            WidgetType::StatusSummary => StatusSummaryConfig::fromArray([]),
+            WidgetType::StateCard => StateCardConfig::fromArray([]),
+            WidgetType::StateTimeline => StateTimelineConfig::fromArray([]),
         };
     }
 
@@ -131,7 +137,7 @@ class IoTDashboardWidget extends Model
     }
 
     /**
-     * @return array<int, array{key: string, label: string, color: string}>
+     * @return array<int, array{key: string, label: string, color: string, unit?: string|null}>
      */
     public function resolvedSeriesConfig(): array
     {

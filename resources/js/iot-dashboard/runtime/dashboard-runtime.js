@@ -2,17 +2,28 @@ import { normalizeNumericValue } from './theme';
 import { GridLayoutManager } from './grid-layout-manager';
 import { PollingManager } from './polling-manager';
 import { RealtimeManager } from './realtime-manager';
+import { historySelectionSnapshotRange, isAbsoluteHistorySelection } from '../history-range-state';
 import { lineChartOption } from '../widgets/line-chart/renderer';
 import { barChartOption } from '../widgets/bar-chart/renderer';
 import { gaugeChartOption } from '../widgets/gauge-chart/renderer';
+import { renderStatusSummaryMarkup } from '../widgets/status-summary/renderer';
+import { renderStateCardMarkup } from '../widgets/state-card/renderer';
+import { stateTimelineOption } from '../widgets/state-timeline/renderer';
 
 const WIDGET_TYPES = Object.freeze({
     lineChart: 'line_chart',
     barChart: 'bar_chart',
     gaugeChart: 'gauge_chart',
+    statusSummary: 'status_summary',
+    stateCard: 'state_card',
+    stateTimeline: 'state_timeline',
 });
 
 function buildChartOption(widget, series) {
+    if (widget?.type === WIDGET_TYPES.stateTimeline) {
+        return stateTimelineOption(widget, series);
+    }
+
     if (widget?.type === WIDGET_TYPES.gaugeChart) {
         return gaugeChartOption(widget, series);
     }
@@ -35,8 +46,44 @@ function normalizeSeriesConfiguration(widget) {
             key: entry.key,
             label: typeof entry.label === 'string' && entry.label.trim() !== '' ? entry.label : entry.key,
             color: typeof entry.color === 'string' && entry.color.trim() !== '' ? entry.color : '#38bdf8',
+            unit: typeof entry.unit === 'string' && entry.unit.trim() !== '' ? entry.unit : null,
+            source: entry?.source && typeof entry.source === 'object' ? entry.source : null,
             points: [],
         }));
+}
+
+function isStateCardWidget(widget) {
+    return widget?.type === WIDGET_TYPES.stateCard;
+}
+
+function isStatusSummaryWidget(widget) {
+    return widget?.type === WIDGET_TYPES.statusSummary;
+}
+
+function isHistoryChartWidget(widget) {
+    return widget?.type === WIDGET_TYPES.lineChart
+        || widget?.type === WIDGET_TYPES.barChart
+        || widget?.type === WIDGET_TYPES.stateTimeline;
+}
+
+function isStateWidget(widget) {
+    return widget?.type === WIDGET_TYPES.stateCard || widget?.type === WIDGET_TYPES.stateTimeline;
+}
+
+function normalizeStateValueKey(value) {
+    if (typeof value === 'boolean') {
+        return value ? 'true' : 'false';
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return String(value);
+    }
+
+    if (typeof value === 'string' && value.trim() !== '') {
+        return value.trim();
+    }
+
+    return '';
 }
 
 class DashboardRuntime {
@@ -58,6 +105,7 @@ class DashboardRuntime {
         this.pendingRealtimePayloads = new Map();
         this.realtimeFlushTimers = new Map();
         this.lastRealtimeAppliedAt = new Map();
+        this.historyRange = config?.history_range ?? null;
     }
 
     boot() {
@@ -135,6 +183,7 @@ class DashboardRuntime {
 
             const widget = {
                 ...rawWidget,
+                history_mode: this.historyRange?.mode ?? null,
                 seriesData: normalizeSeriesConfiguration(rawWidget),
             };
 
@@ -156,9 +205,22 @@ class DashboardRuntime {
 
         this.pollingManager.sync(
             widgets,
-            (widget) => this.realtimeManager.shouldPollWidget(widget),
+            (widget) => !this.usesFixedHistoryRange(widget) && this.realtimeManager.shouldPollWidget(widget),
             (widgetIds) => this.requestPollingSnapshots(widgetIds),
         );
+    }
+
+    updateHistoryRange(historyRange) {
+        this.historyRange = historyRange ?? null;
+
+        this.widgets.forEach((widget) => {
+            widget.history_mode = this.historyRange?.mode ?? null;
+        });
+
+        this.clearAllRealtimeBuffers();
+        this.requestInitialSnapshots();
+        this.realtimeManager.update(Array.from(this.widgets.values()));
+        this.syncPolling();
     }
 
     mountGrid() {
@@ -327,6 +389,8 @@ class DashboardRuntime {
             this.resizeObservers.delete(widgetId);
         }
 
+        target.innerHTML = '';
+
         const chart = window.echarts.init(target);
         this.charts.set(widgetId, chart);
 
@@ -345,6 +409,18 @@ class DashboardRuntime {
     }
 
     renderWidget(widget) {
+        if (isStatusSummaryWidget(widget)) {
+            this.renderStatusSummaryWidget(widget);
+
+            return;
+        }
+
+        if (isStateCardWidget(widget)) {
+            this.renderStateCardWidget(widget);
+
+            return;
+        }
+
         const chart = this.ensureChart(widget.id);
 
         if (!chart) {
@@ -352,6 +428,30 @@ class DashboardRuntime {
         }
 
         chart.setOption(buildChartOption(widget, widget.seriesData), true);
+    }
+
+    renderStateCardWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderStateCardMarkup(widget, widget.seriesData);
+    }
+
+    renderStatusSummaryWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderStatusSummaryMarkup(widget, widget.seriesData);
     }
 
     requestInitialSnapshots() {
@@ -403,6 +503,7 @@ class DashboardRuntime {
         }
 
         const url = new URL(this.config.snapshot_url, window.location.origin);
+        this.appendHistoryRangeParams(url);
         const activeWidgetIds = Array.from(this.widgets.keys()).sort((left, right) => left - right);
         const requestedWidgetIds = [...widgetIds].sort((left, right) => left - right);
         const requestsAllWidgets = activeWidgetIds.length === requestedWidgetIds.length
@@ -422,8 +523,11 @@ class DashboardRuntime {
             return;
         }
 
+        const url = new URL(widget.snapshot_url, window.location.origin);
+        this.appendHistoryRangeParams(url);
+
         window.axios
-            .get(widget.snapshot_url)
+            .get(url.toString())
             .then((response) => {
                 this.applySnapshotResponse(widget, response.data);
             })
@@ -467,6 +571,13 @@ class DashboardRuntime {
             return;
         }
 
+        widget.device_connection_state = typeof snapshot.device_connection_state === 'string'
+            ? snapshot.device_connection_state
+            : widget.device_connection_state;
+        widget.device_last_seen_at = typeof snapshot.device_last_seen_at === 'string'
+            ? snapshot.device_last_seen_at
+            : widget.device_last_seen_at;
+
         this.applySnapshotSeries(widget, snapshot.series);
     }
 
@@ -490,17 +601,29 @@ class DashboardRuntime {
                         return {
                             timestamp: point.timestamp,
                             value,
+                            rawValue: point?.raw_value ?? null,
+                            stateKey: typeof point?.state_key === 'string' ? point.state_key : null,
+                            stateLabel: typeof point?.state_label === 'string' ? point.state_label : null,
+                            stateColor: typeof point?.state_color === 'string' ? point.state_color : null,
                         };
                     })
                     .filter(Boolean)
                 : [];
 
-            seriesByKey.set(entry.key, points);
+            seriesByKey.set(entry.key, {
+                points,
+                color: typeof entry?.color === 'string' && entry.color.trim() !== '' ? entry.color.trim() : null,
+                label: typeof entry?.label === 'string' && entry.label.trim() !== '' ? entry.label.trim() : null,
+                unit: typeof entry?.unit === 'string' && entry.unit.trim() !== '' ? entry.unit.trim() : null,
+            });
         });
 
         widget.seriesData = widget.seriesData.map((series) => ({
             ...series,
-            points: seriesByKey.has(series.key) ? seriesByKey.get(series.key) : [],
+            color: seriesByKey.get(series.key)?.color ?? series.color,
+            label: seriesByKey.get(series.key)?.label ?? series.label,
+            unit: seriesByKey.get(series.key)?.unit ?? series.unit,
+            points: seriesByKey.has(series.key) ? (seriesByKey.get(series.key)?.points ?? []) : [],
         }));
 
         this.renderWidget(widget);
@@ -514,6 +637,21 @@ class DashboardRuntime {
         this.pendingRealtimePayloads.clear();
         this.realtimeFlushTimers.clear();
         this.lastRealtimeAppliedAt.clear();
+    }
+
+    appendHistoryRangeParams(url) {
+        const historyRange = historySelectionSnapshotRange(this.historyRange);
+
+        if (!historyRange) {
+            return;
+        }
+
+        url.searchParams.set('history_from_at', historyRange.history_from_at);
+        url.searchParams.set('history_until_at', historyRange.history_until_at);
+    }
+
+    usesFixedHistoryRange(widget) {
+        return isAbsoluteHistorySelection(this.historyRange) && isHistoryChartWidget(widget);
     }
 
     clearRealtimeBufferForWidget(widgetId, preserveLastApplied = false) {
@@ -546,7 +684,26 @@ class DashboardRuntime {
         let hasValues = false;
 
         widget.seriesData.forEach((series) => {
-            const value = normalizeNumericValue(transformedValues[series.key]);
+            if (isStateWidget(widget)) {
+                const resolvedStateValue = this.resolveRealtimeStateValue(widget, transformedValues[series.key]);
+
+                if (!resolvedStateValue) {
+                    return;
+                }
+
+                hasValues = true;
+                seriesValues[series.key] = resolvedStateValue;
+
+                return;
+            }
+
+            const sourceType = typeof series?.source?.type === 'string' ? series.source.type : null;
+            const realtimeParameterKey = sourceType === 'latest_parameter'
+                && typeof series?.source?.parameter_key === 'string'
+                && series.source.parameter_key.trim() !== ''
+                ? series.source.parameter_key.trim()
+                : series.key;
+            const value = normalizeNumericValue(transformedValues[realtimeParameterKey]);
 
             if (value === null) {
                 return;
@@ -557,6 +714,48 @@ class DashboardRuntime {
         });
 
         return hasValues ? seriesValues : null;
+    }
+
+    resolveRealtimeStateValue(widget, rawValue) {
+        const stateKey = normalizeStateValueKey(rawValue);
+
+        if (stateKey === '') {
+            return null;
+        }
+
+        const stateMappings = Array.isArray(widget?.state_mappings) ? widget.state_mappings : [];
+        const fallbackLabel = rawValue === null || rawValue === undefined || rawValue === ''
+            ? 'Unknown'
+            : String(rawValue);
+        let resolved = {
+            value: 0,
+            rawValue,
+            stateKey,
+            stateLabel: fallbackLabel,
+            stateColor: '#64748b',
+        };
+
+        stateMappings.forEach((mapping, index) => {
+            const mappingKey = normalizeStateValueKey(mapping?.value);
+
+            if (mappingKey !== stateKey) {
+                return;
+            }
+
+            resolved = {
+                value: index + 1,
+                rawValue,
+                stateKey,
+                stateLabel: typeof mapping?.label === 'string' && mapping.label.trim() !== ''
+                    ? mapping.label.trim()
+                    : fallbackLabel,
+                stateColor: typeof mapping?.color === 'string' && mapping.color.trim() !== ''
+                    ? mapping.color.trim()
+                    : '#64748b',
+            };
+        });
+
+        return resolved;
     }
 
     scheduleRealtimePayload(widget, recordedAt, seriesValues, waitMilliseconds) {
@@ -595,12 +794,28 @@ class DashboardRuntime {
                 return series;
             }
 
-            const nextPoints = [...series.points, {
-                timestamp: recordedAt,
-                value: seriesValues[series.key],
-            }];
+            const realtimeValue = seriesValues[series.key];
+            const nextPoint = typeof realtimeValue === 'object' && realtimeValue !== null
+                ? {
+                    timestamp: recordedAt,
+                    value: normalizeNumericValue(realtimeValue.value) ?? 0,
+                    rawValue: realtimeValue.rawValue ?? null,
+                    stateKey: typeof realtimeValue.stateKey === 'string' ? realtimeValue.stateKey : null,
+                    stateLabel: typeof realtimeValue.stateLabel === 'string' ? realtimeValue.stateLabel : null,
+                    stateColor: typeof realtimeValue.stateColor === 'string' ? realtimeValue.stateColor : null,
+                }
+                : {
+                    timestamp: recordedAt,
+                    value: realtimeValue,
+                };
 
-            const minPoints = widget?.type === WIDGET_TYPES.gaugeChart ? 1 : 20;
+            const nextPoints = [...series.points, nextPoint];
+
+            const minPoints = widget?.type === WIDGET_TYPES.gaugeChart
+                || widget?.type === WIDGET_TYPES.statusSummary
+                || widget?.type === WIDGET_TYPES.stateCard
+                ? 1
+                : 20;
             const maxPoints = Math.max(minPoints, Number(widget.max_points || 240));
 
             if (nextPoints.length > maxPoints) {
@@ -689,7 +904,12 @@ class DashboardRuntime {
             ? widget.device.uuid
             : null;
 
-        if (!widget.use_websocket || widgetTopicId !== topicId || widget?.type === WIDGET_TYPES.barChart) {
+        if (
+            !widget.use_websocket
+            || widgetTopicId !== topicId
+            || widget?.type === WIDGET_TYPES.barChart
+            || this.usesFixedHistoryRange(widget)
+        ) {
             return false;
         }
 
@@ -698,6 +918,23 @@ class DashboardRuntime {
         }
 
         return widgetDeviceUuid === deviceUuid;
+    }
+
+    disposeChart(widgetId) {
+        const chart = this.charts.get(widgetId);
+
+        if (chart && !chart.isDisposed()) {
+            chart.dispose();
+        }
+
+        this.charts.delete(widgetId);
+
+        const observer = this.resizeObservers.get(widgetId);
+
+        if (observer) {
+            observer.disconnect();
+            this.resizeObservers.delete(widgetId);
+        }
     }
 }
 
@@ -720,6 +957,14 @@ export function updateDashboardRuntimeWidgets(widgets) {
     }
 
     runtime.updateWidgets(widgets);
+}
+
+export function updateDashboardRuntimeHistoryRange(historyRange) {
+    if (!runtime) {
+        return;
+    }
+
+    runtime.updateHistoryRange(historyRange);
 }
 
 export function destroyDashboardRuntime() {

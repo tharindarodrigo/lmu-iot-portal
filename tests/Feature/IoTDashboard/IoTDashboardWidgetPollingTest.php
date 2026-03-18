@@ -90,7 +90,6 @@ function createDashboardSnapshotBaseContext(): array
             'validation_error_code' => null,
         ]);
     }
-
     ParameterDefinition::factory()->create([
         'schema_version_topic_id' => $topic->id,
         'key' => 'status',
@@ -338,7 +337,6 @@ function createStatusSummaryWidgetSnapshotContext(?array $config = null): array
 
     return [$organization, $dashboard, $topic, $widget, $device];
 }
-
 function createStateCardWidgetSnapshotContext(): array
 {
     [$organization, $dashboard, $topic, $device] = createDashboardSnapshotBaseContext();
@@ -884,7 +882,6 @@ it('applies threshold colors to status summary tiles based on resolved values', 
     $response->assertOk()
         ->assertJsonPath('widgets.0.series.0.color', '#22c55e');
 });
-
 it('ignores history ranges for non-history widgets', function (): void {
     $admin = User::factory()->create(['is_super_admin' => true]);
     $this->actingAs($admin);
@@ -938,7 +935,6 @@ it('rejects invalid absolute history ranges', function (): void {
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['history_until_at']);
 });
-
 it('returns the latest mapped state for state card widgets', function (): void {
     $admin = User::factory()->create(['is_super_admin' => true]);
     $this->actingAs($admin);
