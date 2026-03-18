@@ -8,6 +8,7 @@ use App\Domain\DeviceManagement\Casts\ProtocolConfigCast;
 use App\Domain\DeviceManagement\Enums\ProtocolType;
 use App\Domain\DeviceManagement\ValueObjects\Protocol\ProtocolConfigInterface;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
+use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\Shared\Models\Organization;
 use Database\Factories\Domain\DeviceManagement\Models\DeviceTypeFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -63,12 +64,12 @@ class DeviceType extends Model
     }
 
     /**
-     * @return HasManyThrough<\App\Domain\DeviceSchema\Models\DeviceSchemaVersion, DeviceSchema, $this>
+     * @return HasManyThrough<DeviceSchemaVersion, DeviceSchema, $this>
      */
     public function schemaVersions(): HasManyThrough
     {
         return $this->hasManyThrough(
-            \App\Domain\DeviceSchema\Models\DeviceSchemaVersion::class,
+            DeviceSchemaVersion::class,
             DeviceSchema::class,
             'device_type_id',
             'device_schema_id',

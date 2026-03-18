@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\RelationManagers;
 
+use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Filament\Admin\Resources\DeviceManagement\DeviceTypes\DeviceTypeResource;
+use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\DeviceSchemaResource;
+use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\DeviceSchemaVersionResource;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteBulkAction;
@@ -57,8 +61,23 @@ class DeviceSchemaVersionsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('version')
             ->columns([
+                TextColumn::make('schema.deviceType.name')
+                    ->label('Device Type')
+                    ->url(fn (DeviceSchemaVersion $record): ?string => $record->schema?->device_type_id
+                        ? DeviceTypeResource::getUrl('view', ['record' => $record->schema->device_type_id])
+                        : null),
+
+                TextColumn::make('schema.name')
+                    ->label('Device Schema')
+                    ->url(fn (DeviceSchemaVersion $record): ?string => $record->device_schema_id
+                        ? DeviceSchemaResource::getUrl('view', ['record' => $record->device_schema_id])
+                        : null),
+
                 TextColumn::make('version')
-                    ->sortable(),
+                    ->sortable()
+                    ->url(fn (DeviceSchemaVersion $record): ?string => $record->id
+                        ? DeviceSchemaVersionResource::getUrl('view', ['record' => $record->id])
+                        : null),
 
                 TextColumn::make('status')
                     ->badge()

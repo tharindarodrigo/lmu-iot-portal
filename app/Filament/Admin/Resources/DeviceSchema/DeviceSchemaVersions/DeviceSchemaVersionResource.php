@@ -16,6 +16,7 @@ use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\Schemas\Devic
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\Schemas\DeviceSchemaVersionInfolist;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\Tables\DeviceSchemaVersionsTable;
 use BackedEnum;
+use Filament\Resources\RelationManagers\RelationGroup;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -57,9 +58,13 @@ class DeviceSchemaVersionResource extends Resource
     public static function getRelations(): array
     {
         return [
-            TopicsRelationManager::class,
-            ParameterDefinitionsRelationManager::class,
-            DerivedParameterDefinitionsRelationManager::class,
+            RelationGroup::make('Schema Version Structure', [
+                TopicsRelationManager::class,
+            ]),
+            RelationGroup::make('Schema Version Parameters', [
+                ParameterDefinitionsRelationManager::class,
+                DerivedParameterDefinitionsRelationManager::class,
+            ]),
         ];
     }
 

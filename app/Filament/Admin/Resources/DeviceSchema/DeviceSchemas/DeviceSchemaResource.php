@@ -10,10 +10,12 @@ use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\Pages\EditDeviceSche
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\Pages\ListDeviceSchemas;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\Pages\ViewDeviceSchema;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\RelationManagers\DeviceSchemaVersionsRelationManager;
+use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\RelationManagers\TopicsRelationManager;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\Schemas\DeviceSchemaForm;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\Schemas\DeviceSchemaInfolist;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemas\Tables\DeviceSchemasTable;
 use BackedEnum;
+use Filament\Resources\RelationManagers\RelationGroup;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -55,7 +57,10 @@ class DeviceSchemaResource extends Resource
     public static function getRelations(): array
     {
         return [
-            DeviceSchemaVersionsRelationManager::class,
+            RelationGroup::make('Device Schema Hierarchy', [
+                DeviceSchemaVersionsRelationManager::class,
+                TopicsRelationManager::class,
+            ]),
         ];
     }
 
