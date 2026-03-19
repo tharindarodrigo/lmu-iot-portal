@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Ingestion;
 
-use App\Domain\DataIngestion\Models\IngestionMessage;
-use App\Domain\DataIngestion\Models\IngestionStageLog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -17,9 +15,9 @@ class ApplyStorageLifecycle extends Command
 
     public function handle(): int
     {
-        $telemetrySummary = $this->applyTelemetryLifecyclePolicies();
         $prunedStageLogs = $this->pruneStageLogs();
         $prunedMessages = $this->pruneMessages();
+        $telemetrySummary = $this->applyTelemetryLifecyclePolicies();
 
         $this->info("Telemetry lifecycle: {$telemetrySummary}");
         $this->info("Pruned ingestion stage logs: {$prunedStageLogs}");
@@ -70,19 +68,24 @@ class ApplyStorageLifecycle extends Command
         $deletedRows = 0;
 
         do {
-            $ids = IngestionStageLog::query()
-                ->where('created_at', '<', $cutoff)
-                ->orderBy('id')
-                ->limit($batchSize)
-                ->pluck('id');
+            $deleted = DB::table('ingestion_stage_logs')
+                ->whereIn('id', function ($query) use ($cutoff, $batchSize): void {
+                    $query
+                        ->select('id')
+                        ->from('ingestion_stage_logs')
+                        ->where('created_at', '<', $cutoff)
+                        ->orderBy('id')
+                        ->limit($batchSize);
+                })
+                ->delete();
 
-            if ($ids->isEmpty()) {
+            $normalizedDeleted = $this->normalizeDeletedRows($deleted);
+
+            if ($normalizedDeleted === 0) {
                 break;
             }
 
-            $deletedRows += $this->normalizeDeletedRows(
-                IngestionStageLog::query()->whereIn('id', $ids)->delete(),
-            );
+            $deletedRows += $normalizedDeleted;
         } while (true);
 
         return $deletedRows;
@@ -95,19 +98,30 @@ class ApplyStorageLifecycle extends Command
         $deletedRows = 0;
 
         do {
-            $ids = IngestionMessage::query()
-                ->where('received_at', '<', $cutoff)
-                ->orderBy('received_at')
-                ->limit($batchSize)
-                ->pluck('id');
+            $deleted = DB::table('ingestion_messages')
+                ->whereIn('id', function ($query) use ($cutoff, $batchSize): void {
+                    $query
+                        ->select('id')
+                        ->from('ingestion_messages')
+                        ->where(function ($scope) use ($cutoff): void {
+                            $scope
+                                ->where('received_at', '<', $cutoff)
+                                ->orWhere('created_at', '<', $cutoff);
+                        })
+                        ->orderBy('received_at')
+                        ->orderBy('created_at')
+                        ->orderBy('id')
+                        ->limit($batchSize);
+                })
+                ->delete();
 
-            if ($ids->isEmpty()) {
+            $normalizedDeleted = $this->normalizeDeletedRows($deleted);
+
+            if ($normalizedDeleted === 0) {
                 break;
             }
 
-            $deletedRows += $this->normalizeDeletedRows(
-                IngestionMessage::query()->whereIn('id', $ids)->delete(),
-            );
+            $deletedRows += $normalizedDeleted;
         } while (true);
 
         return $deletedRows;

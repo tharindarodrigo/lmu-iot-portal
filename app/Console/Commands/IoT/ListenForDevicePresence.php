@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\IoT;
 
 use App\Domain\DeviceManagement\Services\DevicePresenceMessageHandler;
+use App\Domain\Shared\Services\BasisNatsClientHeartbeatProbe;
 use App\Domain\Shared\Services\NatsConnectionHeartbeat;
 use Basis\Nats\Client;
 use Basis\Nats\Configuration;
@@ -21,8 +22,10 @@ class ListenForDevicePresence extends Command
 
     protected $description = 'Listen for device presence (LWT) messages and update connection state';
 
-    public function handle(DevicePresenceMessageHandler $messageHandler): int
-    {
+    public function handle(
+        DevicePresenceMessageHandler $messageHandler,
+        BasisNatsClientHeartbeatProbe $heartbeatProbe,
+    ): int {
         $this->disableTelescopeRecording();
 
         $host = $this->resolveHost();
@@ -41,17 +44,21 @@ class ListenForDevicePresence extends Command
             'subject' => $natsSubject,
         ]);
 
-        $configuration = new Configuration([
-            'host' => $host,
-            'port' => $port,
-        ]);
+        $configuration = new Configuration(
+            host: $host,
+            port: $port,
+            timeout: $this->resolveTimeout(),
+        );
         $heartbeat = new NatsConnectionHeartbeat($this->resolveHealthCheckInterval());
 
         while (true) { /** @phpstan-ignore while.alwaysTrue */
             try {
                 $client = new Client($configuration);
+                $lastActivityAt = microtime(true);
 
-                $client->subscribe($natsSubject, function (Payload $payload) use ($messageHandler, $subjectPrefix, $subjectSuffix): void {
+                $client->subscribe($natsSubject, function (Payload $payload) use ($messageHandler, $subjectPrefix, $subjectSuffix, &$lastActivityAt): void {
+                    $lastActivityAt = microtime(true);
+
                     $messageHandler->handle(
                         subject: $payload->subject ?? '',
                         body: $payload->body,
@@ -69,8 +76,9 @@ class ListenForDevicePresence extends Command
                     try {
                         $client->process(1);
                         $lastHeartbeatAt = $heartbeat->maintain(
-                            ping: fn (): bool => $client->ping(),
+                            ping: fn (): bool => $heartbeatProbe->ping($client),
                             lastHeartbeatAt: $lastHeartbeatAt,
+                            lastActivityAt: $lastActivityAt,
                         );
                     } catch (\Throwable $e) {
                         if (str_contains($e->getMessage(), 'No handler')) {
@@ -140,6 +148,15 @@ class ListenForDevicePresence extends Command
         $interval = config('iot.nats.health_check_seconds', 15);
 
         return is_numeric($interval) ? max(1, (int) $interval) : 15;
+    }
+
+    private function resolveTimeout(): float
+    {
+        $timeout = config('iot.nats.timeout', 5.0);
+
+        return is_numeric($timeout) && (float) $timeout > 0
+            ? (float) $timeout
+            : 5.0;
     }
 
     private function disableTelescopeRecording(): void

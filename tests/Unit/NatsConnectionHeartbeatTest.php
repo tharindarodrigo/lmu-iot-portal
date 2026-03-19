@@ -40,6 +40,25 @@ it('pings once the heartbeat interval elapses', function (): void {
         ->and($result)->toBe(115.0);
 });
 
+it('skips heartbeat pings when recent connection activity proves the socket is healthy', function (): void {
+    $heartbeat = new NatsConnectionHeartbeat(intervalSeconds: 15);
+    $pingCount = 0;
+
+    $result = $heartbeat->maintain(
+        ping: function () use (&$pingCount): bool {
+            $pingCount++;
+
+            return true;
+        },
+        lastHeartbeatAt: 100.0,
+        now: 120.0,
+        lastActivityAt: 110.0,
+    );
+
+    expect($pingCount)->toBe(0)
+        ->and($result)->toBe(110.0);
+});
+
 it('throws when the heartbeat ping fails', function (): void {
     $heartbeat = new NatsConnectionHeartbeat(intervalSeconds: 15);
 

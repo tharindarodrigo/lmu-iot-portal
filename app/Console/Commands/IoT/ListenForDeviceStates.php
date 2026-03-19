@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\IoT;
 
 use App\Domain\DeviceControl\Services\DeviceFeedbackReconciler;
+use App\Domain\Shared\Services\BasisNatsClientHeartbeatProbe;
 use App\Domain\Shared\Services\NatsConnectionHeartbeat;
 use Basis\Nats\Client;
 use Basis\Nats\Configuration;
@@ -22,7 +23,7 @@ class ListenForDeviceStates extends Command
 
     protected $description = 'Listen for device feedback messages from NATS and reconcile command/state lifecycle';
 
-    public function handle(): int
+    public function handle(BasisNatsClientHeartbeatProbe $heartbeatProbe): int
     {
         $this->disableTelescopeRecording();
 
@@ -37,10 +38,11 @@ class ListenForDeviceStates extends Command
             'port' => $port,
         ]);
 
-        $configuration = new Configuration([
-            'host' => $host,
-            'port' => $port,
-        ]);
+        $configuration = new Configuration(
+            host: $host,
+            port: $port,
+            timeout: $this->resolveTimeout(),
+        );
         /** @var DeviceFeedbackReconciler $reconciler */
         $reconciler = app(DeviceFeedbackReconciler::class);
         $heartbeat = new NatsConnectionHeartbeat($this->resolveHealthCheckInterval());
@@ -53,9 +55,11 @@ class ListenForDeviceStates extends Command
         while (true) { /** @phpstan-ignore while.alwaysTrue */
             try {
                 $client = new Client($configuration);
+                $lastActivityAt = microtime(true);
 
-                $client->subscribe($natsSubject, function (Payload $payload, ?string $replyTo) use ($host, $port, $reconciler): void {
+                $client->subscribe($natsSubject, function (Payload $payload, ?string $replyTo) use ($host, $port, $reconciler, &$lastActivityAt): void {
                     try {
+                        $lastActivityAt = microtime(true);
                         $subject = $payload->subject ?? '';
                         $body = $payload->body;
                         $mqttTopic = str_replace('.', '/', $subject);
@@ -116,8 +120,9 @@ class ListenForDeviceStates extends Command
                     try {
                         $client->process(1);
                         $lastHeartbeatAt = $heartbeat->maintain(
-                            ping: fn (): bool => $client->ping(),
+                            ping: fn (): bool => $heartbeatProbe->ping($client),
                             lastHeartbeatAt: $lastHeartbeatAt,
+                            lastActivityAt: $lastActivityAt,
                         );
                     } catch (\Throwable $e) {
                         if (str_contains($e->getMessage(), 'No handler')) {
@@ -170,6 +175,15 @@ class ListenForDeviceStates extends Command
         $interval = config('iot.nats.health_check_seconds', 15);
 
         return is_numeric($interval) ? max(1, (int) $interval) : 15;
+    }
+
+    private function resolveTimeout(): float
+    {
+        $timeout = config('iot.nats.timeout', 5.0);
+
+        return is_numeric($timeout) && (float) $timeout > 0
+            ? (float) $timeout
+            : 5.0;
     }
 
     /**

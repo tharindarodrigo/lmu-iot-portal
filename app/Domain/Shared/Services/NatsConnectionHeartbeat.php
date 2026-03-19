@@ -12,9 +12,13 @@ final class NatsConnectionHeartbeat
         private readonly int $intervalSeconds = 15,
     ) {}
 
-    public function maintain(callable $ping, float $lastHeartbeatAt, ?float $now = null): float
+    public function maintain(callable $ping, float $lastHeartbeatAt, ?float $now = null, ?float $lastActivityAt = null): float
     {
         $resolvedNow = $now ?? microtime(true);
+
+        if ($lastActivityAt !== null && ! $this->isDue($lastActivityAt, $resolvedNow)) {
+            return max($lastHeartbeatAt, $lastActivityAt);
+        }
 
         if (! $this->isDue($lastHeartbeatAt, $resolvedNow)) {
             return $lastHeartbeatAt;

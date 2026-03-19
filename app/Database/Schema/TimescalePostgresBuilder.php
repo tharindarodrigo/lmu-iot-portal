@@ -45,7 +45,9 @@ class TimescalePostgresBuilder extends PostgresBuilder
         }
 
         foreach ($tables as $table) {
-            $this->connection->statement($grammar->compileDropAllTables([$table]));
+            $escapedTable = $grammar->escapeNames([$table])[0];
+
+            $this->connection->statement("drop table if exists {$escapedTable} cascade");
         }
     }
 }

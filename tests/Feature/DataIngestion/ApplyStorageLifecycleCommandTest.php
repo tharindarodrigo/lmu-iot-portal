@@ -64,6 +64,7 @@ it('applies telemetry lifecycle policies and prunes expired ingestion side table
     }
 
     $command->assertSuccessful();
+    $command->execute();
 
     if (DB::getDriverName() !== 'pgsql') {
         return;

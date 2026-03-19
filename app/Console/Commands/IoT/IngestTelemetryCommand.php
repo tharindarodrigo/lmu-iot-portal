@@ -8,6 +8,7 @@ use App\Domain\DataIngestion\DTO\IncomingTelemetryEnvelope;
 use App\Domain\DataIngestion\Jobs\ProcessInboundTelemetryJob;
 use App\Domain\DataIngestion\Services\DeviceSignalBindingResolver;
 use App\Domain\DataIngestion\Services\DeviceTelemetryTopicResolver;
+use App\Domain\Shared\Services\BasisNatsClientHeartbeatProbe;
 use App\Domain\Shared\Services\NatsConnectionHeartbeat;
 use App\Events\TelemetryIncoming;
 use Basis\Nats\Client;
@@ -28,7 +29,7 @@ class IngestTelemetryCommand extends Command
 
     protected $description = 'Consume inbound telemetry and dispatch ingestion jobs';
 
-    public function handle(): int
+    public function handle(BasisNatsClientHeartbeatProbe $heartbeatProbe): int
     {
         $this->disableTelescopeRecording();
 
@@ -47,10 +48,11 @@ class IngestTelemetryCommand extends Command
             $this->warn('Redis queue connection is configured, but phpredis extension is unavailable. Set INGESTION_PIPELINE_QUEUE_CONNECTION=database or install phpredis.');
         }
 
-        $configuration = new Configuration([
-            'host' => $host,
-            'port' => $port,
-        ]);
+        $configuration = new Configuration(
+            host: $host,
+            port: $port,
+            timeout: $this->resolveTimeout(),
+        );
         /** @var DeviceTelemetryTopicResolver $topicResolver */
         $topicResolver = app(DeviceTelemetryTopicResolver::class);
         /** @var DeviceSignalBindingResolver $bindingResolver */
@@ -60,8 +62,10 @@ class IngestTelemetryCommand extends Command
         while (true) { /** @phpstan-ignore while.alwaysTrue */
             try {
                 $client = new Client($configuration);
+                $lastActivityAt = microtime(true);
 
-                $client->subscribe($subject, function (Payload $payload) use ($bindingResolver, $queue, $queueConnection, $topicResolver): void {
+                $client->subscribe($subject, function (Payload $payload) use ($bindingResolver, $queue, $queueConnection, $topicResolver, &$lastActivityAt): void {
+                    $lastActivityAt = microtime(true);
                     $sourceSubject = $payload->subject ?? '';
                     $mqttTopic = str_replace('.', '/', $sourceSubject);
 
@@ -115,8 +119,9 @@ class IngestTelemetryCommand extends Command
                     try {
                         $client->process(1);
                         $lastHeartbeatAt = $heartbeat->maintain(
-                            ping: fn (): bool => $client->ping(),
+                            ping: fn (): bool => $heartbeatProbe->ping($client),
                             lastHeartbeatAt: $lastHeartbeatAt,
+                            lastActivityAt: $lastActivityAt,
                         );
                     } catch (\Throwable $exception) {
                         if (str_contains($exception->getMessage(), 'No handler')) {
@@ -192,6 +197,15 @@ class IngestTelemetryCommand extends Command
         $interval = config('ingestion.nats.health_check_seconds', config('iot.nats.health_check_seconds', 15));
 
         return is_numeric($interval) ? max(1, (int) $interval) : 15;
+    }
+
+    private function resolveTimeout(): float
+    {
+        $timeout = config('ingestion.nats.timeout', config('iot.nats.timeout', 5.0));
+
+        return is_numeric($timeout) && (float) $timeout > 0
+            ? (float) $timeout
+            : 5.0;
     }
 
     private function shouldIgnoreSubject(string $subject): bool

@@ -35,8 +35,8 @@ class DeviceFactory extends Factory
             'external_id' => $this->faker->optional()->bothify('EXT-####'),
             'metadata' => [],
             'is_active' => true,
-            'connection_state' => $this->faker->randomElement(['online', 'offline', 'unknown']),
-            'last_seen_at' => $this->faker->optional()->dateTimeBetween('-7 days'),
+            'connection_state' => 'offline',
+            'last_seen_at' => null,
         ];
     }
 }
