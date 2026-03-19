@@ -12,6 +12,8 @@ use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Events\TelemetryReceived;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class QueueTelemetryHotStateWrites implements ShouldQueue
 {
@@ -49,7 +51,21 @@ class QueueTelemetryHotStateWrites implements ShouldQueue
         }
 
         /** @var array<string, mixed> $finalValues */
-        $this->hotStateStore->store($device, $topic, $finalValues, $ingestionMessage);
+        try {
+            $this->hotStateStore->store($device, $topic, $finalValues, $ingestionMessage);
+        } catch (Throwable $exception) {
+            if (! $this->shouldSkipTransientHotStateFailure($exception)) {
+                throw $exception;
+            }
+
+            Log::channel('device_control')->warning('Telemetry hot-state write skipped after NATS timeout.', [
+                'device_uuid' => $device->uuid,
+                'topic_key' => $topic->key,
+                'ingestion_message_id' => $ingestionMessage->id,
+                'telemetry_log_id' => $telemetryLog->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     public function viaConnection(): string
@@ -60,5 +76,10 @@ class QueueTelemetryHotStateWrites implements ShouldQueue
     public function viaQueue(): string
     {
         return $this->resolveTelemetrySideEffectsQueue();
+    }
+
+    private function shouldSkipTransientHotStateFailure(Throwable $exception): bool
+    {
+        return str_contains($exception->getMessage(), 'Processing timeout');
     }
 }

@@ -12,7 +12,9 @@ use Throwable;
 
 final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
 {
-    private const string BUCKET_NAME = 'device-states';
+    private const BUCKET_NAME = 'device-states';
+
+    private const DEFAULT_TIMEOUT_SECONDS = 5.0;
 
     /**
      * @var array<string, Bucket>
@@ -41,8 +43,8 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
                 );
             });
         } catch (Throwable $exception) {
-            if ($this->isJetStreamUnavailable($exception)) {
-                Log::channel('device_control')->warning('NATS KV hot-state write skipped: JetStream/KV unavailable.', [
+            if ($this->shouldTreatAsUnavailable($exception)) {
+                Log::channel('device_control')->warning('NATS KV hot-state write skipped.', [
                     'bucket' => self::BUCKET_NAME,
                     'device_uuid' => $deviceUuid,
                     'topic' => $topic,
@@ -70,7 +72,7 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
                 return $bucket->get($deviceUuid);
             });
         } catch (Throwable $exception) {
-            if ($this->isJetStreamUnavailable($exception)) {
+            if ($this->shouldTreatAsUnavailable($exception)) {
                 return [];
             }
 
@@ -97,7 +99,7 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
                 return $bucket->get($deviceUuid);
             });
         } catch (Throwable $exception) {
-            if ($this->isJetStreamUnavailable($exception)) {
+            if ($this->shouldTreatAsUnavailable($exception)) {
                 return null;
             }
 
@@ -117,10 +119,11 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
             return self::$buckets[$key];
         }
 
-        $client = new Client(new Configuration([
-            'host' => $host,
-            'port' => $port,
-        ]));
+        $client = new Client(new Configuration(
+            host: $host,
+            port: $port,
+            timeout: $this->resolveTimeout(),
+        ));
 
         $client->skipInvalidMessages(true);
 
@@ -138,7 +141,7 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
         try {
             return $operation($this->getBucket($host, $port));
         } catch (Throwable $exception) {
-            if (! $this->isStaleConnection($exception)) {
+            if (! $this->isRetriableConnectionException($exception)) {
                 throw $exception;
             }
 
@@ -163,9 +166,35 @@ final class BasisNatsDeviceStateStore implements NatsDeviceStateStore
             || str_contains($message, 'JS not enabled');
     }
 
+    private function isProcessingTimeout(Throwable $exception): bool
+    {
+        return str_contains($exception->getMessage(), 'Processing timeout');
+    }
+
+    private function shouldTreatAsUnavailable(Throwable $exception): bool
+    {
+        return $this->isJetStreamUnavailable($exception)
+            || $this->isProcessingTimeout($exception);
+    }
+
     private function isStaleConnection(Throwable $exception): bool
     {
         return str_contains(strtolower($exception->getMessage()), 'stale connection');
+    }
+
+    private function isRetriableConnectionException(Throwable $exception): bool
+    {
+        return $this->isStaleConnection($exception)
+            || $this->isProcessingTimeout($exception);
+    }
+
+    private function resolveTimeout(): float
+    {
+        $configuredTimeout = config('iot.nats.timeout', config('ingestion.nats.timeout', self::DEFAULT_TIMEOUT_SECONDS));
+
+        return is_numeric($configuredTimeout) && (float) $configuredTimeout > 0
+            ? (float) $configuredTimeout
+            : self::DEFAULT_TIMEOUT_SECONDS;
     }
 
     /**

@@ -17,6 +17,52 @@ use App\Events\TelemetryReceived;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
+class FakeHotStateStore implements HotStateStore
+{
+    /** @var array<int, array<string, mixed>> */
+    public array $writes = [];
+
+    public function store(Device $device, SchemaVersionTopic $topic, array $finalValues, IngestionMessage $ingestionMessage): void
+    {
+        $this->writes[] = [
+            'device_uuid' => $device->uuid,
+            'topic_key' => $topic->key,
+            'values' => $finalValues,
+            'ingestion_message_id' => $ingestionMessage->id,
+            'status' => $ingestionMessage->status->value,
+        ];
+    }
+}
+
+class FakeAnalyticsPublisher implements AnalyticsPublisher
+{
+    /** @var array<int, array<string, mixed>> */
+    public array $telemetryPublishes = [];
+
+    /** @var array<int, array<string, mixed>> */
+    public array $invalidPublishes = [];
+
+    public function publishTelemetry(Device $device, SchemaVersionTopic $topic, array $finalValues, IngestionMessage $ingestionMessage): void
+    {
+        $this->telemetryPublishes[] = [
+            'device_uuid' => $device->uuid,
+            'topic_key' => $topic->key,
+            'values' => $finalValues,
+            'ingestion_message_id' => $ingestionMessage->id,
+        ];
+    }
+
+    public function publishInvalid(Device $device, SchemaVersionTopic $topic, array $validationErrors, IngestionMessage $ingestionMessage): void
+    {
+        $this->invalidPublishes[] = [
+            'device_uuid' => $device->uuid,
+            'topic_key' => $topic->key,
+            'errors' => $validationErrors,
+            'ingestion_message_id' => $ingestionMessage->id,
+        ];
+    }
+}
+
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
@@ -28,54 +74,13 @@ beforeEach(function (): void {
         'ingestion.publish_invalid_events' => true,
     ]);
 
-    $this->fakeHotStateStore = new class implements HotStateStore
-    {
-        /** @var array<int, array<string, mixed>> */
-        public array $writes = [];
+    $fakeHotStateStore = new FakeHotStateStore;
+    $fakePublisher = new FakeAnalyticsPublisher;
 
-        public function store(Device $device, SchemaVersionTopic $topic, array $finalValues, IngestionMessage $ingestionMessage): void
-        {
-            $this->writes[] = [
-                'device_uuid' => $device->uuid,
-                'topic_key' => $topic->key,
-                'values' => $finalValues,
-                'ingestion_message_id' => $ingestionMessage->id,
-                'status' => $ingestionMessage->status->value,
-            ];
-        }
-    };
-
-    $this->fakePublisher = new class implements AnalyticsPublisher
-    {
-        /** @var array<int, array<string, mixed>> */
-        public array $telemetryPublishes = [];
-
-        /** @var array<int, array<string, mixed>> */
-        public array $invalidPublishes = [];
-
-        public function publishTelemetry(Device $device, SchemaVersionTopic $topic, array $finalValues, IngestionMessage $ingestionMessage): void
-        {
-            $this->telemetryPublishes[] = [
-                'device_uuid' => $device->uuid,
-                'topic_key' => $topic->key,
-                'values' => $finalValues,
-                'ingestion_message_id' => $ingestionMessage->id,
-            ];
-        }
-
-        public function publishInvalid(Device $device, SchemaVersionTopic $topic, array $validationErrors, IngestionMessage $ingestionMessage): void
-        {
-            $this->invalidPublishes[] = [
-                'device_uuid' => $device->uuid,
-                'topic_key' => $topic->key,
-                'errors' => $validationErrors,
-                'ingestion_message_id' => $ingestionMessage->id,
-            ];
-        }
-    };
-
-    app()->instance(HotStateStore::class, $this->fakeHotStateStore);
-    app()->instance(AnalyticsPublisher::class, $this->fakePublisher);
+    app()->instance(FakeHotStateStore::class, $fakeHotStateStore);
+    app()->instance(FakeAnalyticsPublisher::class, $fakePublisher);
+    app()->instance(HotStateStore::class, $fakeHotStateStore);
+    app()->instance(AnalyticsPublisher::class, $fakePublisher);
 });
 
 /**
@@ -141,11 +146,12 @@ function buildTelemetrySideEffectContext(string $processingState = 'processed', 
 
 it('writes hot state for processed ingestion telemetry on the side effects queue', function (): void {
     $context = buildTelemetrySideEffectContext('processed');
+    $fakeHotStateStore = app(FakeHotStateStore::class);
 
     app(QueueTelemetryHotStateWrites::class)->handle(new TelemetryReceived($context['telemetryLog']));
 
-    expect($this->fakeHotStateStore->writes)->toHaveCount(1)
-        ->and($this->fakeHotStateStore->writes[0])->toMatchArray([
+    expect($fakeHotStateStore->writes)->toHaveCount(1)
+        ->and($fakeHotStateStore->writes[0])->toMatchArray([
             'device_uuid' => $context['device']->uuid,
             'topic_key' => $context['topic']->key,
             'ingestion_message_id' => $context['ingestionMessage']->id,
@@ -155,6 +161,7 @@ it('writes hot state for processed ingestion telemetry on the side effects queue
 
 it('skips hot state writes for telemetry outside the ingestion pipeline', function (): void {
     $context = buildTelemetrySideEffectContext('processed');
+    $fakeHotStateStore = app(FakeHotStateStore::class);
 
     $context['telemetryLog']->update([
         'ingestion_message_id' => null,
@@ -162,31 +169,33 @@ it('skips hot state writes for telemetry outside the ingestion pipeline', functi
 
     app(QueueTelemetryHotStateWrites::class)->handle(new TelemetryReceived($context['telemetryLog']->fresh()));
 
-    expect($this->fakeHotStateStore->writes)->toHaveCount(0);
+    expect($fakeHotStateStore->writes)->toHaveCount(0);
 });
 
 it('publishes analytics for processed ingestion telemetry', function (): void {
     $context = buildTelemetrySideEffectContext('processed');
+    $fakePublisher = app(FakeAnalyticsPublisher::class);
 
     app(QueueTelemetryAnalyticsPublishes::class)->handle(new TelemetryReceived($context['telemetryLog']));
 
-    expect($this->fakePublisher->telemetryPublishes)->toHaveCount(1)
-        ->and($this->fakePublisher->telemetryPublishes[0])->toMatchArray([
+    expect($fakePublisher->telemetryPublishes)->toHaveCount(1)
+        ->and($fakePublisher->telemetryPublishes[0])->toMatchArray([
             'device_uuid' => $context['device']->uuid,
             'topic_key' => $context['topic']->key,
             'ingestion_message_id' => $context['ingestionMessage']->id,
         ])
-        ->and($this->fakePublisher->invalidPublishes)->toHaveCount(0);
+        ->and($fakePublisher->invalidPublishes)->toHaveCount(0);
 });
 
 it('publishes invalid analytics events for active invalid telemetry', function (): void {
     $context = buildTelemetrySideEffectContext('invalid');
+    $fakePublisher = app(FakeAnalyticsPublisher::class);
 
     app(QueueTelemetryAnalyticsPublishes::class)->handle(new TelemetryReceived($context['telemetryLog']));
 
-    expect($this->fakePublisher->telemetryPublishes)->toHaveCount(0)
-        ->and($this->fakePublisher->invalidPublishes)->toHaveCount(1)
-        ->and($this->fakePublisher->invalidPublishes[0])->toMatchArray([
+    expect($fakePublisher->telemetryPublishes)->toHaveCount(0)
+        ->and($fakePublisher->invalidPublishes)->toHaveCount(1)
+        ->and($fakePublisher->invalidPublishes[0])->toMatchArray([
             'device_uuid' => $context['device']->uuid,
             'topic_key' => $context['topic']->key,
             'ingestion_message_id' => $context['ingestionMessage']->id,
@@ -197,11 +206,12 @@ it('does not publish analytics when the analytics kill switch is off', function 
     config()->set('ingestion.publish_analytics', false);
 
     $context = buildTelemetrySideEffectContext('processed');
+    $fakePublisher = app(FakeAnalyticsPublisher::class);
 
     app(QueueTelemetryAnalyticsPublishes::class)->handle(new TelemetryReceived($context['telemetryLog']));
 
-    expect($this->fakePublisher->telemetryPublishes)->toHaveCount(0)
-        ->and($this->fakePublisher->invalidPublishes)->toHaveCount(0);
+    expect($fakePublisher->telemetryPublishes)->toHaveCount(0)
+        ->and($fakePublisher->invalidPublishes)->toHaveCount(0);
 });
 
 it('configures telemetry side effect listeners for the dedicated side effects queue', function (): void {
@@ -214,4 +224,38 @@ it('configures telemetry side effect listeners for the dedicated side effects qu
         ->and($analyticsListener)->toBeInstanceOf(ShouldQueue::class)
         ->and($analyticsListener->viaConnection())->toBe('redis')
         ->and($analyticsListener->viaQueue())->toBe('telemetry-side-effects');
+});
+
+it('skips transient hot-state timeout failures without failing the listener', function (): void {
+    $context = buildTelemetrySideEffectContext('processed');
+
+    app()->instance(HotStateStore::class, new class implements HotStateStore
+    {
+        public function store(Device $device, SchemaVersionTopic $topic, array $finalValues, IngestionMessage $ingestionMessage): void
+        {
+            throw new LogicException('Processing timeout');
+        }
+    });
+
+    expect(function () use ($context): void {
+        app(QueueTelemetryHotStateWrites::class)->handle(new TelemetryReceived($context['telemetryLog']));
+    })
+        ->not->toThrow(Throwable::class);
+});
+
+it('still bubbles non-transient hot-state failures', function (): void {
+    $context = buildTelemetrySideEffectContext('processed');
+
+    app()->instance(HotStateStore::class, new class implements HotStateStore
+    {
+        public function store(Device $device, SchemaVersionTopic $topic, array $finalValues, IngestionMessage $ingestionMessage): void
+        {
+            throw new RuntimeException('Boom');
+        }
+    });
+
+    expect(function () use ($context): void {
+        app(QueueTelemetryHotStateWrites::class)->handle(new TelemetryReceived($context['telemetryLog']));
+    })
+        ->toThrow(RuntimeException::class, 'Boom');
 });
