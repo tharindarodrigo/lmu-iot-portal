@@ -123,4 +123,12 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'observability' => [
+        'open_access' => (bool) env('OBSERVABILITY_OPEN_ACCESS', false),
+        'allowed_emails' => array_values(array_filter(array_map(
+            static fn (string $email): string => trim($email),
+            explode(',', (string) env('OBSERVABILITY_ALLOWED_EMAILS', ''))
+        ))),
+    ],
+
 ];

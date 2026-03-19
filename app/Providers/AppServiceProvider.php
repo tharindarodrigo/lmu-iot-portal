@@ -118,6 +118,10 @@ class AppServiceProvider extends ServiceProvider
             return $user->isSuperAdmin() ? true : null;
         });
 
+        Gate::define('viewPulse', function (?User $user = null): bool {
+            return $this->canAccessObservabilityDashboard($user);
+        });
+
         Gate::policy(AutomationWorkflow::class, AutomationWorkflowPolicy::class);
         Gate::policy(IoTDashboard::class, IoTDashboardPolicy::class);
         Gate::policy(IoTDashboardWidget::class, IoTDashboardWidgetPolicy::class);
@@ -148,5 +152,21 @@ class AppServiceProvider extends ServiceProvider
         $command = $_SERVER['argv'][1] ?? null;
 
         return is_string($command) && str_starts_with($command, 'horizon');
+    }
+
+    private function canAccessObservabilityDashboard(?User $user): bool
+    {
+        if ($this->app->environment('local') || config('app.observability.open_access', false)) {
+            return true;
+        }
+
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        /** @var array<int, string> $allowedEmails */
+        $allowedEmails = config('app.observability.allowed_emails', []);
+
+        return in_array($user->email, $allowedEmails, true);
     }
 }
