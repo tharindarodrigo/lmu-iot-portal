@@ -28,6 +28,8 @@ class AutomationWorkflow extends Model
     {
         return [
             'status' => AutomationWorkflowStatus::class,
+            'is_managed' => 'bool',
+            'managed_metadata' => 'array',
         ];
     }
 
@@ -81,5 +83,10 @@ class AutomationWorkflow extends Model
     public function runs(): HasMany
     {
         return $this->hasMany(AutomationRun::class, 'workflow_id');
+    }
+
+    public function isManagedBy(string $managedType): bool
+    {
+        return $this->is_managed === true && $this->managed_type === $managedType;
     }
 }

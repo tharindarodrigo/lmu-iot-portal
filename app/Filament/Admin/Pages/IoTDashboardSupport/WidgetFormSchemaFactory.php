@@ -9,6 +9,7 @@ use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarInterval;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeStyle;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardStyle;
+use Closure;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -195,12 +196,81 @@ class WidgetFormSchemaFactory
     /**
      * @return array<int, Component>
      */
+    public function thresholdStatusGridSchema(IoTDashboard $dashboard): array
+    {
+        return [
+            TextInput::make('title')
+                ->label('Widget title')
+                ->required()
+                ->default('Cold Room Threshold Status')
+                ->maxLength(255),
+            Select::make('display_mode')
+                ->label('Display mode')
+                ->options($this->thresholdStatusGridDisplayModeOptions())
+                ->default('standard')
+                ->required(),
+            Select::make('scope')
+                ->label('Policy scope')
+                ->options($this->thresholdStatusGridScopeOptions())
+                ->default('all_active')
+                ->required()
+                ->live(),
+            Select::make('policy_ids')
+                ->label('Threshold policies')
+                ->multiple()
+                ->searchable()
+                ->options(fn (): array => $this->optionsService->thresholdPolicyOptions($dashboard))
+                ->visible(fn (Get $get): bool => $get('scope') === 'selected')
+                ->required(fn (Get $get): bool => $get('scope') === 'selected'),
+            $this->thresholdStatusGridDeviceCardsRepeater($dashboard)
+                ->visible(fn (Get $get): bool => $get('scope') === 'device_cards')
+                ->required(fn (Get $get): bool => $get('scope') === 'device_cards'),
+            ...$this->transportSchema(false, true, 15, 180, 1),
+            ...$this->layoutSchema('24', 840),
+        ];
+    }
+
+    /**
+     * @return array<int, Component>
+     */
+    public function thresholdStatusCardSchema(IoTDashboard $dashboard): array
+    {
+        return [
+            TextInput::make('title')
+                ->label('Widget title')
+                ->required()
+                ->default('Threshold Status')
+                ->maxLength(255),
+            Select::make('policy_id')
+                ->label('Threshold policy')
+                ->searchable()
+                ->options(fn (): array => $this->optionsService->thresholdPolicyOptions($dashboard))
+                ->required(),
+            ...$this->layoutSchema('4', 320),
+        ];
+    }
+
+    /**
+     * @return array<int, Component>
+     */
     public function editSchema(IoTDashboard $dashboard): array
     {
         return [
             Hidden::make('widget_type')->default(WidgetType::LineChart->value),
             TextInput::make('title')->label('Widget title')->required()->maxLength(255),
-            ...$this->baseScopeSchema($dashboard),
+            ...$this->baseScopeSchema(
+                dashboard: $dashboard,
+                visibleCondition: fn (Get $get): bool => ! in_array($get('widget_type'), [
+                    WidgetType::ThresholdStatusCard->value,
+                    WidgetType::ThresholdStatusGrid->value,
+                ], true),
+            ),
+            Select::make('policy_id')
+                ->label('Threshold policy')
+                ->searchable()
+                ->options(fn (): array => $this->optionsService->thresholdPolicyOptions($dashboard))
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusCard->value)
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusCard->value),
             Select::make('parameter_keys')
                 ->label('Series parameters')
                 ->multiple()
@@ -287,7 +357,37 @@ class WidgetFormSchemaFactory
             $this->statusSummaryRowsRepeater($dashboard)
                 ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::StatusSummary->value)
                 ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::StatusSummary->value),
-            ...$this->transportSchema(true, true, 10, 120, 240),
+            Select::make('display_mode')
+                ->label('Display mode')
+                ->options($this->thresholdStatusGridDisplayModeOptions())
+                ->default('standard')
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value)
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value),
+            Select::make('scope')
+                ->label('Policy scope')
+                ->options($this->thresholdStatusGridScopeOptions())
+                ->default('all_active')
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value)
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value)
+                ->live(),
+            Select::make('policy_ids')
+                ->label('Threshold policies')
+                ->multiple()
+                ->searchable()
+                ->options(fn (): array => $this->optionsService->thresholdPolicyOptions($dashboard))
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value && $get('scope') === 'selected')
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value && $get('scope') === 'selected'),
+            $this->thresholdStatusGridDeviceCardsRepeater($dashboard)
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value && $get('scope') === 'device_cards')
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value && $get('scope') === 'device_cards'),
+            ...$this->transportSchema(
+                true,
+                true,
+                10,
+                120,
+                240,
+                fn (Get $get): bool => $get('widget_type') !== WidgetType::ThresholdStatusCard->value,
+            ),
             ...$this->layoutSchema(),
         ];
     }
@@ -295,20 +395,24 @@ class WidgetFormSchemaFactory
     /**
      * @return array<int, Component>
      */
-    private function baseScopeSchema(IoTDashboard $dashboard): array
+    private function baseScopeSchema(IoTDashboard $dashboard, ?Closure $visibleCondition = null): array
     {
+        $visibleCondition ??= static fn (): bool => true;
+
         return [
             Select::make('device_id')
                 ->label('Device')
                 ->options(fn (): array => $this->optionsService->deviceOptions($dashboard))
                 ->searchable()
-                ->required()
+                ->required($visibleCondition)
+                ->visible($visibleCondition)
                 ->live(),
             Select::make('schema_version_topic_id')
                 ->label('Publish topic')
                 ->options(fn (Get $get): array => $this->optionsService->topicOptions($dashboard, $get('device_id')))
                 ->searchable()
-                ->required()
+                ->required($visibleCondition)
+                ->visible($visibleCondition)
                 ->live(),
         ];
     }
@@ -346,13 +450,17 @@ class WidgetFormSchemaFactory
         int $defaultPollingSeconds,
         int $defaultLookback,
         int $defaultMaxPoints,
+        ?Closure $visibleCondition = null,
     ): array {
+        $visibleCondition ??= static fn (): bool => true;
+
         return [
             Grid::make(2)
                 ->schema([
                     Toggle::make('use_websocket')->default($defaultWebsocket),
                     Toggle::make('use_polling')->default($defaultPolling)->live(),
-                ]),
+                ])
+                ->visible($visibleCondition),
             Grid::make(3)
                 ->schema([
                     TextInput::make('polling_interval_seconds')
@@ -373,14 +481,15 @@ class WidgetFormSchemaFactory
                         ->maxValue(1000)
                         ->default($defaultMaxPoints)
                         ->required(),
-                ]),
+                ])
+                ->visible($visibleCondition),
         ];
     }
 
     /**
      * @return array<int, Component>
      */
-    private function layoutSchema(): array
+    private function layoutSchema(string $defaultGridColumns = '6', int $defaultCardHeightPx = 360): array
     {
         return [
             Grid::make(2)
@@ -388,14 +497,14 @@ class WidgetFormSchemaFactory
                     Select::make('grid_columns')
                         ->label('Widget width')
                         ->options(fn (): array => $this->layoutService->gridColumnOptions())
-                        ->default('6')
+                        ->default($defaultGridColumns)
                         ->required(),
                     TextInput::make('card_height_px')
                         ->label('Initial height (px)')
                         ->integer()
                         ->minValue(260)
                         ->maxValue(900)
-                        ->default(360)
+                        ->default($defaultCardHeightPx)
                         ->required(),
                 ]),
         ];
@@ -463,6 +572,62 @@ class WidgetFormSchemaFactory
             ['value' => '0', 'label' => 'OFF', 'color' => '#ef4444'],
             ['value' => '1', 'label' => 'ON', 'color' => '#22c55e'],
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function thresholdStatusGridDisplayModeOptions(): array
+    {
+        return [
+            'standard' => 'Standard grid',
+            'sri_lankan_temperature' => 'SriLankan temperature cards',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function thresholdStatusGridScopeOptions(): array
+    {
+        return [
+            'all_active' => 'All active threshold policies',
+            'selected' => 'Selected threshold policies',
+            'device_cards' => 'Configured devices',
+        ];
+    }
+
+    private function thresholdStatusGridDeviceCardsRepeater(IoTDashboard $dashboard): Repeater
+    {
+        return Repeater::make('device_cards')
+            ->label('Device cards')
+            ->default([])
+            ->minItems(1)
+            ->reorderable()
+            ->schema([
+                Select::make('device_id')
+                    ->label('Device')
+                    ->options(fn (): array => $this->optionsService->deviceOptions($dashboard))
+                    ->searchable()
+                    ->required(),
+                TextInput::make('label')
+                    ->label('Card label')
+                    ->maxLength(80),
+                TextInput::make('parameter_key')
+                    ->label('Parameter key')
+                    ->default('temperature')
+                    ->required()
+                    ->maxLength(100),
+                TextInput::make('minimum_value')
+                    ->label('Min')
+                    ->numeric(),
+                TextInput::make('maximum_value')
+                    ->label('Max')
+                    ->numeric(),
+            ])
+            ->columns(5)
+            ->columnSpanFull()
+            ->helperText('Configure a fixed device set when this widget should mirror SriLankan production temperature cards.');
     }
 
     private function statusSummaryRowsRepeater(IoTDashboard $dashboard): Repeater

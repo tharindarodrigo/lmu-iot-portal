@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Automation\Services;
 
 use App\Domain\Automation\Data\WorkflowGraph;
+use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\DeviceControl\Services\CommandPayloadResolver;
 use App\Domain\DeviceManagement\Models\Device;
@@ -59,7 +60,7 @@ class WorkflowNodeConfigValidator
             }
 
             if ($nodeType === 'alert') {
-                $this->validateAlertNode($resolvedNodeId, $node);
+                $this->validateAlertNode($organizationId, $resolvedNodeId, $node);
             }
         }
     }
@@ -154,20 +155,11 @@ class WorkflowNodeConfigValidator
             throw new RuntimeException("Condition node [{$nodeId}] guided mode requires guided settings.");
         }
 
-        $left = Arr::get($guided, 'left');
-        $operator = Arr::get($guided, 'operator');
-        $right = Arr::get($guided, 'right');
-
-        if (! in_array($left, ['trigger.value', 'query.value'], true)) {
-            throw new RuntimeException("Condition node [{$nodeId}] guided left operand must be trigger.value or query.value.");
-        }
-
-        if (! in_array($operator, ['>', '>=', '<', '<=', '==', '!='], true)) {
-            throw new RuntimeException("Condition node [{$nodeId}] guided operator is invalid.");
-        }
-
-        if (! is_numeric($right)) {
-            throw new RuntimeException("Condition node [{$nodeId}] guided threshold must be numeric.");
+        try {
+            /** @var array<string, mixed> $guided */
+            app(GuidedConditionService::class)->normalize($guided);
+        } catch (\InvalidArgumentException $exception) {
+            throw new RuntimeException("Condition node [{$nodeId}] {$exception->getMessage()}");
         }
     }
 
@@ -253,11 +245,38 @@ class WorkflowNodeConfigValidator
     /**
      * @param  array<string, mixed>  $node
      */
-    private function validateAlertNode(string $nodeId, array $node): void
+    private function validateAlertNode(int $organizationId, string $nodeId, array $node): void
     {
         $config = Arr::get($node, 'data.config');
 
         if (! is_array($config) || $config === []) {
+            return;
+        }
+
+        $notificationProfileId = $this->resolvePositiveInt($config['notification_profile_id'] ?? null);
+
+        if ($notificationProfileId !== null) {
+            $profileExists = AutomationNotificationProfile::query()
+                ->whereKey($notificationProfileId)
+                ->where('organization_id', $organizationId)
+                ->exists();
+
+            if (! $profileExists) {
+                throw new RuntimeException("Alert node [{$nodeId}] must reference a valid notification profile.");
+            }
+
+            $cooldown = Arr::get($config, 'cooldown');
+            if (! is_array($cooldown)) {
+                throw new RuntimeException("Alert node [{$nodeId}] cooldown configuration is required.");
+            }
+
+            $cooldownValue = $this->resolvePositiveInt($cooldown['value'] ?? null);
+            $cooldownUnit = $cooldown['unit'] ?? null;
+
+            if ($cooldownValue === null || ! is_string($cooldownUnit) || ! in_array($cooldownUnit, ['minute', 'hour', 'day'], true)) {
+                throw new RuntimeException("Alert node [{$nodeId}] cooldown must include positive value and valid unit.");
+            }
+
             return;
         }
 
@@ -277,8 +296,8 @@ class WorkflowNodeConfigValidator
         }
 
         $channel = Arr::get($config, 'channel');
-        if ($channel !== 'email') {
-            throw new RuntimeException("Alert node [{$nodeId}] channel must be email.");
+        if (! is_string($channel) || ! in_array($channel, ['email', 'sms'], true)) {
+            throw new RuntimeException("Alert node [{$nodeId}] channel must be email or sms.");
         }
 
         $recipients = Arr::get($config, 'recipients');
@@ -293,8 +312,14 @@ class WorkflowNodeConfigValidator
                 continue;
             }
 
-            if (filter_var(trim($recipient), FILTER_VALIDATE_EMAIL) === false) {
+            $resolvedRecipient = trim($recipient);
+
+            if ($channel === 'email' && filter_var($resolvedRecipient, FILTER_VALIDATE_EMAIL) === false) {
                 throw new RuntimeException("Alert node [{$nodeId}] recipients must be valid email addresses.");
+            }
+
+            if ($channel === 'sms' && ! preg_match('/^94[0-9]{9}$/', $resolvedRecipient)) {
+                throw new RuntimeException("Alert node [{$nodeId}] recipients must be valid phone numbers in 94XXXXXXXXX format.");
             }
 
             $hasValidRecipient = true;

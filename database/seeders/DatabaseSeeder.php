@@ -38,6 +38,8 @@ class DatabaseSeeder extends Seeder
             MiracleDomeDashboardSeeder::class,
             TextripMigrationSeeder::class,
             TextripDashboardSeeder::class,
+            SriLankanMigrationSeeder::class,
+            SriLankanDashboardSeeder::class,
         ]);
     }
 }

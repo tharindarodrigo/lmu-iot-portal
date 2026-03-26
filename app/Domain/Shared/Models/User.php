@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Domain\Shared\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -9,6 +11,7 @@ use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasTenants;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Notifications\Notification;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
@@ -34,7 +38,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
      *
      * @var list<string>
      */
-    protected $fillable = ['name', 'email', 'password', 'is_super_admin'];
+    protected $fillable = ['name', 'email', 'phone_number', 'password', 'is_super_admin'];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -60,6 +64,16 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     protected static function newFactory(): UserFactory
     {
         return UserFactory::new();
+    }
+
+    /**
+     * @return Attribute<string|null, string|null>
+     */
+    protected function phoneNumber(): Attribute
+    {
+        return Attribute::make(
+            set: fn (mixed $value): ?string => $this->normalizePhoneNumber($value),
+        );
     }
 
     /**
@@ -120,5 +134,37 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()->logFillable()->logOnlyDirty();
+    }
+
+    public function routeNotificationForDialogSms(Notification $notification): ?string
+    {
+        $phoneNumber = $this->phone_number;
+
+        return is_string($phoneNumber) && trim($phoneNumber) !== ''
+            ? trim($phoneNumber)
+            : null;
+    }
+
+    private function normalizePhoneNumber(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = preg_replace('/\s+/', '', trim($value));
+
+        if (! is_string($trimmed) || $trimmed === '') {
+            return null;
+        }
+
+        if (preg_match('/^\+[1-9][0-9]{7,14}$/', $trimmed) === 1) {
+            return $trimmed;
+        }
+
+        if (preg_match('/^[1-9][0-9]{7,14}$/', $trimmed) === 1) {
+            return '+'.$trimmed;
+        }
+
+        return null;
     }
 }

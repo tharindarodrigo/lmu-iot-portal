@@ -7,6 +7,7 @@ namespace App\Filament\Admin\Resources\Automation\AutomationWorkflows\Tables;
 use App\Domain\Automation\Enums\AutomationWorkflowStatus;
 use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Filament\Admin\Resources\Automation\AutomationWorkflows\AutomationWorkflowResource;
+use App\Filament\Admin\Resources\AutomationThresholdPolicies\AutomationThresholdPolicyResource;
 use App\Filament\Admin\Resources\Shared\Organizations\OrganizationResource;
 use Filament\Actions;
 use Filament\Support\Icons\Heroicon;
@@ -42,6 +43,12 @@ class AutomationWorkflowsTable
                     ->color(fn (mixed $state): string => self::statusColor($state))
                     ->sortable(),
 
+                TextColumn::make('management')
+                    ->label('Type')
+                    ->badge()
+                    ->state(fn (AutomationWorkflow $record): string => $record->is_managed ? 'Managed' : 'Manual')
+                    ->color(fn (AutomationWorkflow $record): string => $record->is_managed ? 'gray' : 'info'),
+
                 TextColumn::make('activeVersion.version')
                     ->label('Active Version')
                     ->formatStateUsing(fn (mixed $state): string => is_scalar($state) ? "v{$state}" : '—')
@@ -49,7 +56,8 @@ class AutomationWorkflowsTable
 
                 SelectColumn::make('status')
                     ->options(self::statusOptions())
-                    ->label('Status'),
+                    ->label('Status')
+                    ->disabled(fn (AutomationWorkflow $record): bool => $record->is_managed),
 
                 TextColumn::make('updated_at')
                     ->dateTime()
@@ -69,16 +77,32 @@ class AutomationWorkflowsTable
                 SelectFilter::make('status')
                     ->options(self::statusOptions()),
             ])
-            ->recordUrl(fn (AutomationWorkflow $record): string => AutomationWorkflowResource::getUrl('dag-editor', ['record' => $record]))
+            ->recordUrl(fn (AutomationWorkflow $record): string => $record->is_managed
+                ? AutomationWorkflowResource::getUrl('view', ['record' => $record])
+                : AutomationWorkflowResource::getUrl('dag-editor', ['record' => $record]))
             ->recordActions([
                 Actions\ActionGroup::make([
                     Actions\Action::make('dagEditor')
                         ->label('DAG Editor')
                         ->icon(Heroicon::OutlinedSquare3Stack3d)
-                        ->url(fn (AutomationWorkflow $record): string => AutomationWorkflowResource::getUrl('dag-editor', ['record' => $record])),
+                        ->url(fn (AutomationWorkflow $record): string => AutomationWorkflowResource::getUrl('dag-editor', ['record' => $record]))
+                        ->visible(fn (AutomationWorkflow $record): bool => ! $record->is_managed),
+                    Actions\Action::make('thresholdPolicy')
+                        ->label('Threshold Policy')
+                        ->icon(Heroicon::OutlinedAdjustmentsHorizontal)
+                        ->url(function (AutomationWorkflow $record): ?string {
+                            $thresholdPolicyId = data_get($record->managed_metadata, 'threshold_policy_id');
+
+                            return is_numeric($thresholdPolicyId)
+                                ? AutomationThresholdPolicyResource::getUrl('edit', ['record' => (int) $thresholdPolicyId])
+                                : null;
+                        })
+                        ->visible(fn (AutomationWorkflow $record): bool => $record->isManagedBy('threshold_policy')),
                     Actions\ViewAction::make(),
-                    Actions\EditAction::make(),
-                    Actions\DeleteAction::make(),
+                    Actions\EditAction::make()
+                        ->visible(fn (AutomationWorkflow $record): bool => ! $record->is_managed),
+                    Actions\DeleteAction::make()
+                        ->visible(fn (AutomationWorkflow $record): bool => ! $record->is_managed),
                 ])
                     ->label('Actions')
                     ->icon(Heroicon::OutlinedEllipsisVertical),

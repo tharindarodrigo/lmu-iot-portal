@@ -9,8 +9,9 @@ export type TelemetryTriggerNodeConfig = {
 
 export type ConditionGuidedConfig = {
     left: 'trigger.value' | 'query.value';
-    operator: '>' | '>=' | '<' | '<=' | '==' | '!=';
+    operator: '>' | '>=' | '<' | '<=' | '==' | '!=' | 'between' | 'outside_between';
     right: number;
+    right_secondary?: number | null;
 };
 
 export type ConditionNodeConfig = {
@@ -44,10 +45,7 @@ export type QueryNodeConfig = {
 };
 
 export type AlertNodeConfig = {
-    channel: 'email';
-    recipients: string[];
-    subject: string;
-    body: string;
+    notification_profile_id: number;
     cooldown: {
         value: number;
         unit: 'minute' | 'hour' | 'day';

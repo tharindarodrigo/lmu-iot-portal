@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Automation\Models\AutomationNotificationProfile;
+use App\Domain\Automation\Models\AutomationThresholdPolicy;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceSchema\Enums\ParameterCategory;
@@ -194,6 +196,7 @@ it('uses a wider slide-over for widget configuration actions', function (): void
         ->instance();
 
     expect($page->editWidgetAction()->getModalWidth())->toBe('7xl')
+        ->and($page->editThresholdPolicyAction()->getModalWidth())->toBe('7xl')
         ->and($page->getHeaderActions()[1]->getFlatActions()['addStatusSummaryWidget']->getModalWidth())->toBe('7xl');
 });
 
@@ -222,7 +225,103 @@ it('uses neutral status summary tiles and centers values', function (): void {
         ->toContain('.iot-status-summary__value {')
         ->toContain('justify-content: center;')
         ->toContain('width: 100%;')
-        ->toContain('.iot-status-summary__label {');
+        ->toContain('.iot-status-summary__label {')
+        ->toContain(':is(.dark, .dark *) .iot-widget-card {')
+        ->toContain('background-color: #000;')
+        ->toContain('.iot-threshold-status-card {')
+        ->toContain('container-type: size;')
+        ->toContain('.iot-threshold-status-card .iot-status-summary__meta {')
+        ->toContain('justify-content: flex-end;')
+        ->toContain('.iot-threshold-status-card__rule {')
+        ->toContain('font-size: 0.92rem;')
+        ->toContain('.iot-threshold-status-card__rule-action {')
+        ->toContain('cursor: pointer;')
+        ->toContain('.iot-threshold-status-card__status {')
+        ->toContain('text-transform: none;')
+        ->toContain('.iot-threshold-status-card__value {')
+        ->toContain('white-space: nowrap;')
+        ->toContain('font-size: clamp(2.2rem, min(19cqw, 40cqh), 5.5rem);')
+        ->toContain('.iot-threshold-status-card.is-alert .iot-threshold-status-card__value {')
+        ->toContain('color: #991b1b;')
+        ->not->toContain('.iot-threshold-status-card__device-name {');
+});
+
+it('renders threshold cards with the presence meta row and a button that opens the dashboard threshold action', function (): void {
+    $renderer = file_get_contents(resource_path('js/iot-dashboard/widgets/threshold-status-card/renderer.js'));
+    $pageScript = file_get_contents(resource_path('js/iot-dashboard/dashboard-page.js'));
+
+    expect($renderer)->toBeString()
+        ->toContain('renderPresenceMetaMarkup(card.last_telemetry_at, card.connection_state)')
+        ->toContain('iot-threshold-status-card__rule iot-threshold-status-card__rule-action')
+        ->toContain('data-iot-threshold-policy-edit="${escapeHtml(String(policyId))}"')
+        ->not->toContain('iot-threshold-status-card__device-name')
+        ->and($pageScript)->toBeString()
+        ->toContain("window.Livewire.dispatch('iot-dashboard-edit-threshold-policy', { policyId });");
+});
+
+it('edits a threshold policy from the dashboard slide-over action', function (): void {
+    [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
+
+    $parameter = ParameterDefinition::query()
+        ->where('schema_version_topic_id', $topic->id)
+        ->where('key', 'V1')
+        ->firstOrFail();
+
+    $profile = AutomationNotificationProfile::factory()
+        ->sms()
+        ->create([
+            'organization_id' => $dashboard->organization_id,
+            'name' => 'Dashboard SMS Alerts',
+        ]);
+
+    $policy = AutomationThresholdPolicy::factory()->create([
+        'organization_id' => $dashboard->organization_id,
+        'device_id' => $device->id,
+        'parameter_definition_id' => $parameter->id,
+        'notification_profile_id' => $profile->id,
+        'name' => 'Voltage Threshold',
+        'minimum_value' => 100,
+        'maximum_value' => 220,
+        'cooldown_value' => 1,
+        'cooldown_unit' => 'day',
+    ]);
+
+    livewire(IoTDashboardPage::class)
+        ->set('dashboardId', $dashboard->id)
+        ->call('openThresholdPolicyEditor', $policy->id)
+        ->assertActionMounted('editThresholdPolicy')
+        ->fillForm([
+            'organization_id' => (string) $dashboard->organization_id,
+            'device_id' => (string) $device->id,
+            'parameter_definition_id' => (string) $parameter->id,
+            'name' => 'Updated Voltage Threshold',
+            'is_active' => true,
+            'notification_profile_id' => (string) $profile->id,
+            'condition_mode' => 'guided',
+            'guided_condition' => [
+                'operator' => 'outside_between',
+                'right' => '110',
+                'right_secondary' => '210',
+            ],
+            'cooldown_value' => 2,
+            'cooldown_unit' => 'hour',
+            'sort_order' => 3,
+        ])
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertNotified('Threshold policy updated');
+
+    $policy->refresh();
+
+    expect($policy->name)->toBe('Updated Voltage Threshold')
+        ->and($policy->condition_mode)->toBe('guided')
+        ->and((float) data_get($policy->guided_condition, 'right'))->toBe(110.0)
+        ->and((float) data_get($policy->guided_condition, 'right_secondary'))->toBe(210.0)
+        ->and($policy->cooldown())->toBe([
+            'value' => 2,
+            'unit' => 'hour',
+        ])
+        ->and($policy->managed_workflow_id)->not->toBeNull();
 });
 
 it('adds a line widget with three configured series', function (): void {

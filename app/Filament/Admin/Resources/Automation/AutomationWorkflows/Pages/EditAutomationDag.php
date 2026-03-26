@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Resources\Automation\AutomationWorkflows\Pages;
 
 use App\Domain\Automation\Data\WorkflowGraph;
+use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\Automation\Models\AutomationWorkflowVersion;
+use App\Domain\Automation\Services\GuidedConditionService;
 use App\Domain\Automation\Services\WorkflowGraphValidator;
 use App\Domain\Automation\Services\WorkflowNodeConfigValidator;
 use App\Domain\Automation\Services\WorkflowTelemetryTriggerCompiler;
@@ -16,6 +18,7 @@ use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use App\Filament\Admin\Resources\Automation\AutomationWorkflows\AutomationWorkflowResource;
+use App\Filament\Admin\Resources\AutomationThresholdPolicies\AutomationThresholdPolicyResource;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
@@ -46,6 +49,22 @@ class EditAutomationDag extends Page
         }
 
         $this->record = $resolvedRecord;
+
+        if ($resolvedRecord->is_managed) {
+            $thresholdPolicyId = data_get($resolvedRecord->managed_metadata, 'threshold_policy_id');
+            $redirectUrl = is_numeric($thresholdPolicyId)
+                ? AutomationThresholdPolicyResource::getUrl('edit', ['record' => (int) $thresholdPolicyId])
+                : AutomationWorkflowResource::getUrl('view', ['record' => $resolvedRecord]);
+
+            Notification::make()
+                ->title('Managed workflows are read-only.')
+                ->warning()
+                ->send();
+
+            $this->redirect($redirectUrl, navigate: true);
+
+            return;
+        }
 
         $version = $this->resolveEditableVersion($this->workflowRecord());
         $this->initialGraph = $this->resolveGraphPayload($version) ?? $this->defaultGraph();
@@ -120,19 +139,14 @@ class EditAutomationDag extends Page
      */
     public function getConditionTemplates(): array
     {
+        $conditionService = app(GuidedConditionService::class);
+
         return [
             'left_operands' => [
                 ['value' => 'trigger.value', 'label' => 'Trigger Value'],
                 ['value' => 'query.value', 'label' => 'Query Value'],
             ],
-            'operators' => [
-                ['value' => '>', 'label' => 'Greater than'],
-                ['value' => '>=', 'label' => 'Greater than or equal'],
-                ['value' => '<', 'label' => 'Less than'],
-                ['value' => '<=', 'label' => 'Less than or equal'],
-                ['value' => '==', 'label' => 'Equal to'],
-                ['value' => '!=', 'label' => 'Not equal to'],
-            ],
+            'operators' => $conditionService->operatorOptions(),
             'default_mode' => 'guided',
             'default_json_logic' => [
                 '>' => [
@@ -145,6 +159,36 @@ class EditAutomationDag extends Page
                 'operator' => '>',
                 'right' => 240,
             ],
+        ];
+    }
+
+    /**
+     * @return array{
+     *     profiles: array<int, array{id: int, label: string, channel: string}>
+     * }
+     */
+    public function getAlertNodeOptions(): array
+    {
+        $workflow = $this->resolveOrganizationWorkflow();
+
+        return [
+            'profiles' => AutomationNotificationProfile::query()
+                ->with('users')
+                ->where('organization_id', (int) $workflow->organization_id)
+                ->orderBy('name')
+                ->get()
+                ->map(fn (AutomationNotificationProfile $profile): array => [
+                    'id' => (int) $profile->id,
+                    'label' => sprintf(
+                        '%s (%s · %d users)',
+                        $profile->name,
+                        strtoupper($profile->channel),
+                        $profile->recipientCount(),
+                    ),
+                    'channel' => $profile->channel,
+                ])
+                ->values()
+                ->all(),
         ];
     }
 

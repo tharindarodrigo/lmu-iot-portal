@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Notifications\Automation;
 
+use App\Notifications\Channels\DialogSmsChannel;
+use App\Notifications\Messages\DialogSmsMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -17,9 +19,12 @@ class AutomationWorkflowAlertNotification extends Notification
      * @param  array<string, mixed>  $context
      */
     public function __construct(
+        private readonly string $channel,
         private readonly string $subject,
         private readonly string $body,
         private readonly array $context = [],
+        private readonly ?string $mask = null,
+        private readonly ?string $campaignName = null,
     ) {}
 
     /**
@@ -29,7 +34,10 @@ class AutomationWorkflowAlertNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        return match ($this->channel) {
+            'sms' => [DialogSmsChannel::class],
+            default => ['mail'],
+        };
     }
 
     /**
@@ -58,6 +66,15 @@ class AutomationWorkflowAlertNotification extends Notification
         return $message;
     }
 
+    public function toDialogSms(object $notifiable): DialogSmsMessage
+    {
+        return new DialogSmsMessage(
+            body: $this->body,
+            mask: $this->mask,
+            campaignName: $this->campaignName,
+        );
+    }
+
     /**
      * Get the array representation of the notification.
      *
@@ -65,6 +82,11 @@ class AutomationWorkflowAlertNotification extends Notification
      */
     public function toArray(object $notifiable): array
     {
-        return $this->context;
+        return [
+            ...$this->context,
+            'channel' => $this->channel,
+            'subject' => $this->subject,
+            'body' => $this->body,
+        ];
     }
 }

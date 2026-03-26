@@ -16,6 +16,8 @@ use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
+use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
 use Database\Factories\Domain\IoTDashboard\Models\IoTDashboardWidgetFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -91,6 +93,8 @@ class IoTDashboardWidget extends Model
             WidgetType::StatusSummary => StatusSummaryConfig::fromArray([]),
             WidgetType::StateCard => StateCardConfig::fromArray([]),
             WidgetType::StateTimeline => StateTimelineConfig::fromArray([]),
+            WidgetType::ThresholdStatusCard => ThresholdStatusCardConfig::fromArray([]),
+            WidgetType::ThresholdStatusGrid => ThresholdStatusGridConfig::fromArray([]),
         };
     }
 

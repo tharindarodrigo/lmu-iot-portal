@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Filament\Admin\Resources\Shared\Users\Tables;
 
 use App\Domain\Shared\Models\User;
@@ -30,6 +32,10 @@ class UserTable
                 TextColumn::make('email')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('phone_number')
+                    ->label('Phone')
+                    ->searchable()
+                    ->toggleable(),
             ])
             ->filters([
                 SelectFilter::make('organization_id')

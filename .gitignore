@@ -21,12 +21,15 @@ yarn-error.log
 /.zed
 /.history
 /.tmp
+/.tmp_*
 /test-results
 /storage/platform/*.pid
 /storage/platform/manifest
 /storage/logs/platform/*.log
+/storage/octane/
 /docker/node-red/data/.config*
 /docker/node-red/data/*.backup
+/docker/node-red/data/flows_cred.json
 
 /caddy
 frankenphp

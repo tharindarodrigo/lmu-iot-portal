@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages\IoTDashboardSupport;
 
+use App\Domain\Automation\Models\AutomationThresholdPolicy;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Enums\ParameterCategory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
@@ -317,6 +318,28 @@ class WidgetFormOptionsService
     }
 
     /**
+     * @return array<int|string, string>
+     */
+    public function thresholdPolicyOptions(IoTDashboard $dashboard): array
+    {
+        return AutomationThresholdPolicy::query()
+            ->with(['device', 'parameterDefinition'])
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(fn (AutomationThresholdPolicy $policy): array => [
+                (string) $policy->id => sprintf(
+                    '%s · %s',
+                    $policy->device instanceof Device ? $policy->device->name : $policy->name,
+                    $policy->conditionLabel(),
+                ),
+            ])
+            ->all();
+    }
+
+    /**
      * @return array<int, array{value: string, label: string, color: string}>
      */
     public function defaultStateMappings(mixed $topicId, mixed $parameterKey): array
@@ -361,6 +384,14 @@ class WidgetFormOptionsService
      */
     public function resolveInput(IoTDashboard $dashboard, array $data): ?array
     {
+        if (($data['widget_type'] ?? null) === WidgetType::ThresholdStatusCard->value) {
+            return $this->resolveThresholdStatusCardInput($dashboard, $data);
+        }
+
+        if (($data['widget_type'] ?? null) === WidgetType::ThresholdStatusGrid->value) {
+            return $this->resolveThresholdStatusGridInput($dashboard, $data);
+        }
+
         $deviceId = is_numeric($data['device_id'] ?? null)
             ? (int) $data['device_id']
             : null;
@@ -416,6 +447,209 @@ class WidgetFormOptionsService
             'series' => $series,
             'parameter_metadata' => $parameterMetadata,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     device: Device,
+     *     topic: SchemaVersionTopic,
+     *     series: array<int, array{key: string, label: string, color: string, unit?: string|null}>,
+     *     parameter_metadata: array<string, array{
+     *         label: string,
+     *         compact_label: string,
+     *         option_label: string,
+     *         unit: string|null,
+     *         default_color: string,
+     *         is_counter: bool
+     *     }>
+     * }|null
+     */
+    private function resolveThresholdStatusGridInput(IoTDashboard $dashboard, array $data): ?array
+    {
+        $scope = in_array($data['scope'] ?? null, ['all_active', 'selected', 'device_cards'], true)
+            ? (string) $data['scope']
+            : 'all_active';
+        $policyIds = collect(is_array($data['policy_ids'] ?? null) ? $data['policy_ids'] : [])
+            ->filter(static fn (mixed $policyId): bool => is_numeric($policyId))
+            ->map(static fn (mixed $policyId): int => (int) $policyId)
+            ->filter(static fn (int $policyId): bool => $policyId > 0)
+            ->unique()
+            ->values()
+            ->all();
+        $deviceCards = $this->normalizeThresholdStatusGridDeviceCards($data['device_cards'] ?? []);
+
+        if ($scope === 'device_cards') {
+            return $this->resolveThresholdStatusGridConfiguredDeviceInput($dashboard, $deviceCards);
+        }
+
+        if ($scope === 'selected' && $policyIds === []) {
+            return null;
+        }
+
+        $representativePolicy = AutomationThresholdPolicy::query()
+            ->with(['device', 'parameterDefinition.topic'])
+            ->where('organization_id', $dashboard->organization_id)
+            ->when(
+                $scope === 'selected',
+                fn ($query) => $query->whereIn('id', $policyIds),
+                fn ($query) => $query->where('is_active', true),
+            )
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->first();
+
+        $device = $representativePolicy?->device;
+        $topic = $representativePolicy?->parameterDefinition?->topic;
+
+        if (! $device instanceof Device || ! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        return [
+            'device' => $device,
+            'topic' => $topic,
+            'series' => [],
+            'parameter_metadata' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     device: Device,
+     *     topic: SchemaVersionTopic,
+     *     series: array<int, array{key: string, label: string, color: string, unit?: string|null}>,
+     *     parameter_metadata: array<string, array{
+     *         label: string,
+     *         compact_label: string,
+     *         option_label: string,
+     *         unit: string|null,
+     *         default_color: string,
+     *         is_counter: bool
+     *     }>
+     * }|null
+     */
+    private function resolveThresholdStatusCardInput(IoTDashboard $dashboard, array $data): ?array
+    {
+        $policyId = is_numeric($data['policy_id'] ?? null)
+            ? (int) $data['policy_id']
+            : null;
+
+        if ($policyId === null) {
+            return null;
+        }
+
+        $policy = AutomationThresholdPolicy::query()
+            ->with(['device', 'parameterDefinition.topic'])
+            ->where('organization_id', $dashboard->organization_id)
+            ->find($policyId);
+
+        $device = $policy?->device;
+        $topic = $policy?->parameterDefinition?->topic;
+
+        if (! $device instanceof Device || ! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        return [
+            'device' => $device,
+            'topic' => $topic,
+            'series' => [],
+            'parameter_metadata' => [],
+        ];
+    }
+
+    /**
+     * @param  array<int, array{device_id: int, parameter_key: string}>  $deviceCards
+     * @return array{
+     *     device: Device,
+     *     topic: SchemaVersionTopic,
+     *     series: array<int, array{key: string, label: string, color: string, unit?: string|null}>,
+     *     parameter_metadata: array<string, array{
+     *         label: string,
+     *         compact_label: string,
+     *         option_label: string,
+     *         unit: string|null,
+     *         default_color: string,
+     *         is_counter: bool
+     *     }>
+     * }|null
+     */
+    private function resolveThresholdStatusGridConfiguredDeviceInput(IoTDashboard $dashboard, array $deviceCards): ?array
+    {
+        foreach ($deviceCards as $deviceCard) {
+            $device = Device::query()
+                ->whereKey($deviceCard['device_id'])
+                ->where('organization_id', $dashboard->organization_id)
+                ->first(['id', 'organization_id', 'device_schema_version_id']);
+
+            if (! $device instanceof Device) {
+                continue;
+            }
+
+            $topic = SchemaVersionTopic::query()
+                ->where('device_schema_version_id', (int) $device->device_schema_version_id)
+                ->where('direction', TopicDirection::Publish->value)
+                ->whereHas('parameters', function ($query) use ($deviceCard): void {
+                    $query
+                        ->where('key', $deviceCard['parameter_key'])
+                        ->where('is_active', true);
+                })
+                ->orderBy('sequence')
+                ->orderBy('id')
+                ->first();
+
+            if (! $topic instanceof SchemaVersionTopic) {
+                continue;
+            }
+
+            return [
+                'device' => $device,
+                'topic' => $topic,
+                'series' => [],
+                'parameter_metadata' => [],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, mixed>|mixed  $deviceCards
+     * @return array<int, array{device_id: int, parameter_key: string}>
+     */
+    private function normalizeThresholdStatusGridDeviceCards(mixed $deviceCards): array
+    {
+        if (! is_array($deviceCards)) {
+            return [];
+        }
+
+        $normalizedDeviceCards = [];
+
+        foreach (array_values($deviceCards) as $deviceCard) {
+            if (! is_array($deviceCard)) {
+                continue;
+            }
+
+            $deviceId = is_numeric($deviceCard['device_id'] ?? null)
+                ? (int) $deviceCard['device_id']
+                : 0;
+            $parameterKey = is_string($deviceCard['parameter_key'] ?? null)
+                ? trim((string) $deviceCard['parameter_key'])
+                : '';
+
+            if ($deviceId < 1 || $parameterKey === '') {
+                continue;
+            }
+
+            $normalizedDeviceCards[] = [
+                'device_id' => $deviceId,
+                'parameter_key' => $parameterKey,
+            ];
+        }
+
+        return $normalizedDeviceCards;
     }
 
     /**

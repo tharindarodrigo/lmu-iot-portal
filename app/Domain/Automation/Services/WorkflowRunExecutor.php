@@ -7,6 +7,7 @@ namespace App\Domain\Automation\Services;
 use App\Domain\Automation\Data\WorkflowExecutionResult;
 use App\Domain\Automation\Data\WorkflowGraph;
 use App\Domain\Automation\Enums\AutomationRunStatus;
+use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationRun;
 use App\Domain\Automation\Models\AutomationRunStep;
 use App\Domain\Automation\Models\AutomationWorkflowVersion;
@@ -200,6 +201,8 @@ class WorkflowRunExecutor
      */
     private function resolveTriggerContexts(WorkflowGraph $graph, DeviceTelemetryLog $telemetryLog): array
     {
+        $telemetryLog->loadMissing('device');
+
         $payload = $this->resolveAssociativeArray($telemetryLog->getAttribute('transformed_values'));
         $matchedTriggerNodes = [];
         $parameterIds = [];
@@ -263,7 +266,10 @@ class WorkflowRunExecutor
                     'value' => $this->resolveTelemetryValue($payload, $parameter),
                     'parameter_definition_id' => $parameter->id,
                     'parameter_key' => $parameter->key,
+                    'parameter_label' => $parameter->label,
+                    'parameter_unit' => $parameter->unit,
                     'device_id' => (int) $telemetryLog->device_id,
+                    'device_name' => $telemetryLog->device?->name,
                     'schema_version_topic_id' => (int) $telemetryLog->schema_version_topic_id,
                     'recorded_at' => $telemetryLog->recorded_at->format(DATE_ATOM),
                 ],
@@ -688,6 +694,18 @@ class WorkflowRunExecutor
         }
 
         $normalizedConfig = $this->normalizeStringKeyArray($config);
+        $notificationProfileId = $this->resolvePositiveInt($normalizedConfig['notification_profile_id'] ?? null);
+
+        if ($notificationProfileId !== null) {
+            return $this->runNotificationProfileAlertNode(
+                run: $run,
+                normalizedConfig: $normalizedConfig,
+                executionContext: $executionContext,
+                runCorrelationId: $runCorrelationId,
+                nodeId: $nodeId,
+                notificationProfileId: $notificationProfileId,
+            );
+        }
 
         if (! $this->alertConfigHasRuntimeFields($normalizedConfig)) {
             return [
@@ -702,7 +720,12 @@ class WorkflowRunExecutor
         $subjectTemplate = Arr::get($normalizedConfig, 'subject');
         $bodyTemplate = Arr::get($normalizedConfig, 'body');
 
-        if ($channel !== 'email' || ! is_string($subjectTemplate) || ! is_string($bodyTemplate)) {
+        if (
+            ! is_string($channel)
+            || ! in_array($channel, $this->workflowAlertDispatcher->supportedChannels(), true)
+            || ! is_string($subjectTemplate)
+            || ! is_string($bodyTemplate)
+        ) {
             $this->log()->warning('Alert node failed due to incomplete configuration.', [
                 'run_correlation_id' => $runCorrelationId,
                 'node_id' => $nodeId,
@@ -718,7 +741,7 @@ class WorkflowRunExecutor
         }
 
         try {
-            $recipients = $this->resolveAlertRecipients(Arr::get($normalizedConfig, 'recipients'));
+            $recipients = $this->resolveAlertRecipients($channel, Arr::get($normalizedConfig, 'recipients'));
         } catch (RuntimeException $exception) {
             return [
                 'status' => 'failed',
@@ -742,8 +765,23 @@ class WorkflowRunExecutor
 
         $cooldown = $this->resolveAlertCooldown(Arr::get($normalizedConfig, 'cooldown'));
         $templateContext = $this->buildAlertTemplateContext($run, $executionContext, $nodeId, $cooldown);
-        $subject = trim($this->interpolateTemplate($subjectTemplate, $templateContext));
-        $body = trim($this->interpolateTemplate($bodyTemplate, $templateContext));
+        $alertMetadata = Arr::get($normalizedConfig, 'metadata');
+        $resolvedAlertMetadata = is_array($alertMetadata) ? $this->normalizeStringKeyArray($alertMetadata) : [];
+        $templateAlertContext = Arr::get($templateContext, 'alert', []);
+        $dispatchContext = [
+            ...$templateContext,
+            'node' => [
+                'id' => $nodeId,
+                'config' => $normalizedConfig,
+            ],
+            'alert' => [
+                ...(is_array($templateAlertContext) ? $templateAlertContext : []),
+                'channel' => $channel,
+                'metadata' => $resolvedAlertMetadata,
+            ],
+        ];
+        $subject = trim($this->interpolateTemplate($subjectTemplate, $dispatchContext));
+        $body = trim($this->interpolateTemplate($bodyTemplate, $dispatchContext));
 
         if ($subject === '' || $body === '') {
             return [
@@ -777,7 +815,7 @@ class WorkflowRunExecutor
                 recipients: $recipients,
                 subject: $subject,
                 body: $body,
-                context: $templateContext,
+                context: $dispatchContext,
             );
         } catch (\Throwable $exception) {
             $this->cacheManager->store()->forget($cooldownKey);
@@ -807,6 +845,149 @@ class WorkflowRunExecutor
                 'subject' => $subject,
                 'body' => $body,
                 'recipients' => $recipients,
+                'cooldown' => $cooldown,
+                'cooldown_key' => $cooldownKey,
+                'dispatch' => $dispatchResult,
+            ],
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $normalizedConfig
+     * @param  array<string, mixed>  $executionContext
+     * @return array{
+     *     status: 'completed'|'failed'|'skipped',
+     *     execution_context: array<string, mixed>,
+     *     output: array<string, mixed>,
+     *     error: array<string, mixed>|null
+     * }
+     */
+    private function runNotificationProfileAlertNode(
+        AutomationRun $run,
+        array $normalizedConfig,
+        array $executionContext,
+        string $runCorrelationId,
+        string $nodeId,
+        int $notificationProfileId,
+    ): array {
+        $profile = AutomationNotificationProfile::query()
+            ->with('users')
+            ->whereKey($notificationProfileId)
+            ->where('organization_id', (int) $run->organization_id)
+            ->first();
+
+        if (! $profile instanceof AutomationNotificationProfile) {
+            return [
+                'status' => 'failed',
+                'execution_context' => $executionContext,
+                'output' => [],
+                'error' => ['reason' => 'alert_profile_invalid'],
+            ];
+        }
+
+        if ($profile->enabled !== true) {
+            return [
+                'status' => 'failed',
+                'execution_context' => $executionContext,
+                'output' => [],
+                'error' => ['reason' => 'alert_profile_disabled'],
+            ];
+        }
+
+        $cooldown = $this->resolveAlertCooldown(Arr::get($normalizedConfig, 'cooldown'));
+        $templateContext = $this->buildAlertTemplateContext($run, $executionContext, $nodeId, $cooldown);
+        $alertMetadata = Arr::get($normalizedConfig, 'metadata');
+        $resolvedAlertMetadata = is_array($alertMetadata) ? $this->normalizeStringKeyArray($alertMetadata) : [];
+        $templateAlertContext = Arr::get($templateContext, 'alert', []);
+        $dispatchContext = [
+            ...$templateContext,
+            'node' => [
+                'id' => $nodeId,
+                'config' => $normalizedConfig,
+            ],
+            'alert' => [
+                ...(is_array($templateAlertContext) ? $templateAlertContext : []),
+                'channel' => $profile->channel,
+                'metadata' => [
+                    ...$resolvedAlertMetadata,
+                    'notification_profile_id' => $profile->id,
+                    'mask' => $profile->mask,
+                    'campaign_name' => $profile->campaign_name,
+                ],
+            ],
+        ];
+        $profileSubject = $profile->getAttribute('subject');
+        $profileBody = $profile->getAttribute('body');
+        $subjectTemplate = is_string($profileSubject) && trim($profileSubject) !== ''
+            ? $profileSubject
+            : 'Automation alert · '.$run->workflow?->name;
+        $bodyTemplate = is_string($profileBody) ? $profileBody : '';
+        $subject = trim($this->interpolateTemplate($subjectTemplate, $dispatchContext));
+        $body = trim($this->interpolateTemplate($bodyTemplate, $dispatchContext));
+
+        if ($body === '') {
+            return [
+                'status' => 'failed',
+                'execution_context' => $executionContext,
+                'output' => [],
+                'error' => ['reason' => 'alert_rendered_content_empty'],
+            ];
+        }
+
+        $cooldownKey = $this->buildAlertCooldownCacheKey($run, $executionContext, $nodeId);
+        $cooldownExpiresAt = $this->resolveAlertCooldownExpiration($cooldown);
+        $cooldownAllowed = $this->cacheManager->store()->add($cooldownKey, now()->toIso8601String(), $cooldownExpiresAt);
+
+        if ($cooldownAllowed !== true) {
+            return [
+                'status' => 'skipped',
+                'execution_context' => $executionContext,
+                'output' => [
+                    'reason' => 'alert_cooldown_active',
+                    'cooldown_key' => $cooldownKey,
+                    'cooldown' => $cooldown,
+                ],
+                'error' => null,
+            ];
+        }
+
+        try {
+            $dispatchResult = $this->workflowAlertDispatcher->dispatchProfile(
+                profile: $profile,
+                subject: $subject,
+                body: $body,
+                context: $dispatchContext,
+            );
+        } catch (\Throwable $exception) {
+            $this->cacheManager->store()->forget($cooldownKey);
+
+            $this->log()->warning('Alert node failed to dispatch.', [
+                'run_correlation_id' => $runCorrelationId,
+                'node_id' => $nodeId,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return [
+                'status' => 'failed',
+                'execution_context' => $executionContext,
+                'output' => [],
+                'error' => [
+                    'reason' => 'alert_dispatch_failed',
+                    'message' => $exception->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'status' => 'completed',
+            'execution_context' => $executionContext,
+            'output' => [
+                'channel' => $profile->channel,
+                'notification_profile_id' => $profile->id,
+                'subject' => $subject,
+                'body' => $body,
+                'recipients' => $profile->normalizedRecipients(),
                 'cooldown' => $cooldown,
                 'cooldown_key' => $cooldownKey,
                 'dispatch' => $dispatchResult,
@@ -961,7 +1142,7 @@ class WorkflowRunExecutor
     /**
      * @return array<int, string>
      */
-    private function resolveAlertRecipients(mixed $recipients): array
+    private function resolveAlertRecipients(string $channel, mixed $recipients): array
     {
         if (! is_array($recipients)) {
             return [];
@@ -974,17 +1155,35 @@ class WorkflowRunExecutor
                 continue;
             }
 
-            $email = strtolower(trim($recipient));
+            $resolvedRecipient = trim($recipient);
 
-            if ($email === '') {
+            if ($resolvedRecipient === '') {
                 continue;
             }
 
-            if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-                throw new RuntimeException("Invalid alert recipient [{$recipient}].");
+            if ($channel === 'email') {
+                $resolvedRecipient = strtolower($resolvedRecipient);
+
+                if (filter_var($resolvedRecipient, FILTER_VALIDATE_EMAIL) === false) {
+                    throw new RuntimeException("Invalid alert recipient [{$recipient}].");
+                }
+
+                $resolved[$resolvedRecipient] = $resolvedRecipient;
+
+                continue;
             }
 
-            $resolved[$email] = $email;
+            if ($channel === 'sms') {
+                if (! preg_match('/^94[0-9]{9}$/', $resolvedRecipient)) {
+                    throw new RuntimeException("Invalid alert recipient [{$recipient}].");
+                }
+
+                $resolved[$resolvedRecipient] = $resolvedRecipient;
+
+                continue;
+            }
+
+            throw new RuntimeException("Unsupported alert channel [{$channel}].");
         }
 
         return array_values($resolved);
