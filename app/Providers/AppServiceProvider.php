@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Database\TimescalePostgresConnection;
+use App\Domain\Alerts\Listeners\QueueTelemetryThresholdAlertRecords;
 use App\Domain\Automation\Contracts\TriggerMatcher;
 use App\Domain\Automation\Listeners\QueueTelemetryAutomationRuns;
 use App\Domain\Automation\Models\AutomationWorkflow;
@@ -135,6 +136,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Event::listen(TelemetryReceived::class, QueueTelemetryAutomationRuns::class);
+        Event::listen(TelemetryReceived::class, QueueTelemetryThresholdAlertRecords::class);
         Event::listen(TelemetryReceived::class, QueueTelemetryHotStateWrites::class);
         Event::listen(TelemetryReceived::class, QueueTelemetryAnalyticsPublishes::class);
 

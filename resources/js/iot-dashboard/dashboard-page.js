@@ -84,6 +84,27 @@ function handleWidgetsUpdated(event) {
     updateDashboardRuntimeWidgets(widgets);
 }
 
+function handleThresholdPolicyEditClick(event) {
+    if (!(event.target instanceof Element)) {
+        return;
+    }
+
+    const trigger = event.target.closest('[data-iot-threshold-policy-edit]');
+
+    if (!(trigger instanceof HTMLElement)) {
+        return;
+    }
+
+    const policyId = Number(trigger.dataset.iotThresholdPolicyEdit ?? 0);
+
+    if (!Number.isInteger(policyId) || policyId <= 0 || typeof window.Livewire === 'undefined') {
+        return;
+    }
+
+    event.preventDefault();
+    window.Livewire.dispatch('iot-dashboard-edit-threshold-policy', { policyId });
+}
+
 if (!window.__iotDashboardPageBooted) {
     window.__iotDashboardPageBooted = true;
 
@@ -103,4 +124,5 @@ if (!window.__iotDashboardPageBooted) {
         destroyDashboardRuntime();
     });
     window.addEventListener('iot-dashboard-widgets-updated', handleWidgetsUpdated);
+    document.addEventListener('click', handleThresholdPolicyEditClick);
 }

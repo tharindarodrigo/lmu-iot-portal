@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Illuminate\Support\Str;
 
 return [
@@ -110,6 +112,27 @@ return [
             'prefix_indexes' => true,
             // 'encrypt' => env('DB_ENCRYPT', 'yes'),
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
+        ],
+
+        'legacy_iot' => [
+            'driver' => env('LEGACY_IOT_DB_CONNECTION', 'mysql'),
+            'url' => env('LEGACY_IOT_DB_URL'),
+            'host' => env('LEGACY_IOT_DB_HOST', '127.0.0.1'),
+            'port' => env('LEGACY_IOT_DB_PORT', '3306'),
+            'database' => env('LEGACY_IOT_DB_DATABASE', 'orelit'),
+            'username' => env('LEGACY_IOT_DB_USERNAME', 'root'),
+            'password' => env('LEGACY_IOT_DB_PASSWORD', ''),
+            'unix_socket' => env('LEGACY_IOT_DB_SOCKET', ''),
+            'charset' => env('LEGACY_IOT_DB_CHARSET', 'utf8mb4'),
+            'collation' => env('LEGACY_IOT_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'foreign_key_constraints' => env('LEGACY_IOT_DB_FOREIGN_KEYS', true),
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('LEGACY_IOT_MYSQL_ATTR_SSL_CA'),
+            ]) : [],
         ],
 
     ],

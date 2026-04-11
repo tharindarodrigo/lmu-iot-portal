@@ -16,6 +16,8 @@ use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardStyle;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
+use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
 use BackedEnum;
 use Illuminate\Support\Str;
 
@@ -86,6 +88,29 @@ class WidgetConfigFactory
 
         if ($config instanceof StateTimelineConfig) {
             $data['state_mappings'] = $config->stateMappings();
+        }
+
+        if ($config instanceof ThresholdStatusGridConfig) {
+            $data['scope'] = $config->scope();
+            $data['display_mode'] = $config->displayMode();
+            $data['policy_ids'] = array_map(
+                static fn (int $policyId): string => (string) $policyId,
+                $config->policyIds(),
+            );
+            $data['device_cards'] = array_map(
+                static fn (array $deviceCard): array => [
+                    'device_id' => (string) $deviceCard['device_id'],
+                    'label' => $deviceCard['label'],
+                    'parameter_key' => $deviceCard['parameter_key'],
+                    'minimum_value' => $deviceCard['minimum_value'],
+                    'maximum_value' => $deviceCard['maximum_value'],
+                ],
+                $config->deviceCards(),
+            );
+        }
+
+        if ($config instanceof ThresholdStatusCardConfig) {
+            $data['policy_id'] = (string) $config->policyId();
         }
 
         return $data;
@@ -178,17 +203,45 @@ class WidgetConfigFactory
                 ...$base,
                 'state_mappings' => $data['state_mappings'] ?? $current['state_mappings'] ?? [],
             ]),
+            WidgetType::ThresholdStatusCard => ThresholdStatusCardConfig::fromArray([
+                'policy_id' => $data['policy_id'] ?? $current['policy_id'] ?? 0,
+                'transport' => [
+                    'use_websocket' => false,
+                    'use_polling' => true,
+                    'polling_interval_seconds' => 15,
+                ],
+                'window' => [
+                    'lookback_minutes' => 180,
+                    'max_points' => 1,
+                ],
+            ]),
+            WidgetType::ThresholdStatusGrid => ThresholdStatusGridConfig::fromArray([
+                ...$base,
+                'scope' => in_array($data['scope'] ?? null, ['all_active', 'selected', 'device_cards'], true)
+                    ? $data['scope']
+                    : ($current['scope'] ?? 'all_active'),
+                'display_mode' => in_array($data['display_mode'] ?? null, ['standard', 'sri_lankan_temperature'], true)
+                    ? $data['display_mode']
+                    : ($current['display_mode'] ?? 'standard'),
+                'policy_ids' => $data['policy_ids'] ?? $current['policy_ids'] ?? [],
+                'device_cards' => $data['device_cards'] ?? $current['device_cards'] ?? [],
+            ]),
         };
     }
 
     private function defaultWebsocket(WidgetType $type): bool
     {
-        return $type !== WidgetType::BarChart;
+        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid], true);
     }
 
     private function defaultPollingInterval(WidgetType $type): int
     {
-        return $type === WidgetType::BarChart ? 60 : 10;
+        return match ($type) {
+            WidgetType::BarChart => 60,
+            WidgetType::ThresholdStatusCard => 15,
+            WidgetType::ThresholdStatusGrid => 15,
+            default => 10,
+        };
     }
 
     private function defaultLookback(WidgetType $type): int
@@ -200,6 +253,8 @@ class WidgetConfigFactory
             WidgetType::StatusSummary => 180,
             WidgetType::StateCard => 1440,
             WidgetType::StateTimeline => 360,
+            WidgetType::ThresholdStatusCard => 180,
+            WidgetType::ThresholdStatusGrid => 180,
         };
     }
 
@@ -212,6 +267,8 @@ class WidgetConfigFactory
             WidgetType::StatusSummary => 1,
             WidgetType::StateCard => 1,
             WidgetType::StateTimeline => 240,
+            WidgetType::ThresholdStatusCard => 1,
+            WidgetType::ThresholdStatusGrid => 1,
         };
     }
 

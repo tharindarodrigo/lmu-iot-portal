@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Filament\Admin\Resources\Shared\Users\Shemas;
 
 use App\Domain\Shared\Models\User;
@@ -25,6 +27,14 @@ class UserForm
                             ->email()
                             ->unique(User::class, 'email', ignorable: fn ($record) => $record)
                             ->live(),
+                        TextInput::make('phone_number')
+                            ->label('Phone Number')
+                            ->helperText('Store mobile numbers in E.164 format, for example +94771234567.')
+                            ->tel()
+                            ->regex('/^\+[1-9][0-9]{7,14}$/')
+                            ->unique(User::class, 'phone_number', ignorable: fn ($record) => $record)
+                            ->maxLength(16)
+                            ->nullable(),
                         TextInput::make('password')
                             ->visibleOn(['create'])
                             ->required()

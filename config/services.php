@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
 
     /*
@@ -33,6 +35,15 @@ return [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
+    ],
+
+    'sms' => [
+        'url' => env('SMS_GATEWAY_URL', 'https://richcommunication.dialog.lk/api/sms/send'),
+        'user' => env('SMS_GATEWAY_USER'),
+        'digest' => env('SMS_GATEWAY_DIGEST'),
+        'mask' => env('SMS_GATEWAY_MASK', 'ALTHINECT'),
+        'campaign_name' => env('SMS_GATEWAY_CAMPAIGN_NAME', 'alerts'),
+        'timeout_seconds' => (int) env('SMS_GATEWAY_TIMEOUT_SECONDS', 15),
     ],
 
 ];

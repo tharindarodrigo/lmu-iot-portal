@@ -12,6 +12,8 @@ use App\Domain\IoTDashboard\Widgets\LineChart\LineChartWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridWidgetDefinition;
 use Illuminate\Support\ServiceProvider;
 
 class IoTDashboardServiceProvider extends ServiceProvider
@@ -24,6 +26,8 @@ class IoTDashboardServiceProvider extends ServiceProvider
         $this->app->singleton(StatusSummaryWidgetDefinition::class);
         $this->app->singleton(StateCardWidgetDefinition::class);
         $this->app->singleton(StateTimelineWidgetDefinition::class);
+        $this->app->singleton(ThresholdStatusCardWidgetDefinition::class);
+        $this->app->singleton(ThresholdStatusGridWidgetDefinition::class);
 
         $this->app->tag([
             LineChartWidgetDefinition::class,
@@ -32,6 +36,8 @@ class IoTDashboardServiceProvider extends ServiceProvider
             StatusSummaryWidgetDefinition::class,
             StateCardWidgetDefinition::class,
             StateTimelineWidgetDefinition::class,
+            ThresholdStatusCardWidgetDefinition::class,
+            ThresholdStatusGridWidgetDefinition::class,
         ], WidgetDefinition::class);
 
         $this->app->singleton(WidgetRegistry::class, function ($app): WidgetRegistry {

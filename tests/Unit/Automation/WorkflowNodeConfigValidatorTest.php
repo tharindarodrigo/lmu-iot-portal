@@ -362,6 +362,36 @@ it('validates alert node configuration for email channel', function (): void {
         ->not->toThrow(RuntimeException::class);
 });
 
+it('validates alert node configuration for sms channel', function (): void {
+    $workflow = createWorkflowRecord(createOrganizationRecord());
+
+    $graph = WorkflowGraph::fromArray([
+        'version' => 1,
+        'nodes' => [
+            [
+                'id' => 'alert-1',
+                'type' => 'alert',
+                'data' => [
+                    'config' => [
+                        'channel' => 'sms',
+                        'recipients' => ['94771234567', '94771230000'],
+                        'subject' => 'Threshold exceeded',
+                        'body' => 'Temperature is {{ trigger.value }}',
+                        'cooldown' => [
+                            'value' => 24,
+                            'unit' => 'hour',
+                        ],
+                    ],
+                ],
+            ],
+        ],
+        'edges' => [],
+    ]);
+
+    expect(fn () => app(WorkflowNodeConfigValidator::class)->validate($workflow, $graph))
+        ->not->toThrow(RuntimeException::class);
+});
+
 it('fails when alert recipients are invalid email addresses', function (): void {
     $workflow = createWorkflowRecord(createOrganizationRecord());
 
@@ -390,6 +420,36 @@ it('fails when alert recipients are invalid email addresses', function (): void 
 
     expect(fn () => app(WorkflowNodeConfigValidator::class)->validate($workflow, $graph))
         ->toThrow(RuntimeException::class, 'must be valid email addresses');
+});
+
+it('fails when sms recipients are invalid phone numbers', function (): void {
+    $workflow = createWorkflowRecord(createOrganizationRecord());
+
+    $graph = WorkflowGraph::fromArray([
+        'version' => 1,
+        'nodes' => [
+            [
+                'id' => 'alert-1',
+                'type' => 'alert',
+                'data' => [
+                    'config' => [
+                        'channel' => 'sms',
+                        'recipients' => ['0771234567'],
+                        'subject' => 'Threshold exceeded',
+                        'body' => 'Alert body',
+                        'cooldown' => [
+                            'value' => 30,
+                            'unit' => 'minute',
+                        ],
+                    ],
+                ],
+            ],
+        ],
+        'edges' => [],
+    ]);
+
+    expect(fn () => app(WorkflowNodeConfigValidator::class)->validate($workflow, $graph))
+        ->toThrow(RuntimeException::class, 'must be valid phone numbers in 94XXXXXXXXX format');
 });
 
 it('fails when alert cooldown configuration is invalid', function (): void {

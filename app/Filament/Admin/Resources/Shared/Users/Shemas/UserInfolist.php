@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Filament\Admin\Resources\Shared\Users\Shemas;
 
 use Filament\Infolists\Components\TextEntry;
@@ -20,6 +22,10 @@ class UserInfolist
                         TextEntry::make('email')
                             ->label('Email Address')
                             ->copyable(),
+                        TextEntry::make('phone_number')
+                            ->label('Phone Number')
+                            ->copyable()
+                            ->placeholder('Not set'),
                         TextEntry::make('email_verified_at')
                             ->label('Email Verified At')
                             ->dateTime()

@@ -4,19 +4,26 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Pages;
 
+use App\Domain\Automation\Models\AutomationThresholdPolicy;
+use App\Domain\Automation\Services\ThresholdPolicyWorkflowProjector;
+use App\Domain\IoTDashboard\Enums\DashboardHistoryPreset;
 use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Models\IoTDashboard as IoTDashboardModel;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\Shared\Models\User;
 use App\Filament\Admin\Pages\IoTDashboardSupport\Concerns\InteractsWithWidgets;
+use App\Filament\Admin\Resources\AutomationThresholdPolicies\AutomationThresholdPolicyResource;
+use App\Filament\Admin\Resources\AutomationThresholdPolicies\Schemas\AutomationThresholdPolicyForm;
 use App\Filament\Admin\Resources\IoTDashboards\IoTDashboardResource;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
+use Livewire\Attributes\On;
 
 /**
  * @property-read IoTDashboardModel|null $selectedDashboard
@@ -78,6 +85,13 @@ class IoTDashboard extends Page
 
     public function getHeaderActions(): array
     {
+        $configuredHistoryPreset = data_get($this->selectedDashboard(), 'default_history_preset');
+        $defaultHistoryPreset = $configuredHistoryPreset instanceof DashboardHistoryPreset
+            ? $configuredHistoryPreset
+            : (is_string($configuredHistoryPreset)
+                ? DashboardHistoryPreset::tryFrom($configuredHistoryPreset)
+                : null);
+
         return [
             Action::make('dashboards')
                 ->label('Dashboards')
@@ -162,10 +176,31 @@ class IoTDashboard extends Page
                     ->action(function (array $data): void {
                         $this->createWidget(WidgetType::StateTimeline, $data);
                     }),
+
+                Action::make('addThresholdStatusCardWidget')
+                    ->label('Add Threshold Status')
+                    ->icon(Heroicon::OutlinedSquares2x2)
+                    ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                    ->slideOver()
+                    ->modalWidth('7xl')
+                    ->schema(fn (): array => $this->selectedDashboard() instanceof IoTDashboardModel
+                        ? $this->widgetFormSchemaFactory()->thresholdStatusCardSchema($this->selectedDashboard())
+                        : [])
+                    ->action(function (array $data): void {
+                        $this->createWidget(WidgetType::ThresholdStatusCard, $data);
+                    }),
             ])
                 ->label('Add Widget')
                 ->icon(Heroicon::OutlinedPlus)
                 ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel),
+
+            Action::make('historyRange')
+                ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                ->view('filament.admin.pages.io-t-dashboard.history-range-action', [
+                    'historyPresets' => DashboardHistoryPreset::cases(),
+                    'triggerLabel' => $defaultHistoryPreset?->getLabel()
+                        ?? DashboardHistoryPreset::Last6Hours->getLabel(),
+                ]),
         ];
     }
 
@@ -237,6 +272,52 @@ class IoTDashboard extends Page
             });
     }
 
+    public function editThresholdPolicyAction(): Action
+    {
+        return Action::make('editThresholdPolicy')
+            ->label('Edit threshold policy')
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('gray')
+            ->model(AutomationThresholdPolicy::class)
+            ->record(fn (Action $action): ?AutomationThresholdPolicy => $this->resolveThresholdPolicyFromArguments($action->getArguments()))
+            ->slideOver()
+            ->modalWidth('7xl')
+            ->modalHeading('Edit threshold policy')
+            ->schema(fn (): array => $this->thresholdPolicyFormComponents())
+            ->fillForm(function (array $arguments): array {
+                $policy = $this->resolveThresholdPolicyFromArguments($arguments);
+
+                if (! $policy instanceof AutomationThresholdPolicy) {
+                    return [];
+                }
+
+                return $this->thresholdPolicyFormData($policy);
+            })
+            ->action(function (array $data, array $arguments): void {
+                $policy = $this->resolveThresholdPolicyFromArguments($arguments);
+
+                if (! $policy instanceof AutomationThresholdPolicy) {
+                    $this->warn('Threshold policy not found');
+
+                    return;
+                }
+
+                $preparedData = AutomationThresholdPolicyResource::prepareThresholdPolicyFormData(
+                    $data,
+                    is_numeric($policy->getKey()) ? (int) $policy->getKey() : null,
+                );
+
+                $policy->fill($preparedData);
+                $policy->save();
+
+                app(ThresholdPolicyWorkflowProjector::class)->sync($policy);
+
+                Notification::make()->title('Threshold policy updated')->success()->send();
+
+                $this->dispatchWidgetBootstrapEvent();
+            });
+    }
+
     public function deleteWidgetAction(): Action
     {
         return Action::make('deleteWidget')
@@ -293,6 +374,20 @@ class IoTDashboard extends Page
             ->livewire($this);
     }
 
+    #[On('iot-dashboard-edit-threshold-policy')]
+    public function openThresholdPolicyEditor(int $policyId): void
+    {
+        $policy = $this->resolveThresholdPolicyById($policyId);
+
+        if (! $policy instanceof AutomationThresholdPolicy) {
+            $this->warn('Threshold policy not found');
+
+            return;
+        }
+
+        $this->mountAction('editThresholdPolicy', ['policy' => $policy->id]);
+    }
+
     public function getSelectedDashboardProperty(): ?IoTDashboardModel
     {
         /** @var User $user */
@@ -313,5 +408,57 @@ class IoTDashboard extends Page
         }
 
         return $this->widgetBootstrapPayloadBuilder()->build($dashboard);
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function thresholdPolicyFormComponents(): array
+    {
+        return AutomationThresholdPolicyForm::configure(Schema::make())
+            ->getComponents();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function thresholdPolicyFormData(AutomationThresholdPolicy $policy): array
+    {
+        $data = $policy->attributesToArray();
+        $data['condition_json_logic_text'] = json_encode(
+            is_array($data['condition_json_logic'] ?? null) ? $data['condition_json_logic'] : [],
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+        ) ?: '{}';
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function resolveThresholdPolicyFromArguments(array $arguments): ?AutomationThresholdPolicy
+    {
+        $policyId = is_numeric($arguments['policy'] ?? null)
+            ? (int) $arguments['policy']
+            : null;
+
+        if ($policyId === null) {
+            return null;
+        }
+
+        return $this->resolveThresholdPolicyById($policyId);
+    }
+
+    private function resolveThresholdPolicyById(int $policyId): ?AutomationThresholdPolicy
+    {
+        $dashboard = $this->selectedDashboard();
+
+        if (! $dashboard instanceof IoTDashboardModel) {
+            return null;
+        }
+
+        return AutomationThresholdPolicy::query()
+            ->where('organization_id', (int) $dashboard->organization_id)
+            ->find($policyId);
     }
 }

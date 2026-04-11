@@ -37,6 +37,8 @@ const CONDITION_OPERATOR_OPTIONS = [
     { value: '<=', label: 'Less than or equal' },
     { value: '==', label: 'Equal to' },
     { value: '!=', label: 'Not equal to' },
+    { value: 'between', label: 'Between' },
+    { value: 'outside_between', label: 'Outside between' },
 ];
 
 const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 };
@@ -132,8 +134,45 @@ function truncate(value, maxLength = 90) {
 }
 
 function buildGuidedJsonLogic(guided) {
+    if (guided.operator === 'between') {
+        return {
+            and: [
+                { '>=': [{ var: guided.left }, guided.right] },
+                { '<=': [{ var: guided.left }, guided.right_secondary] },
+            ],
+        };
+    }
+
+    if (guided.operator === 'outside_between') {
+        return {
+            or: [
+                { '<': [{ var: guided.left }, guided.right] },
+                { '>': [{ var: guided.left }, guided.right_secondary] },
+            ],
+        };
+    }
+
     return {
         [guided.operator]: [{ var: guided.left }, guided.right],
+    };
+}
+
+function requiresConditionSecondaryOperand(operator) {
+    return operator === 'between' || operator === 'outside_between';
+}
+
+function normalizeGuidedConditionDraft(guided) {
+    const operator = CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === guided?.operator)
+        ? guided.operator
+        : '>';
+    const right = Number.isFinite(Number(guided?.right)) ? Number(guided.right) : 240;
+    const rightSecondary = Number.isFinite(Number(guided?.right_secondary)) ? Number(guided.right_secondary) : right + 1;
+
+    return {
+        left: normalizeConditionLeftOperand(guided?.left),
+        operator,
+        right: requiresConditionSecondaryOperand(operator) ? Math.min(right, rightSecondary) : right,
+        right_secondary: requiresConditionSecondaryOperand(operator) ? Math.max(right, rightSecondary) : null,
     };
 }
 
@@ -206,13 +245,7 @@ function createDefaultConfigDraft(nodeType, existingConfig) {
     if (nodeType === 'condition') {
         const mode = existingConfig?.mode === 'json_logic' ? 'json_logic' : 'guided';
         const existingGuided = isPlainObject(existingConfig?.guided) ? existingConfig.guided : {};
-        const guided = {
-            left: normalizeConditionLeftOperand(existingGuided.left),
-            operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === existingGuided.operator)
-                ? existingGuided.operator
-                : '>',
-            right: Number.isFinite(Number(existingGuided.right)) ? Number(existingGuided.right) : 240,
-        };
+        const guided = normalizeGuidedConditionDraft(existingGuided);
 
         const existingJsonLogic = isPlainObject(existingConfig?.json_logic)
             ? existingConfig.json_logic
@@ -245,19 +278,10 @@ function createDefaultConfigDraft(nodeType, existingConfig) {
     }
 
     if (nodeType === 'alert') {
-        const recipients = Array.isArray(existingConfig?.recipients)
-            ? existingConfig.recipients.filter((item) => typeof item === 'string' && item.trim() !== '')
-            : [];
         const cooldown = isPlainObject(existingConfig?.cooldown) ? existingConfig.cooldown : {};
 
         return {
-            channel: 'email',
-            recipients,
-            recipients_text: recipients.join('\n'),
-            subject: typeof existingConfig?.subject === 'string' ? existingConfig.subject : 'Automation alert',
-            body: typeof existingConfig?.body === 'string'
-                ? existingConfig.body
-                : 'Threshold reached.\n\nRun: {{ run.id }}\nQuery value: {{ query.value }}',
+            notification_profile_id: toPositiveInteger(existingConfig?.notification_profile_id),
             cooldown: {
                 value: toPositiveInteger(cooldown.value) ?? 30,
                 unit: normalizeWindowUnit(cooldown.unit),
@@ -307,16 +331,14 @@ function normalizeConfigForSave(nodeType, draft) {
         const mode = draft?.mode === 'json_logic' ? 'json_logic' : 'guided';
 
         if (mode === 'guided') {
-            const guided = {
-                left: normalizeConditionLeftOperand(draft?.guided?.left),
-                operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === draft?.guided?.operator)
-                    ? draft.guided.operator
-                    : '>',
-                right: Number(draft?.guided?.right),
-            };
+            const guided = normalizeGuidedConditionDraft(draft?.guided);
 
             if (!Number.isFinite(guided.right)) {
                 throw new Error('Condition threshold must be numeric.');
+            }
+
+            if (requiresConditionSecondaryOperand(guided.operator) && !Number.isFinite(guided.right_secondary)) {
+                throw new Error('Condition upper bound must be numeric.');
             }
 
             return {
@@ -340,13 +362,7 @@ function normalizeConfigForSave(nodeType, draft) {
 
         return {
             mode: 'json_logic',
-            guided: {
-                left: normalizeConditionLeftOperand(draft?.guided?.left),
-                operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === draft?.guided?.operator)
-                    ? draft.guided.operator
-                    : '>',
-                right: Number.isFinite(Number(draft?.guided?.right)) ? Number(draft.guided.right) : 240,
-            },
+            guided: normalizeGuidedConditionDraft(draft?.guided),
             json_logic: parsedJsonLogic,
         };
     }
@@ -437,34 +453,12 @@ function normalizeConfigForSave(nodeType, draft) {
     }
 
     if (nodeType === 'alert') {
-        const channel = draft?.channel === 'email' ? 'email' : 'email';
-        const recipients = parseEmailRecipientInput(
-            typeof draft?.recipients_text === 'string'
-                ? draft.recipients_text
-                : Array.isArray(draft?.recipients)
-                    ? draft.recipients.join('\n')
-                    : '',
-        );
-        const subject = typeof draft?.subject === 'string' ? draft.subject.trim() : '';
-        const body = typeof draft?.body === 'string' ? draft.body.trim() : '';
+        const notificationProfileId = toPositiveInteger(draft?.notification_profile_id);
         const cooldownValue = toPositiveInteger(draft?.cooldown?.value);
         const cooldownUnit = normalizeWindowUnit(draft?.cooldown?.unit);
 
-        if (recipients.length === 0) {
-            throw new Error('Alert recipients are required.');
-        }
-
-        const invalidRecipient = recipients.find((recipient) => !isValidEmail(recipient));
-        if (invalidRecipient) {
-            throw new Error(`Alert recipient "${invalidRecipient}" is not a valid email.`);
-        }
-
-        if (subject === '') {
-            throw new Error('Alert subject is required.');
-        }
-
-        if (body === '') {
-            throw new Error('Alert body is required.');
+        if (!notificationProfileId) {
+            throw new Error('Select a notification profile.');
         }
 
         if (!cooldownValue) {
@@ -472,10 +466,7 @@ function normalizeConfigForSave(nodeType, draft) {
         }
 
         return {
-            channel,
-            recipients,
-            subject,
-            body,
+            notification_profile_id: notificationProfileId,
             cooldown: {
                 value: cooldownValue,
                 unit: cooldownUnit,
@@ -522,6 +513,12 @@ function summarizeNodeConfig(nodeType, config) {
             const operator = typeof config.guided.operator === 'string' ? config.guided.operator : '>';
             const right = Number(config.guided.right);
             const resolvedRight = Number.isFinite(right) ? right : '?';
+            const rightSecondary = Number(config.guided.right_secondary);
+            const resolvedRightSecondary = Number.isFinite(rightSecondary) ? rightSecondary : '?';
+
+            if (requiresConditionSecondaryOperand(operator)) {
+                return `${left} ${operator} ${resolvedRight} and ${resolvedRightSecondary}`;
+            }
 
             return `${left} ${operator} ${resolvedRight}`;
         }
@@ -562,16 +559,16 @@ function summarizeNodeConfig(nodeType, config) {
     }
 
     if (nodeType === 'alert') {
-        const recipients = Array.isArray(config.recipients) ? config.recipients : [];
+        const notificationProfileId = toPositiveInteger(config.notification_profile_id);
         const cooldown = isPlainObject(config.cooldown) ? config.cooldown : {};
         const cooldownValue = toPositiveInteger(cooldown.value) ?? 30;
         const cooldownUnit = normalizeWindowUnit(cooldown.unit);
 
-        if (recipients.length === 0) {
+        if (!notificationProfileId) {
             return 'Not configured';
         }
 
-        return `${recipients.length} recipient(s), cooldown ${cooldownValue} ${cooldownUnit}(s)`;
+        return `Profile #${notificationProfileId}, cooldown ${cooldownValue} ${cooldownUnit}(s)`;
     }
 
     const keys = Object.keys(config);
@@ -1045,6 +1042,7 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
             left: 'trigger.value',
             operator: '>',
             right: 240,
+            right_secondary: null,
         },
         default_json_logic: {
             '>': [{ var: 'trigger.value' }, 240],
@@ -1091,17 +1089,12 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
         ? templates.left_operands
         : CONDITION_LEFT_OPTIONS;
     const guided = isPlainObject(draft?.guided)
-        ? {
-              left: normalizeConditionLeftOperand(draft.guided.left),
-              operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === draft.guided.operator)
-                  ? draft.guided.operator
-                  : '>',
-              right: Number.isFinite(Number(draft.guided.right)) ? Number(draft.guided.right) : 240,
-          }
+        ? normalizeGuidedConditionDraft(draft.guided)
         : {
               left: 'trigger.value',
               operator: '>',
               right: 240,
+              right_secondary: null,
           };
 
     const jsonLogicText =
@@ -1145,26 +1138,16 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
                                       left: normalizeConditionLeftOperand(templates?.default_guided?.left),
                                       operator: '>',
                                       right: 240,
+                                      right_secondary: null,
                                   };
 
-                            const nextJsonLogic = buildGuidedJsonLogic({
-                                left: normalizeConditionLeftOperand(currentGuided.left),
-                                operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === currentGuided.operator)
-                                    ? currentGuided.operator
-                                    : '>',
-                                right: Number.isFinite(Number(currentGuided.right)) ? Number(currentGuided.right) : 240,
-                            });
+                            const nextGuided = normalizeGuidedConditionDraft(currentGuided);
+                            const nextJsonLogic = buildGuidedJsonLogic(nextGuided);
 
                             return {
                                 ...currentDraft,
                                 mode: 'guided',
-                                guided: {
-                                    left: normalizeConditionLeftOperand(currentGuided.left),
-                                    operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === currentGuided.operator)
-                                        ? currentGuided.operator
-                                        : '>',
-                                    right: Number.isFinite(Number(currentGuided.right)) ? Number(currentGuided.right) : 240,
-                                },
+                                guided: nextGuided,
                                 json_logic: nextJsonLogic,
                                 json_logic_text: safeJsonStringify(nextJsonLogic),
                             };
@@ -1207,13 +1190,8 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
 
                                 onDraftChange((currentDraft) => {
                                     const nextGuided = {
+                                        ...normalizeGuidedConditionDraft(currentDraft?.guided),
                                         left: nextLeft,
-                                        operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === currentDraft?.guided?.operator)
-                                            ? currentDraft.guided.operator
-                                            : '>',
-                                        right: Number.isFinite(Number(currentDraft?.guided?.right))
-                                            ? Number(currentDraft.guided.right)
-                                            : 240,
                                     };
                                     const nextJsonLogic = buildGuidedJsonLogic(nextGuided);
 
@@ -1244,20 +1222,18 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
 
                                 onDraftChange((currentDraft) => {
                                     const nextGuided = {
-                                        left: normalizeConditionLeftOperand(currentDraft?.guided?.left),
+                                        ...normalizeGuidedConditionDraft(currentDraft?.guided),
                                         operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === nextOperator)
                                             ? nextOperator
                                             : '>',
-                                        right: Number.isFinite(Number(currentDraft?.guided?.right))
-                                            ? Number(currentDraft.guided.right)
-                                            : 240,
                                     };
-                                    const nextJsonLogic = buildGuidedJsonLogic(nextGuided);
+                                    const normalizedGuided = normalizeGuidedConditionDraft(nextGuided);
+                                    const nextJsonLogic = buildGuidedJsonLogic(normalizedGuided);
 
                                     return {
                                         ...currentDraft,
                                         mode: 'guided',
-                                        guided: nextGuided,
+                                        guided: normalizedGuided,
                                         json_logic: nextJsonLogic,
                                         json_logic_text: safeJsonStringify(nextJsonLogic),
                                     };
@@ -1273,7 +1249,7 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
                     </label>
 
                     <label className="automation-dag-field">
-                        <span>Threshold</span>
+                        <span>{requiresConditionSecondaryOperand(guided.operator) ? 'Lower Bound' : 'Threshold'}</span>
                         <input
                             type="number"
                             value={String(guided.right)}
@@ -1281,18 +1257,16 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
                                 onDraftChange((currentDraft) => {
                                     const nextThreshold = Number(event.target.value);
                                     const nextGuided = {
-                                        left: normalizeConditionLeftOperand(currentDraft?.guided?.left),
-                                        operator: CONDITION_OPERATOR_OPTIONS.some((candidate) => candidate.value === currentDraft?.guided?.operator)
-                                            ? currentDraft.guided.operator
-                                            : '>',
+                                        ...normalizeGuidedConditionDraft(currentDraft?.guided),
                                         right: Number.isFinite(nextThreshold) ? nextThreshold : 0,
                                     };
-                                    const nextJsonLogic = buildGuidedJsonLogic(nextGuided);
+                                    const normalizedGuided = normalizeGuidedConditionDraft(nextGuided);
+                                    const nextJsonLogic = buildGuidedJsonLogic(normalizedGuided);
 
                                     return {
                                         ...currentDraft,
                                         mode: 'guided',
-                                        guided: nextGuided,
+                                        guided: normalizedGuided,
                                         json_logic: nextJsonLogic,
                                         json_logic_text: safeJsonStringify(nextJsonLogic),
                                     };
@@ -1300,6 +1274,35 @@ function ConditionConfigEditor({ draft, onDraftChange, livewireId }) {
                             }}
                         />
                     </label>
+
+                    {requiresConditionSecondaryOperand(guided.operator) ? (
+                        <label className="automation-dag-field">
+                            <span>Upper Bound</span>
+                            <input
+                                type="number"
+                                value={String(guided.right_secondary ?? '')}
+                                onChange={(event) => {
+                                    onDraftChange((currentDraft) => {
+                                        const nextThreshold = Number(event.target.value);
+                                        const nextGuided = {
+                                            ...normalizeGuidedConditionDraft(currentDraft?.guided),
+                                            right_secondary: Number.isFinite(nextThreshold) ? nextThreshold : 0,
+                                        };
+                                        const normalizedGuided = normalizeGuidedConditionDraft(nextGuided);
+                                        const nextJsonLogic = buildGuidedJsonLogic(normalizedGuided);
+
+                                        return {
+                                            ...currentDraft,
+                                            mode: 'guided',
+                                            guided: normalizedGuided,
+                                            json_logic: nextJsonLogic,
+                                            json_logic_text: safeJsonStringify(nextJsonLogic),
+                                        };
+                                    });
+                                }}
+                            />
+                        </label>
+                    ) : null}
                 </div>
             ) : (
                 <CodeEditorField
@@ -1739,30 +1742,25 @@ function QueryConfigEditor({ draft, onDraftChange, livewireId }) {
 }
 
 function AlertConfigEditor({ draft, onDraftChange, livewireId }) {
-    const [runtimeTokens, setRuntimeTokens] = useState([
-        { label: 'Trigger Value', token: '{{ trigger.value }}' },
-        { label: 'Query Value', token: '{{ query.value }}' },
-        { label: 'Run ID', token: '{{ run.id }}' },
-        { label: 'Workflow ID', token: '{{ run.workflow_id }}' },
-    ]);
+    const [profileOptions, setProfileOptions] = useState([]);
 
     useEffect(() => {
         let ignore = false;
 
         const loadTemplates = async () => {
             try {
-                const response = await callLivewireMethod(livewireId, 'getQueryNodeTemplates');
+                const response = await callLivewireMethod(livewireId, 'getAlertNodeOptions');
 
                 if (ignore || !isPlainObject(response)) {
                     return;
                 }
 
-                if (Array.isArray(response.runtime_tokens) && response.runtime_tokens.length > 0) {
-                    setRuntimeTokens(response.runtime_tokens);
+                if (Array.isArray(response.profiles)) {
+                    setProfileOptions(response.profiles);
                 }
             } catch (error) {
                 if (!ignore) {
-                    console.error('Unable to load alert template tokens.', error);
+                    console.error('Unable to load alert profile options.', error);
                 }
             }
         };
@@ -1774,26 +1772,32 @@ function AlertConfigEditor({ draft, onDraftChange, livewireId }) {
         };
     }, [livewireId]);
 
-    const recipientsText = typeof draft?.recipients_text === 'string'
-        ? draft.recipients_text
-        : Array.isArray(draft?.recipients)
-            ? draft.recipients.join('\n')
-            : '';
-    const subject = typeof draft?.subject === 'string' ? draft.subject : '';
-    const body = typeof draft?.body === 'string' ? draft.body : '';
+    const selectedProfileId = toPositiveInteger(draft?.notification_profile_id);
     const cooldown = isPlainObject(draft?.cooldown) ? draft.cooldown : {};
     const cooldownValue = toPositiveInteger(cooldown.value) ?? 30;
     const cooldownUnit = normalizeWindowUnit(cooldown.unit);
-    const recipientList = parseEmailRecipientInput(recipientsText);
-    const invalidRecipients = recipientList.filter((recipient) => !isValidEmail(recipient));
+    const selectedProfile = profileOptions.find((profile) => profile.id === selectedProfileId) ?? null;
 
     return (
         <div className="automation-dag-modal-grid">
             <div className="automation-dag-grid-two">
                 <label className="automation-dag-field">
-                    <span>Channel</span>
-                    <select value="email" disabled>
-                        <option value="email">Email</option>
+                    <span>Notification Profile</span>
+                    <select
+                        value={selectedProfileId ? String(selectedProfileId) : ''}
+                        onChange={(event) => {
+                            onDraftChange((currentDraft) => ({
+                                ...currentDraft,
+                                notification_profile_id: toPositiveInteger(event.target.value),
+                            }));
+                        }}
+                    >
+                        <option value="">Select profile</option>
+                        {profileOptions.map((profile) => (
+                            <option key={String(profile.id)} value={String(profile.id)}>
+                                {String(profile.label ?? `Profile #${profile.id}`)}
+                            </option>
+                        ))}
                     </select>
                 </label>
 
@@ -1809,7 +1813,6 @@ function AlertConfigEditor({ draft, onDraftChange, livewireId }) {
 
                                 onDraftChange((currentDraft) => ({
                                     ...currentDraft,
-                                    channel: 'email',
                                     cooldown: {
                                         value: nextValue,
                                         unit: normalizeWindowUnit(currentDraft?.cooldown?.unit),
@@ -1824,7 +1827,6 @@ function AlertConfigEditor({ draft, onDraftChange, livewireId }) {
 
                                 onDraftChange((currentDraft) => ({
                                     ...currentDraft,
-                                    channel: 'email',
                                     cooldown: {
                                         value: toPositiveInteger(currentDraft?.cooldown?.value) ?? 30,
                                         unit: nextUnit,
@@ -1842,58 +1844,11 @@ function AlertConfigEditor({ draft, onDraftChange, livewireId }) {
                 </label>
             </div>
 
-            <label className="automation-dag-field">
-                <span>Recipients (one email per line)</span>
-                <textarea
-                    rows={4}
-                    value={recipientsText}
-                    onChange={(event) => {
-                        const nextText = event.target.value;
-                        const nextRecipients = parseEmailRecipientInput(nextText);
-
-                        onDraftChange((currentDraft) => ({
-                            ...currentDraft,
-                            channel: 'email',
-                            recipients_text: nextText,
-                            recipients: nextRecipients,
-                        }));
-                    }}
-                />
-                {invalidRecipients.length > 0 ? (
-                    <span className="automation-dag-field-error">
-                        Invalid email(s): {invalidRecipients.join(', ')}
-                    </span>
-                ) : null}
-            </label>
-
-            <label className="automation-dag-field">
-                <span>Subject</span>
-                <input
-                    type="text"
-                    value={subject}
-                    onChange={(event) => {
-                        onDraftChange((currentDraft) => ({
-                            ...currentDraft,
-                            channel: 'email',
-                            subject: event.target.value,
-                        }));
-                    }}
-                />
-            </label>
-
-            <CodeEditorField
-                label="Body"
-                value={body}
-                rows={10}
-                tokens={runtimeTokens}
-                onChange={(nextBody) => {
-                    onDraftChange((currentDraft) => ({
-                        ...currentDraft,
-                        channel: 'email',
-                        body: nextBody,
-                    }));
-                }}
-            />
+            <div className="automation-dag-info-panel">
+                <strong>Alert Delivery</strong>
+                <div>The selected notification profile controls the channel, recipients, and message template.</div>
+                <div>{selectedProfile ? `Using ${selectedProfile.label}.` : 'Choose a notification profile to continue.'}</div>
+            </div>
         </div>
     );
 }

@@ -1,30 +1,4 @@
-function escapeHtml(value) {
-    return String(value)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-}
-
-function formatTimestamp(value) {
-    if (typeof value !== 'string' || value.trim() === '') {
-        return 'No recent data';
-    }
-
-    const timestamp = new Date(value);
-
-    if (Number.isNaN(timestamp.getTime())) {
-        return 'No recent data';
-    }
-
-    return new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-    }).format(timestamp);
-}
+import { escapeHtml, renderPresenceMetaMarkup } from '../shared/meta';
 
 function formatNumericValue(value) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -98,31 +72,6 @@ function resolveLatestTimestamp(series) {
         : [];
 
     return timestamps.length > 0 ? timestamps[timestamps.length - 1] : null;
-}
-
-function resolvePresenceState(widget) {
-    const connectionState = typeof widget?.device_connection_state === 'string'
-        ? widget.device_connection_state.trim().toLowerCase()
-        : '';
-
-    if (connectionState === 'online') {
-        return {
-            label: 'Online',
-            color: '#22c55e',
-        };
-    }
-
-    if (connectionState === 'offline') {
-        return {
-            label: 'Offline',
-            color: '#ef4444',
-        };
-    }
-
-    return {
-        label: 'Unknown',
-        color: '#64748b',
-    };
 }
 
 function renderValueMarkup(entry, latestPoint) {
@@ -223,22 +172,11 @@ function renderRowsMarkup(widget, series) {
 }
 
 export function renderStatusSummaryMarkup(widget, series) {
-    const presenceState = resolvePresenceState(widget);
     const latestTimestamp = resolveLatestTimestamp(series);
     const hasPoints = Array.isArray(series)
         && series.some((entry) => Array.isArray(entry?.points) && entry.points.length > 0);
 
-    const metaMarkup = `
-        <div class="iot-status-summary__meta">
-            <div class="iot-status-summary__timestamp">${escapeHtml(formatTimestamp(latestTimestamp))}</div>
-            <span
-                class="iot-status-summary__presence-dot"
-                style="--presence-color: ${escapeHtml(presenceState.color)};"
-                title="${escapeHtml(presenceState.label)}"
-                aria-label="${escapeHtml(presenceState.label)}"
-            ></span>
-        </div>
-    `;
+    const metaMarkup = renderPresenceMetaMarkup(latestTimestamp, widget?.device_connection_state);
 
     if (!hasPoints) {
         return `

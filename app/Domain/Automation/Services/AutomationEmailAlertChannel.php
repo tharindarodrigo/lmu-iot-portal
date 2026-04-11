@@ -31,6 +31,7 @@ class AutomationEmailAlertChannel implements AutomationAlertChannel
 
         Notification::route('mail', $resolvedRecipients)
             ->notify(new AutomationWorkflowAlertNotification(
+                channel: $this->channel(),
                 subject: $subject,
                 body: $body,
                 context: $context,

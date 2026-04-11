@@ -9,6 +9,8 @@ import { gaugeChartOption } from '../widgets/gauge-chart/renderer';
 import { renderStatusSummaryMarkup } from '../widgets/status-summary/renderer';
 import { renderStateCardMarkup } from '../widgets/state-card/renderer';
 import { stateTimelineOption } from '../widgets/state-timeline/renderer';
+import { renderThresholdStatusCardMarkup } from '../widgets/threshold-status-card/renderer';
+import { renderThresholdStatusGridMarkup } from '../widgets/threshold-status-grid/renderer';
 
 const WIDGET_TYPES = Object.freeze({
     lineChart: 'line_chart',
@@ -17,6 +19,8 @@ const WIDGET_TYPES = Object.freeze({
     statusSummary: 'status_summary',
     stateCard: 'state_card',
     stateTimeline: 'state_timeline',
+    thresholdStatusCard: 'threshold_status_card',
+    thresholdStatusGrid: 'threshold_status_grid',
 });
 
 function buildChartOption(widget, series) {
@@ -64,6 +68,14 @@ function isHistoryChartWidget(widget) {
     return widget?.type === WIDGET_TYPES.lineChart
         || widget?.type === WIDGET_TYPES.barChart
         || widget?.type === WIDGET_TYPES.stateTimeline;
+}
+
+function isThresholdStatusGridWidget(widget) {
+    return widget?.type === WIDGET_TYPES.thresholdStatusGrid;
+}
+
+function isThresholdStatusCardWidget(widget) {
+    return widget?.type === WIDGET_TYPES.thresholdStatusCard;
 }
 
 function isStateWidget(widget) {
@@ -421,6 +433,18 @@ class DashboardRuntime {
             return;
         }
 
+        if (isThresholdStatusCardWidget(widget)) {
+            this.renderThresholdStatusCardWidget(widget);
+
+            return;
+        }
+
+        if (isThresholdStatusGridWidget(widget)) {
+            this.renderThresholdStatusGridWidget(widget);
+
+            return;
+        }
+
         const chart = this.ensureChart(widget.id);
 
         if (!chart) {
@@ -452,6 +476,30 @@ class DashboardRuntime {
         }
 
         target.innerHTML = renderStatusSummaryMarkup(widget, widget.seriesData);
+    }
+
+    renderThresholdStatusGridWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderThresholdStatusGridMarkup(widget);
+    }
+
+    renderThresholdStatusCardWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderThresholdStatusCardMarkup(widget);
     }
 
     requestInitialSnapshots() {
@@ -567,6 +615,26 @@ class DashboardRuntime {
     }
 
     applySnapshotEntry(widget, snapshot) {
+        if (isThresholdStatusCardWidget(widget)) {
+            widget.card = snapshot?.card && typeof snapshot.card === 'object' ? snapshot.card : null;
+            widget.device_connection_state = typeof snapshot?.device_connection_state === 'string'
+                ? snapshot.device_connection_state
+                : widget.device_connection_state;
+            widget.device_last_seen_at = typeof snapshot?.device_last_seen_at === 'string'
+                ? snapshot.device_last_seen_at
+                : widget.device_last_seen_at;
+            this.renderWidget(widget);
+
+            return;
+        }
+
+        if (isThresholdStatusGridWidget(widget)) {
+            widget.cards = Array.isArray(snapshot?.cards) ? snapshot.cards : [];
+            this.renderWidget(widget);
+
+            return;
+        }
+
         if (!snapshot || !Array.isArray(snapshot.series)) {
             return;
         }
