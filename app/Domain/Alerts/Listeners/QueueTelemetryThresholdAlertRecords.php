@@ -80,7 +80,7 @@ class QueueTelemetryThresholdAlertRecords implements ShouldQueue
             })
             ->get()
             ->filter(function (ThresholdPolicy $policy): bool {
-                return $policy->managedWorkflow?->status !== AutomationWorkflowStatus::Active->value;
+                return $policy->managedWorkflow?->status !== AutomationWorkflowStatus::Active;
             })
             ->values();
     }
