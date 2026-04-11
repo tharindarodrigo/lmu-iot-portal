@@ -11,13 +11,13 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('automation_threshold_policies', function (Blueprint $table): void {
+        Schema::table('threshold_policies', function (Blueprint $table): void {
             $table->string('condition_mode', 32)->default('guided')->after('maximum_value');
             $table->jsonb('guided_condition')->nullable()->after('condition_mode');
             $table->jsonb('condition_json_logic')->nullable()->after('guided_condition');
         });
 
-        DB::table('automation_threshold_policies')
+        DB::table('threshold_policies')
             ->select(['id', 'minimum_value', 'maximum_value'])
             ->orderBy('id')
             ->get()
@@ -31,7 +31,7 @@ return new class extends Migration
                     return;
                 }
 
-                DB::table('automation_threshold_policies')
+                DB::table('threshold_policies')
                     ->where('id', $policy->id)
                     ->update([
                         'condition_mode' => 'guided',
@@ -44,7 +44,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('automation_threshold_policies', function (Blueprint $table): void {
+        Schema::table('threshold_policies', function (Blueprint $table): void {
             $table->dropColumn([
                 'condition_mode',
                 'guided_condition',

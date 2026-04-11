@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace Database\Factories\Domain\Automation\Models;
 
-use App\Domain\Automation\Models\AutomationNotificationProfile;
+use App\Domain\Alerts\Models\NotificationProfile;
 use App\Domain\Shared\Models\Organization;
 use App\Domain\Shared\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<AutomationNotificationProfile>
+ * @extends Factory<NotificationProfile>
  */
 class AutomationNotificationProfileFactory extends Factory
 {
-    protected $model = AutomationNotificationProfile::class;
+    protected $model = NotificationProfile::class;
 
     public function configure(): static
     {
-        return $this->afterCreating(function (AutomationNotificationProfile $profile): void {
+        return $this->afterCreating(function (NotificationProfile $profile): void {
             if ($profile->users()->exists()) {
                 return;
             }

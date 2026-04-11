@@ -11,21 +11,21 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('automation_notification_profile_user', function (Blueprint $table): void {
+        Schema::create('notification_profile_user', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('automation_notification_profile_id')
-                ->constrained('automation_notification_profiles')
+            $table->foreignId('notification_profile_id')
+                ->constrained('notification_profiles')
                 ->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
 
             $table->unique(
-                ['automation_notification_profile_id', 'user_id'],
-                'automation_notification_profile_user_profile_user_unique',
+                ['notification_profile_id', 'user_id'],
+                'notification_profile_user_profile_user_unique',
             );
         });
 
-        DB::table('automation_notification_profiles')
+        DB::table('notification_profiles')
             ->select(['id', 'organization_id', 'name', 'channel', 'recipients'])
             ->orderBy('id')
             ->get()
@@ -67,9 +67,9 @@ return new class extends Migration
                 }
 
                 foreach (array_values($userIds) as $userId) {
-                    DB::table('automation_notification_profile_user')->updateOrInsert(
+                    DB::table('notification_profile_user')->updateOrInsert(
                         [
-                            'automation_notification_profile_id' => $profile->id,
+                            'notification_profile_id' => $profile->id,
                             'user_id' => $userId,
                         ],
                         [
@@ -83,7 +83,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('automation_notification_profile_user');
+        Schema::dropIfExists('notification_profile_user');
     }
 
     /**

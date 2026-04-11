@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('automation_threshold_policies', function (Blueprint $table): void {
+        Schema::create('threshold_policies', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('device_id')->constrained()->cascadeOnDelete();
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('cooldown_unit', 16)->default('day');
             $table->foreignId('notification_profile_id')
                 ->nullable()
-                ->constrained('automation_notification_profiles')
+                ->constrained('notification_profiles')
                 ->nullOnDelete();
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->foreignId('managed_workflow_id')
@@ -37,13 +37,13 @@ return new class extends Migration
 
             $table->index(['organization_id', 'is_active']);
             $table->index(['organization_id', 'device_id']);
-            $table->index(['device_id', 'parameter_definition_id', 'is_active'], 'automation_threshold_policies_device_parameter_active_idx');
+            $table->index(['device_id', 'parameter_definition_id', 'is_active'], 'threshold_policies_device_parameter_active_idx');
             $table->unique(['organization_id', 'legacy_alert_rule_id']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('automation_threshold_policies');
+        Schema::dropIfExists('threshold_policies');
     }
 };

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Automation\Services;
 
+use App\Domain\Alerts\Models\NotificationProfile;
 use App\Domain\Automation\Contracts\AutomationAlertChannel;
-use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Notifications\Automation\AutomationWorkflowAlertNotification;
 use Illuminate\Support\Facades\Notification;
 use RuntimeException;
@@ -53,7 +53,7 @@ class WorkflowAlertDispatcher
      * @return array<string, mixed>
      */
     public function dispatchProfile(
-        AutomationNotificationProfile $profile,
+        NotificationProfile $profile,
         string $subject,
         string $body,
         array $context = [],

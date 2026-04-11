@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Factories\Domain\Automation\Models;
 
-use App\Domain\Automation\Models\AutomationNotificationProfile;
-use App\Domain\Automation\Models\AutomationThresholdPolicy;
+use App\Domain\Alerts\Models\NotificationProfile;
+use App\Domain\Alerts\Models\ThresholdPolicy;
 use App\Domain\Automation\Services\GuidedConditionService;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
@@ -13,11 +13,11 @@ use App\Domain\Shared\Models\Organization;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<AutomationThresholdPolicy>
+ * @extends Factory<ThresholdPolicy>
  */
 class AutomationThresholdPolicyFactory extends Factory
 {
-    protected $model = AutomationThresholdPolicy::class;
+    protected $model = ThresholdPolicy::class;
 
     /**
      * @return array<string, mixed>
@@ -46,7 +46,7 @@ class AutomationThresholdPolicyFactory extends Factory
             'is_active' => true,
             'cooldown_value' => 1,
             'cooldown_unit' => $this->faker->randomElement(['minute', 'hour', 'day']),
-            'notification_profile_id' => AutomationNotificationProfile::factory(),
+            'notification_profile_id' => NotificationProfile::factory(),
             'sort_order' => 0,
             'managed_workflow_id' => null,
             'legacy_alert_rule_id' => null,

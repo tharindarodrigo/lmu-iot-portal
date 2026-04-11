@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Automation\Services;
 
+use App\Domain\Alerts\Models\NotificationProfile;
+use App\Domain\Alerts\Models\ThresholdPolicy;
+use App\Domain\Alerts\Services\AlertIncidentManager;
 use App\Domain\Automation\Data\WorkflowGraph;
 use App\Domain\Automation\Enums\AutomationWorkflowStatus;
-use App\Domain\Automation\Models\AutomationNotificationProfile;
-use App\Domain\Automation\Models\AutomationThresholdPolicy;
 use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\Automation\Models\AutomationWorkflowVersion;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +22,10 @@ class ThresholdPolicyWorkflowProjector
         private readonly WorkflowGraphValidator $workflowGraphValidator,
         private readonly WorkflowNodeConfigValidator $workflowNodeConfigValidator,
         private readonly WorkflowTelemetryTriggerCompiler $workflowTelemetryTriggerCompiler,
+        private readonly AlertIncidentManager $alertIncidentManager,
     ) {}
 
-    public function sync(AutomationThresholdPolicy $policy): ?AutomationWorkflow
+    public function sync(ThresholdPolicy $policy): ?AutomationWorkflow
     {
         $policy->loadMissing([
             'device',
@@ -34,6 +36,10 @@ class ThresholdPolicyWorkflowProjector
 
         if ($policy->trashed()) {
             return $this->archiveManagedWorkflow($policy);
+        }
+
+        if ($this->shouldResolveOpenAlertOnSync($policy)) {
+            $this->alertIncidentManager->normalizeThresholdAlert($policy);
         }
 
         if (! $this->policyCanProject($policy)) {
@@ -48,7 +54,7 @@ class ThresholdPolicyWorkflowProjector
 
         $profile = $policy->notificationProfile;
 
-        if (! $profile instanceof AutomationNotificationProfile) {
+        if (! $profile instanceof NotificationProfile) {
             return $this->pauseManagedWorkflow($policy);
         }
 
@@ -94,16 +100,18 @@ class ThresholdPolicyWorkflowProjector
         });
     }
 
-    public function syncForNotificationProfile(AutomationNotificationProfile $profile): void
+    public function syncForNotificationProfile(NotificationProfile $profile): void
     {
         $profile->loadMissing('thresholdPolicies.parameterDefinition.topic', 'users');
 
         $profile->thresholdPolicies
-            ->each(fn (AutomationThresholdPolicy $policy): ?AutomationWorkflow => $this->sync($policy));
+            ->each(fn (ThresholdPolicy $policy): ?AutomationWorkflow => $this->sync($policy));
     }
 
-    public function archiveManagedWorkflow(AutomationThresholdPolicy $policy): ?AutomationWorkflow
+    public function archiveManagedWorkflow(ThresholdPolicy $policy): ?AutomationWorkflow
     {
+        $this->alertIncidentManager->normalizeThresholdAlert($policy);
+
         $workflow = $this->resolveExistingManagedWorkflow($policy);
 
         if (! $workflow instanceof AutomationWorkflow) {
@@ -124,8 +132,10 @@ class ThresholdPolicyWorkflowProjector
         return $workflow;
     }
 
-    private function pauseManagedWorkflow(AutomationThresholdPolicy $policy): ?AutomationWorkflow
+    private function pauseManagedWorkflow(ThresholdPolicy $policy): ?AutomationWorkflow
     {
+        $this->alertIncidentManager->normalizeThresholdAlert($policy);
+
         $workflow = $this->resolveExistingManagedWorkflow($policy);
 
         if (! $workflow instanceof AutomationWorkflow) {
@@ -146,7 +156,7 @@ class ThresholdPolicyWorkflowProjector
         return $workflow;
     }
 
-    private function policyCanProject(AutomationThresholdPolicy $policy): bool
+    private function policyCanProject(ThresholdPolicy $policy): bool
     {
         if ($policy->is_active !== true || ! $policy->hasCondition()) {
             return false;
@@ -154,24 +164,24 @@ class ThresholdPolicyWorkflowProjector
 
         $profile = $policy->notificationProfile;
 
-        if (! $profile instanceof AutomationNotificationProfile || $profile->enabled !== true) {
+        if (! $profile instanceof NotificationProfile || $profile->enabled !== true) {
             return false;
         }
 
         return $profile->notifiableUsers()->isNotEmpty();
     }
 
-    private function workflowName(AutomationThresholdPolicy $policy): string
+    private function workflowName(ThresholdPolicy $policy): string
     {
-        return 'Threshold Policy · '.$policy->name;
+        return 'Threshold Alert · '.$policy->name;
     }
 
-    private function workflowSlug(AutomationThresholdPolicy $policy): string
+    private function workflowSlug(ThresholdPolicy $policy): string
     {
         return 'threshold-policy-'.$policy->id;
     }
 
-    private function resolveManagedWorkflow(AutomationThresholdPolicy $policy): AutomationWorkflow
+    private function resolveManagedWorkflow(ThresholdPolicy $policy): AutomationWorkflow
     {
         $workflow = $this->resolveExistingManagedWorkflow($policy);
 
@@ -182,7 +192,7 @@ class ThresholdPolicyWorkflowProjector
         return new AutomationWorkflow;
     }
 
-    private function resolveExistingManagedWorkflow(AutomationThresholdPolicy $policy): ?AutomationWorkflow
+    private function resolveExistingManagedWorkflow(ThresholdPolicy $policy): ?AutomationWorkflow
     {
         if ($policy->managedWorkflow instanceof AutomationWorkflow) {
             return $policy->managedWorkflow;
@@ -199,8 +209,8 @@ class ThresholdPolicyWorkflowProjector
      * @return array<string, mixed>
      */
     private function buildGraphPayload(
-        AutomationThresholdPolicy $policy,
-        AutomationNotificationProfile $profile,
+        ThresholdPolicy $policy,
+        NotificationProfile $profile,
         int $topicId,
     ): array {
         $conditionLogic = $policy->resolvedConditionJsonLogic();
@@ -276,6 +286,21 @@ class ThresholdPolicyWorkflowProjector
                 'zoom' => 1,
             ],
         ];
+    }
+
+    private function shouldResolveOpenAlertOnSync(ThresholdPolicy $policy): bool
+    {
+        return $policy->wasChanged([
+            'device_id',
+            'parameter_definition_id',
+            'notification_profile_id',
+            'minimum_value',
+            'maximum_value',
+            'condition_mode',
+            'guided_condition',
+            'condition_json_logic',
+            'is_active',
+        ]);
     }
 
     /**

@@ -17,6 +17,8 @@ class AutomationNotificationProfileResource extends Resource
 {
     protected static ?string $model = AutomationNotificationProfile::class;
 
+    protected static ?string $slug = 'notification-profiles';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
     protected static ?int $navigationSort = 7;
@@ -25,7 +27,7 @@ class AutomationNotificationProfileResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return __('Automation');
+        return __('Alerts');
     }
 
     public static function getNavigationLabel(): string

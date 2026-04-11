@@ -129,7 +129,7 @@ return new class extends Migration
                 return [];
             }
 
-            $existingPolicyIds = DB::table('automation_threshold_policies')
+            $existingPolicyIds = DB::table('threshold_policies')
                 ->where('organization_id', $organizationId)
                 ->whereIn('id', $selectedPolicyIds)
                 ->whereNull('deleted_at')
@@ -157,7 +157,7 @@ return new class extends Migration
             return array_values(array_unique($policyIds));
         }
 
-        return DB::table('automation_threshold_policies')
+        return DB::table('threshold_policies')
             ->where('organization_id', $organizationId)
             ->where('is_active', true)
             ->whereNull('deleted_at')
@@ -237,7 +237,7 @@ return new class extends Migration
             return null;
         }
 
-        $existingPolicyId = DB::table('automation_threshold_policies')
+        $existingPolicyId = DB::table('threshold_policies')
             ->where('organization_id', $organizationId)
             ->where('device_id', $device->id)
             ->where('parameter_definition_id', $parameter->id)
@@ -259,11 +259,11 @@ return new class extends Migration
             return null;
         }
 
-        $sortOrder = (int) DB::table('automation_threshold_policies')
+        $sortOrder = (int) DB::table('threshold_policies')
             ->where('organization_id', $organizationId)
             ->max('sort_order') + 1;
 
-        return (int) DB::table('automation_threshold_policies')->insertGetId([
+        return (int) DB::table('threshold_policies')->insertGetId([
             'organization_id' => $organizationId,
             'device_id' => $device->id,
             'parameter_definition_id' => $parameter->id,
@@ -292,7 +292,7 @@ return new class extends Migration
 
     private function fetchPolicySnapshot(int $organizationId, int $policyId): ?stdClass
     {
-        $policy = DB::table('automation_threshold_policies as policies')
+        $policy = DB::table('threshold_policies as policies')
             ->join('devices', 'devices.id', '=', 'policies.device_id')
             ->join('parameter_definitions as parameters', 'parameters.id', '=', 'policies.parameter_definition_id')
             ->where('policies.organization_id', $organizationId)

@@ -4,26 +4,33 @@ declare(strict_types=1);
 
 namespace App\Domain\Automation\Services;
 
+use App\Domain\Alerts\Models\Alert;
+use App\Domain\Alerts\Models\NotificationProfile;
+use App\Domain\Alerts\Models\ThresholdPolicy;
+use App\Domain\Alerts\Services\AlertIncidentManager;
 use App\Domain\Automation\Data\WorkflowExecutionResult;
 use App\Domain\Automation\Data\WorkflowGraph;
 use App\Domain\Automation\Enums\AutomationRunStatus;
-use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationRun;
 use App\Domain\Automation\Models\AutomationRunStep;
+use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\Automation\Models\AutomationWorkflowVersion;
 use App\Domain\DeviceControl\Enums\CommandStatus;
 use App\Domain\DeviceControl\Services\DeviceCommandDispatcher;
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceSchema\Enums\MetricUnit;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\DeviceSchema\Services\JsonLogicEvaluator;
 use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Number;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
@@ -39,6 +46,7 @@ class WorkflowRunExecutor
         private readonly DeviceCommandDispatcher $deviceCommandDispatcher,
         private readonly WorkflowQueryExecutor $workflowQueryExecutor,
         private readonly WorkflowAlertDispatcher $workflowAlertDispatcher,
+        private readonly AlertIncidentManager $alertIncidentManager,
         private readonly CacheManager $cacheManager,
         private readonly LogManager $logManager,
     ) {}
@@ -315,6 +323,7 @@ class WorkflowRunExecutor
 
         if ($nodeType === 'condition') {
             $result = $this->runConditionNode(
+                run: $run,
                 node: $node,
                 executionContext: $executionContext,
                 runCorrelationId: $runCorrelationId,
@@ -549,6 +558,7 @@ class WorkflowRunExecutor
      * }
      */
     private function runConditionNode(
+        AutomationRun $run,
         array $node,
         array $executionContext,
         string $runCorrelationId,
@@ -570,28 +580,27 @@ class WorkflowRunExecutor
             ];
         }
 
-        $evaluationData = [
-            'trigger' => Arr::get($executionContext, 'trigger', []),
-            'query' => Arr::get($executionContext, 'query', []),
-            'queries' => Arr::get($executionContext, 'queries', []),
-            'payload' => Arr::get($executionContext, 'payload', []),
-        ];
-
-        $payload = Arr::get($executionContext, 'payload');
-        if (is_array($payload)) {
-            $evaluationData = array_merge($payload, $evaluationData);
-        }
-
+        $evaluationData = $this->buildConditionEvaluationData($executionContext);
         $rawEvaluationResult = $this->jsonLogicEvaluator->evaluate($jsonLogic, $evaluationData);
         $passed = $this->resolveBoolean($rawEvaluationResult);
+        $output = [
+            'passed' => $passed,
+            'evaluation_result' => $rawEvaluationResult,
+        ];
+
+        if ($passed !== true) {
+            $output['normalization'] = $this->handleManagedThresholdNormalization(
+                run: $run,
+                executionContext: $executionContext,
+                runCorrelationId: $runCorrelationId,
+                nodeId: $nodeId,
+            );
+        }
 
         return [
             'status' => 'completed',
             'continue' => $passed,
-            'output' => [
-                'passed' => $passed,
-                'evaluation_result' => $rawEvaluationResult,
-            ],
+            'output' => $output,
             'error' => null,
         ];
     }
@@ -871,17 +880,44 @@ class WorkflowRunExecutor
         string $nodeId,
         int $notificationProfileId,
     ): array {
-        $profile = AutomationNotificationProfile::query()
+        $managedThresholdPolicy = $this->resolveManagedThresholdPolicy($run);
+        $triggerTelemetryLog = $managedThresholdPolicy instanceof ThresholdPolicy
+            ? $this->resolveTriggerTelemetryLog($run)
+            : null;
+        $thresholdAlert = null;
+
+        if ($managedThresholdPolicy instanceof ThresholdPolicy && $triggerTelemetryLog instanceof DeviceTelemetryLog) {
+            $thresholdAlertResult = $this->alertIncidentManager->openThresholdAlert(
+                policy: $managedThresholdPolicy,
+                telemetryLog: $triggerTelemetryLog,
+            );
+            $thresholdAlert = $thresholdAlertResult['alert'];
+
+            if ($thresholdAlertResult['was_created'] !== true) {
+                return [
+                    'status' => 'skipped',
+                    'execution_context' => $executionContext,
+                    'output' => [
+                        'reason' => 'threshold_alert_open',
+                        'alert_id' => $thresholdAlert->id,
+                        'alerted_at' => $this->toIso8601String($thresholdAlert->alerted_at),
+                    ],
+                    'error' => null,
+                ];
+            }
+        }
+
+        $profile = NotificationProfile::query()
             ->with('users')
             ->whereKey($notificationProfileId)
             ->where('organization_id', (int) $run->organization_id)
             ->first();
 
-        if (! $profile instanceof AutomationNotificationProfile) {
+        if (! $profile instanceof NotificationProfile) {
             return [
                 'status' => 'failed',
                 'execution_context' => $executionContext,
-                'output' => [],
+                'output' => $this->thresholdAlertOutput($thresholdAlert),
                 'error' => ['reason' => 'alert_profile_invalid'],
             ];
         }
@@ -890,7 +926,7 @@ class WorkflowRunExecutor
             return [
                 'status' => 'failed',
                 'execution_context' => $executionContext,
-                'output' => [],
+                'output' => $this->thresholdAlertOutput($thresholdAlert),
                 'error' => ['reason' => 'alert_profile_disabled'],
             ];
         }
@@ -930,8 +966,56 @@ class WorkflowRunExecutor
             return [
                 'status' => 'failed',
                 'execution_context' => $executionContext,
-                'output' => [],
+                'output' => $this->thresholdAlertOutput($thresholdAlert),
                 'error' => ['reason' => 'alert_rendered_content_empty'],
+            ];
+        }
+
+        if ($managedThresholdPolicy instanceof ThresholdPolicy) {
+            try {
+                $dispatchResult = $this->workflowAlertDispatcher->dispatchProfile(
+                    profile: $profile,
+                    subject: $subject,
+                    body: $body,
+                    context: $dispatchContext,
+                );
+            } catch (\Throwable $exception) {
+                $this->log()->warning('Managed threshold alert failed to dispatch.', [
+                    'run_correlation_id' => $runCorrelationId,
+                    'node_id' => $nodeId,
+                    'threshold_policy_id' => $managedThresholdPolicy->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'execution_context' => $executionContext,
+                    'output' => $this->thresholdAlertOutput($thresholdAlert),
+                    'error' => [
+                        'reason' => 'alert_dispatch_failed',
+                        'message' => $exception->getMessage(),
+                    ],
+                ];
+            }
+
+            if ($thresholdAlert instanceof Alert) {
+                $thresholdAlert = $this->alertIncidentManager->markAlertNotificationSent($thresholdAlert);
+            }
+
+            return [
+                'status' => 'completed',
+                'execution_context' => $executionContext,
+                'output' => [
+                    'channel' => $profile->channel,
+                    'notification_profile_id' => $profile->id,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'recipients' => $profile->normalizedRecipients(),
+                    'cooldown' => $cooldown,
+                    'dispatch' => $dispatchResult,
+                    ...$this->thresholdAlertOutput($thresholdAlert),
+                ],
+                'error' => null,
             ];
         }
 
@@ -971,7 +1055,7 @@ class WorkflowRunExecutor
             return [
                 'status' => 'failed',
                 'execution_context' => $executionContext,
-                'output' => [],
+                'output' => $this->thresholdAlertOutput($thresholdAlert),
                 'error' => [
                     'reason' => 'alert_dispatch_failed',
                     'message' => $exception->getMessage(),
@@ -991,6 +1075,7 @@ class WorkflowRunExecutor
                 'cooldown' => $cooldown,
                 'cooldown_key' => $cooldownKey,
                 'dispatch' => $dispatchResult,
+                ...$this->thresholdAlertOutput($thresholdAlert),
             ],
             'error' => null,
         ];
@@ -1258,6 +1343,220 @@ class WorkflowRunExecutor
     }
 
     /**
+     * @param  array<string, mixed>  $executionContext
+     * @return array<string, mixed>
+     */
+    private function buildConditionEvaluationData(array $executionContext): array
+    {
+        $evaluationData = [
+            'trigger' => Arr::get($executionContext, 'trigger', []),
+            'query' => Arr::get($executionContext, 'query', []),
+            'queries' => Arr::get($executionContext, 'queries', []),
+            'payload' => Arr::get($executionContext, 'payload', []),
+        ];
+
+        $payload = Arr::get($executionContext, 'payload');
+
+        if (is_array($payload)) {
+            $evaluationData = array_merge($payload, $evaluationData);
+        }
+
+        return $evaluationData;
+    }
+
+    /**
+     * @param  array<string, mixed>  $executionContext
+     * @return array<string, mixed>
+     */
+    private function handleManagedThresholdNormalization(
+        AutomationRun $run,
+        array $executionContext,
+        string $runCorrelationId,
+        string $nodeId,
+    ): array {
+        $policy = $this->resolveManagedThresholdPolicy($run);
+
+        if (! $policy instanceof ThresholdPolicy) {
+            return ['status' => 'not_applicable'];
+        }
+
+        $telemetryLog = $this->resolveTriggerTelemetryLog($run);
+        $alert = $this->alertIncidentManager->normalizeThresholdAlert($policy, $telemetryLog);
+
+        if (! $alert instanceof Alert) {
+            return ['status' => 'no_open_alert'];
+        }
+
+        $profile = $policy->notificationProfile;
+
+        if (! $profile instanceof NotificationProfile || $profile->enabled !== true || $profile->notifiableUsers()->isEmpty()) {
+            return [
+                'status' => 'normalized',
+                'alert_id' => $alert->id,
+                'normalized_at' => $this->toIso8601String($alert->normalized_at),
+                'notification' => [
+                    'status' => 'skipped',
+                    'reason' => 'notification_profile_unavailable',
+                ],
+            ];
+        }
+
+        $notificationPayload = $this->buildThresholdNormalizedNotification(
+            run: $run,
+            policy: $policy,
+            alert: $alert,
+            executionContext: $executionContext,
+        );
+
+        try {
+            $dispatchResult = $this->workflowAlertDispatcher->dispatchProfile(
+                profile: $profile,
+                subject: $notificationPayload['subject'],
+                body: $notificationPayload['body'],
+                context: $notificationPayload['context'],
+            );
+            $alert = $this->alertIncidentManager->markNormalizedNotificationSent($alert);
+        } catch (\Throwable $exception) {
+            $this->log()->warning('Managed threshold normalization notification failed to dispatch.', [
+                'run_correlation_id' => $runCorrelationId,
+                'node_id' => $nodeId,
+                'threshold_policy_id' => $policy->id,
+                'alert_id' => $alert->id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return [
+                'status' => 'normalized',
+                'alert_id' => $alert->id,
+                'normalized_at' => $this->toIso8601String($alert->normalized_at),
+                'notification' => [
+                    'status' => 'failed',
+                    'reason' => 'alert_dispatch_failed',
+                    'message' => $exception->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'status' => 'normalized',
+            'alert_id' => $alert->id,
+            'normalized_at' => $this->toIso8601String($alert->normalized_at),
+            'notification' => [
+                'status' => 'sent',
+                'subject' => $notificationPayload['subject'],
+                'body' => $notificationPayload['body'],
+                'dispatch' => $dispatchResult,
+            ],
+        ];
+    }
+
+    private function resolveManagedThresholdPolicy(AutomationRun $run): ?ThresholdPolicy
+    {
+        $run->loadMissing('workflow');
+        $workflow = $run->workflow;
+
+        if (! $workflow instanceof AutomationWorkflow || ! $workflow->isManagedBy(ThresholdPolicyWorkflowProjector::MANAGED_TYPE)) {
+            return null;
+        }
+
+        $thresholdPolicyId = $this->resolvePositiveInt(data_get($workflow->managed_metadata, 'threshold_policy_id'));
+
+        if ($thresholdPolicyId === null) {
+            return null;
+        }
+
+        return ThresholdPolicy::query()
+            ->with(['device', 'parameterDefinition', 'notificationProfile.users'])
+            ->whereKey($thresholdPolicyId)
+            ->where('organization_id', (int) $run->organization_id)
+            ->first();
+    }
+
+    private function resolveTriggerTelemetryLog(AutomationRun $run): ?DeviceTelemetryLog
+    {
+        $triggerPayload = $this->resolveAssociativeArray($run->getAttribute('trigger_payload'));
+        $telemetryLogId = $this->resolveKeyAsString(Arr::get($triggerPayload, 'telemetry_log_id'));
+
+        if ($telemetryLogId === null) {
+            return null;
+        }
+
+        return DeviceTelemetryLog::query()
+            ->with('device')
+            ->find($telemetryLogId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $executionContext
+     * @return array{subject: string, body: string, context: array<string, mixed>}
+     */
+    private function buildThresholdNormalizedNotification(
+        AutomationRun $run,
+        ThresholdPolicy $policy,
+        Alert $alert,
+        array $executionContext,
+    ): array {
+        $parameter = $policy->parameterDefinition;
+        $device = $policy->device;
+        $deviceName = $device instanceof Device
+            ? $device->name
+            : (is_string(Arr::get($executionContext, 'trigger.device_name')) ? Arr::get($executionContext, 'trigger.device_name') : $policy->name);
+        $currentValue = Arr::get($executionContext, 'trigger.value');
+        $currentValueDisplay = $this->formatAlertValue($currentValue, $parameter?->unit);
+        $conditionLabel = $policy->conditionLabel($parameter?->unit);
+        $normalizedAt = $this->toIso8601String($alert->normalized_at)
+            ?? (is_string(Arr::get($executionContext, 'trigger.recorded_at')) ? Arr::get($executionContext, 'trigger.recorded_at') : now()->toIso8601String());
+        $subject = sprintf('Threshold normalized · %s', $deviceName);
+        $body = implode("\n", [
+            sprintf('%s returned to the normal range.', $deviceName),
+            'Rule: '.$conditionLabel,
+            'Current value: '.$currentValueDisplay,
+            'Normalized at: '.$normalizedAt,
+        ]);
+        $context = $this->buildAlertTemplateContext(
+            run: $run,
+            executionContext: $executionContext,
+            nodeId: 'condition-normalized',
+            cooldown: $policy->cooldown(),
+        );
+        $existingAlertContext = Arr::get($context, 'alert');
+        $context['alert'] = [
+            ...(is_array($existingAlertContext) ? $existingAlertContext : []),
+            'id' => $alert->id,
+            'status' => 'normalized',
+            'alerted_at' => $this->toIso8601String($alert->alerted_at),
+            'normalized_at' => $normalizedAt,
+            'metadata' => [
+                'threshold_policy_id' => $policy->id,
+                'notification_profile_id' => $policy->notification_profile_id,
+                'condition_label' => $conditionLabel,
+            ],
+        ];
+
+        return [
+            'subject' => $subject,
+            'body' => $body,
+            'context' => $context,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function thresholdAlertOutput(?Alert $alert): array
+    {
+        if (! $alert instanceof Alert) {
+            return [];
+        }
+
+        return [
+            'alert_id' => $alert->id,
+            'alerted_at' => $this->toIso8601String($alert->alerted_at),
+            'normalized_at' => $this->toIso8601String($alert->normalized_at),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $context
      */
     private function interpolateTemplate(string $template, array $context): string
@@ -1334,6 +1633,42 @@ class WorkflowRunExecutor
         }
 
         return Arr::get($payload, $parameter->key);
+    }
+
+    private function formatAlertValue(mixed $value, ?string $unit = null): string
+    {
+        if (! is_numeric($value)) {
+            return '—';
+        }
+
+        $formattedNumber = Number::format((float) $value, maxPrecision: 3);
+        $formattedValue = is_string($formattedNumber)
+            ? (str_contains($formattedNumber, '.')
+                ? rtrim(rtrim($formattedNumber, '0'), '.')
+                : $formattedNumber)
+            : (string) $value;
+
+        if (! is_string($unit) || trim($unit) === '') {
+            return $formattedValue;
+        }
+
+        $resolvedUnit = match ($unit) {
+            MetricUnit::Celsius->value => '°C',
+            MetricUnit::Percent->value => '%',
+            MetricUnit::Volts->value => 'V',
+            MetricUnit::Amperes->value => 'A',
+            MetricUnit::KilowattHours->value => 'kWh',
+            MetricUnit::Watts->value => 'W',
+            MetricUnit::Seconds->value => 's',
+            MetricUnit::DecibelMilliwatts->value => 'dBm',
+            MetricUnit::RevolutionsPerMinute->value => 'RPM',
+            MetricUnit::Litres->value => 'L',
+            MetricUnit::CubicMeters->value => 'm³',
+            MetricUnit::LitersPerMinute->value => 'L/min',
+            default => trim($unit),
+        };
+
+        return $formattedValue.$resolvedUnit;
     }
 
     private function resolveBoolean(mixed $value): bool
@@ -1637,5 +1972,22 @@ class WorkflowRunExecutor
         }
 
         return is_string($status) ? $status : CommandStatus::Failed->value;
+    }
+
+    private function toIso8601String(mixed $value): ?string
+    {
+        if ($value instanceof CarbonInterface) {
+            return $value->toIso8601String();
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format(\DateTimeInterface::ATOM);
+        }
+
+        if (is_string($value) && trim($value) !== '') {
+            return $value;
+        }
+
+        return null;
     }
 }

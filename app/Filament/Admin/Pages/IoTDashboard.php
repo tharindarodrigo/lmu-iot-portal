@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Pages;
 
 use App\Domain\Automation\Models\AutomationThresholdPolicy;
 use App\Domain\Automation\Services\ThresholdPolicyWorkflowProjector;
+use App\Domain\IoTDashboard\Enums\DashboardHistoryPreset;
 use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Models\IoTDashboard as IoTDashboardModel;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
@@ -84,6 +85,13 @@ class IoTDashboard extends Page
 
     public function getHeaderActions(): array
     {
+        $configuredHistoryPreset = data_get($this->selectedDashboard(), 'default_history_preset');
+        $defaultHistoryPreset = $configuredHistoryPreset instanceof DashboardHistoryPreset
+            ? $configuredHistoryPreset
+            : (is_string($configuredHistoryPreset)
+                ? DashboardHistoryPreset::tryFrom($configuredHistoryPreset)
+                : null);
+
         return [
             Action::make('dashboards')
                 ->label('Dashboards')
@@ -185,6 +193,14 @@ class IoTDashboard extends Page
                 ->label('Add Widget')
                 ->icon(Heroicon::OutlinedPlus)
                 ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel),
+
+            Action::make('historyRange')
+                ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                ->view('filament.admin.pages.io-t-dashboard.history-range-action', [
+                    'historyPresets' => DashboardHistoryPreset::cases(),
+                    'triggerLabel' => $defaultHistoryPreset?->getLabel()
+                        ?? DashboardHistoryPreset::Last6Hours->getLabel(),
+                ]),
         ];
     }
 
@@ -294,7 +310,7 @@ class IoTDashboard extends Page
                 $policy->fill($preparedData);
                 $policy->save();
 
-                app(ThresholdPolicyWorkflowProjector::class)->sync($policy->fresh() ?? $policy);
+                app(ThresholdPolicyWorkflowProjector::class)->sync($policy);
 
                 Notification::make()->title('Threshold policy updated')->success()->send();
 

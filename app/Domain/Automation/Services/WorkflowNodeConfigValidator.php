@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Automation\Services;
 
+use App\Domain\Alerts\Models\NotificationProfile;
 use App\Domain\Automation\Data\WorkflowGraph;
-use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\DeviceControl\Services\CommandPayloadResolver;
 use App\Domain\DeviceManagement\Models\Device;
@@ -256,7 +256,7 @@ class WorkflowNodeConfigValidator
         $notificationProfileId = $this->resolvePositiveInt($config['notification_profile_id'] ?? null);
 
         if ($notificationProfileId !== null) {
-            $profileExists = AutomationNotificationProfile::query()
+            $profileExists = NotificationProfile::query()
                 ->whereKey($notificationProfileId)
                 ->where('organization_id', $organizationId)
                 ->exists();

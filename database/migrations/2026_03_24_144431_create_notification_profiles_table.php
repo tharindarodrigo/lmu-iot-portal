@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('automation_notification_profiles', function (Blueprint $table): void {
+        Schema::create('notification_profiles', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->string('name');
@@ -33,6 +33,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('automation_notification_profiles');
+        Schema::dropIfExists('notification_profiles');
     }
 };

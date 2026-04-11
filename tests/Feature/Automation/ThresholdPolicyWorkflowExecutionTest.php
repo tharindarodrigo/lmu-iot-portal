@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Alerts\Models\Alert;
+use App\Domain\Alerts\Models\NotificationProfile;
+use App\Domain\Alerts\Models\ThresholdPolicy;
 use App\Domain\Automation\Jobs\StartAutomationRunFromTelemetry;
 use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationTelemetryTrigger;
 use App\Domain\Automation\Models\AutomationWorkflow;
 use App\Domain\Automation\Models\AutomationWorkflowVersion;
+use App\Domain\Automation\Services\ThresholdPolicyWorkflowProjector;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceSchema\Enums\MetricUnit;
@@ -91,6 +95,115 @@ it('dispatches one sms through a notification profile and skips repeats during t
         ->and(data_get($secondAlertStep?->output_snapshot, 'reason'))->toBe('alert_cooldown_active');
 
     Http::assertSentCount(1);
+});
+
+it('stores one open alert for a managed threshold breach and skips repeat breached telemetry', function (): void {
+    Http::fake([
+        'https://dialog.example.test/sms' => Http::response(['status' => 'accepted'], 200),
+    ]);
+
+    $fixture = createManagedThresholdPolicyExecutionFixture();
+    $workflow = $fixture['workflow']->fresh(['activeVersion']);
+    $firstTelemetryLog = createThresholdPolicyExecutionTelemetryLog($fixture, 9.5, Carbon::parse('2026-03-24 08:00:00'));
+
+    (new StartAutomationRunFromTelemetry(
+        workflowVersionId: $workflow->active_version_id,
+        telemetryLogId: $firstTelemetryLog->id,
+    ))->handle();
+
+    $firstAlert = Alert::query()
+        ->where('threshold_policy_id', $fixture['policy']->id)
+        ->whereNull('normalized_at')
+        ->first();
+    $firstRun = $workflow->fresh()->runs()->latest('id')->first();
+    $firstAlertStep = $firstRun?->steps()->where('node_id', 'alert-1')->latest('id')->first();
+
+    expect($firstAlert)->not->toBeNull()
+        ->and($firstAlert?->alerted_at?->toIso8601String())->toBe($firstTelemetryLog->recorded_at->toIso8601String())
+        ->and($firstAlert?->alerted_telemetry_log_id)->toBe($firstTelemetryLog->id)
+        ->and($firstAlert?->alert_notification_sent_at)->not->toBeNull()
+        ->and($firstRun?->status->value)->toBe('completed')
+        ->and($firstAlertStep?->status)->toBe('completed')
+        ->and(data_get($firstAlertStep?->output_snapshot, 'alert_id'))->toBe($firstAlert?->id);
+
+    $secondTelemetryLog = createThresholdPolicyExecutionTelemetryLog($fixture, 10.2, Carbon::parse('2026-03-24 08:05:00'));
+
+    (new StartAutomationRunFromTelemetry(
+        workflowVersionId: $workflow->active_version_id,
+        telemetryLogId: $secondTelemetryLog->id,
+    ))->handle();
+
+    $secondRun = $workflow->fresh()->runs()->latest('id')->first();
+    $secondAlertStep = $secondRun?->steps()->where('node_id', 'alert-1')->latest('id')->first();
+    $openAlerts = Alert::query()
+        ->where('threshold_policy_id', $fixture['policy']->id)
+        ->whereNull('normalized_at')
+        ->get();
+
+    expect($openAlerts)->toHaveCount(1)
+        ->and($openAlerts->first()?->alerted_at?->toIso8601String())->toBe($firstTelemetryLog->recorded_at->toIso8601String())
+        ->and($secondRun?->status->value)->toBe('completed')
+        ->and($secondAlertStep?->status)->toBe('skipped')
+        ->and(data_get($secondAlertStep?->output_snapshot, 'reason'))->toBe('threshold_alert_open');
+
+    Http::assertSentCount(1);
+});
+
+it('normalizes a managed threshold alert once and opens a fresh row on the next breach', function (): void {
+    Http::fake([
+        'https://dialog.example.test/sms' => Http::response(['status' => 'accepted'], 200),
+    ]);
+
+    $fixture = createManagedThresholdPolicyExecutionFixture();
+    $workflow = $fixture['workflow']->fresh(['activeVersion']);
+    $breachTelemetryLog = createThresholdPolicyExecutionTelemetryLog($fixture, 9.5, Carbon::parse('2026-03-24 08:00:00'));
+
+    (new StartAutomationRunFromTelemetry(
+        workflowVersionId: $workflow->active_version_id,
+        telemetryLogId: $breachTelemetryLog->id,
+    ))->handle();
+
+    $normalTelemetryLog = createThresholdPolicyExecutionTelemetryLog($fixture, 4.0, Carbon::parse('2026-03-24 08:10:00'));
+
+    (new StartAutomationRunFromTelemetry(
+        workflowVersionId: $workflow->active_version_id,
+        telemetryLogId: $normalTelemetryLog->id,
+    ))->handle();
+
+    $normalizedAlert = Alert::query()
+        ->where('threshold_policy_id', $fixture['policy']->id)
+        ->orderBy('id')
+        ->first();
+    $normalizedRun = $workflow->fresh()->runs()->latest('id')->first();
+    $normalizedConditionStep = $normalizedRun?->steps()->where('node_id', 'condition-1')->latest('id')->first();
+
+    expect($normalizedAlert)->not->toBeNull()
+        ->and($normalizedAlert?->normalized_at?->toIso8601String())->toBe($normalTelemetryLog->recorded_at->toIso8601String())
+        ->and($normalizedAlert?->normalized_telemetry_log_id)->toBe($normalTelemetryLog->id)
+        ->and($normalizedAlert?->normalized_notification_sent_at)->not->toBeNull()
+        ->and(data_get($normalizedConditionStep?->output_snapshot, 'normalization.status'))->toBe('normalized')
+        ->and(data_get($normalizedConditionStep?->output_snapshot, 'normalization.notification.status'))->toBe('sent');
+
+    $secondBreachTelemetryLog = createThresholdPolicyExecutionTelemetryLog($fixture, 9.1, Carbon::parse('2026-03-24 08:20:00'));
+
+    (new StartAutomationRunFromTelemetry(
+        workflowVersionId: $workflow->active_version_id,
+        telemetryLogId: $secondBreachTelemetryLog->id,
+    ))->handle();
+
+    $alerts = Alert::query()
+        ->where('threshold_policy_id', $fixture['policy']->id)
+        ->orderBy('id')
+        ->get();
+
+    expect($alerts)->toHaveCount(2)
+        ->and($alerts->last()?->alerted_at?->toIso8601String())->toBe($secondBreachTelemetryLog->recorded_at->toIso8601String())
+        ->and($alerts->last()?->normalized_at)->toBeNull();
+
+    Http::assertSentCount(3);
+    Http::assertSent(function (Request $request): bool {
+        return str_contains((string) data_get($request->data(), 'messages.0.text'), 'returned to the normal range');
+    });
 });
 
 /**
@@ -257,6 +370,95 @@ function createThresholdPolicyExecutionFixture(): array
         'parameter' => $parameter,
         'workflow' => $workflow,
         'profile' => $profile,
+    ];
+}
+
+/**
+ * @return array{
+ *     organization: Organization,
+ *     device: Device,
+ *     topic: SchemaVersionTopic,
+ *     parameter: ParameterDefinition,
+ *     workflow: AutomationWorkflow,
+ *     profile: NotificationProfile,
+ *     policy: ThresholdPolicy
+ * }
+ */
+function createManagedThresholdPolicyExecutionFixture(): array
+{
+    $organization = Organization::factory()->create();
+    $deviceType = DeviceType::factory()->forOrganization($organization->id)->mqtt()->create();
+    $schema = DeviceSchema::factory()->forDeviceType($deviceType)->create([
+        'name' => 'Cold Room Schema',
+    ]);
+    $schemaVersion = DeviceSchemaVersion::factory()->active()->create([
+        'device_schema_id' => $schema->id,
+    ]);
+    $topic = SchemaVersionTopic::factory()->publish()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'telemetry',
+        'label' => 'Telemetry',
+        'suffix' => 'telemetry',
+    ]);
+    $parameter = ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'temperature',
+        'label' => 'Temperature',
+        'json_path' => '$.temperature',
+        'type' => ParameterDataType::Decimal,
+        'unit' => MetricUnit::Celsius->value,
+        'required' => true,
+        'is_active' => true,
+    ]);
+    $device = Device::factory()->create([
+        'organization_id' => $organization->id,
+        'device_type_id' => $deviceType->id,
+        'device_schema_version_id' => $schemaVersion->id,
+        'name' => 'CLD 03 - 02',
+        'connection_state' => 'online',
+        'last_seen_at' => now(),
+    ]);
+    $user = User::factory()->create([
+        'phone_number' => '+94781234567',
+    ]);
+    $user->organizations()->syncWithoutDetaching([$organization->id]);
+
+    $profile = NotificationProfile::factory()->sms()->create([
+        'organization_id' => $organization->id,
+        'name' => 'Cold Room SMS',
+        'subject' => null,
+        'body' => '{{ trigger.device_name }} temperature {{ trigger.value }} condition {{ alert.metadata.condition_label }}',
+        'mask' => 'D IoT Alert',
+        'campaign_name' => 'alerts',
+        'recipients' => [],
+    ]);
+    $profile->users()->sync([$user->id]);
+
+    $policy = ThresholdPolicy::factory()->create([
+        'organization_id' => $organization->id,
+        'device_id' => $device->id,
+        'parameter_definition_id' => $parameter->id,
+        'notification_profile_id' => $profile->id,
+        'name' => 'Cold Room Threshold Policy',
+        'minimum_value' => 2,
+        'maximum_value' => 8,
+        'is_active' => true,
+        'cooldown_value' => 24,
+        'cooldown_unit' => 'hour',
+    ]);
+
+    $workflow = app(ThresholdPolicyWorkflowProjector::class)->sync($policy);
+
+    expect($workflow)->toBeInstanceOf(AutomationWorkflow::class);
+
+    return [
+        'organization' => $organization,
+        'device' => $device,
+        'topic' => $topic,
+        'parameter' => $parameter,
+        'workflow' => $workflow,
+        'profile' => $profile,
+        'policy' => $policy,
     ];
 }
 

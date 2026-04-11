@@ -116,8 +116,16 @@ function configureLegacyIotConnectionForSriLankanImportTests(): void
         throw new RuntimeException('Default database connection is not configured.');
     }
 
+    if (($defaultConnection['driver'] ?? null) === 'pgsql') {
+        $defaultConnection['search_path'] = 'legacy_iot';
+    }
+
     Config::set('database.connections.legacy_iot', $defaultConnection);
     DB::purge('legacy_iot');
+
+    if (($defaultConnection['driver'] ?? null) === 'pgsql') {
+        DB::connection('legacy_iot')->statement('create schema if not exists legacy_iot');
+    }
 }
 
 function attachSriLankanNotificationRecipientsToOrganization(): void

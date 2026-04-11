@@ -27,6 +27,8 @@ class AutomationThresholdPolicyResource extends Resource
 {
     protected static ?string $model = AutomationThresholdPolicy::class;
 
+    protected static ?string $slug = 'threshold-policies';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
     protected static ?int $navigationSort = 6;
@@ -35,7 +37,7 @@ class AutomationThresholdPolicyResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return __('Automation');
+        return __('Alerts');
     }
 
     public static function getNavigationLabel(): string

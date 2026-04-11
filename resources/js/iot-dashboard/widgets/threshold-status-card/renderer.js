@@ -1,4 +1,4 @@
-import { escapeHtml, formatCompactTimestamp, renderPresenceMetaMarkup } from '../shared/meta';
+import { escapeHtml, formatCompactTimestamp, resolvePresenceState } from '../shared/meta';
 
 function resolveStatusTone(status) {
     const normalizedStatus = typeof status === 'string'
@@ -39,19 +39,31 @@ export function renderThresholdStatusCardMarkup(widget) {
         ? card.rule_label.trim()
         : 'Custom rule';
     const policyId = Number(card?.policy_id ?? 0);
-    const statusLabel = resolveStatusLabel(card);
     const currentValueDisplay = typeof card.current_value_display === 'string' && card.current_value_display.trim() !== ''
         ? card.current_value_display.trim()
         : '—';
+    const meta = resolveMeta(card);
+    const presenceState = resolvePresenceState(card.connection_state);
+    const prominentStatusMarkup = renderProminentStatusMarkup(card);
+    const valueToneClass = resolveValueToneClass(card);
 
     return `
         <article class="iot-threshold-status-card ${resolveStatusTone(card.status)}">
             <header class="iot-threshold-status-card__header">
-                ${renderPresenceMetaMarkup(card.last_telemetry_at, card.connection_state)}
+                <div class="iot-threshold-status-card__meta-label">${escapeHtml(meta.label)}</div>
+                <div class="iot-threshold-status-card__meta-row">
+                    <div class="iot-threshold-status-card__meta-value">${escapeHtml(formatCompactTimestamp(meta.timestamp))}</div>
+                    <span
+                        class="iot-threshold-status-card__presence-dot"
+                        style="--presence-color: ${escapeHtml(presenceState.color)};"
+                        title="${escapeHtml(presenceState.label)}"
+                        aria-label="${escapeHtml(presenceState.label)}"
+                    ></span>
+                </div>
             </header>
             ${renderRuleMarkup(ruleLabel, policyId)}
-            <div class="iot-threshold-status-card__status ${resolveStatusTone(card.status)}">${escapeHtml(statusLabel)}</div>
-            <div class="iot-threshold-status-card__value">${escapeHtml(currentValueDisplay)}</div>
+            ${prominentStatusMarkup}
+            <div class="iot-threshold-status-card__value ${valueToneClass}">${escapeHtml(currentValueDisplay)}</div>
         </article>
     `;
 }
@@ -72,29 +84,71 @@ function renderRuleMarkup(ruleLabel, policyId) {
     `;
 }
 
-function resolveStatusLabel(card) {
+function renderProminentStatusMarkup(card) {
+    const thresholdState = typeof card?.threshold_state === 'string'
+        ? card.threshold_state.trim().toLowerCase()
+        : '';
+
+    if (thresholdState !== 'normal' && thresholdState !== 'alert') {
+        return '';
+    }
+
+    if (thresholdState === 'alert') {
+        const breachedAt = typeof card?.threshold_breached_at === 'string' && card.threshold_breached_at.trim() !== ''
+            ? card.threshold_breached_at.trim()
+            : null;
+        const label = breachedAt ? formatCompactTimestamp(breachedAt) : 'Alert';
+
+        return `<div class="iot-threshold-status-card__status is-alert">${escapeHtml(label)}</div>`;
+    }
+
+    return '<div class="iot-threshold-status-card__status is-normal">Normal</div>';
+}
+
+function resolveValueToneClass(card) {
+    const thresholdState = typeof card?.threshold_state === 'string'
+        ? card.threshold_state.trim().toLowerCase()
+        : '';
+
+    if (thresholdState === 'alert') {
+        return 'is-alert';
+    }
+
+    if (thresholdState === 'normal') {
+        return 'is-normal';
+    }
+
+    return 'is-neutral';
+}
+
+function resolveMeta(card) {
     const normalizedStatus = typeof card?.status === 'string'
         ? card.status.trim().toLowerCase()
         : '';
-    const alertTriggeredAt = typeof card?.alert_triggered_at === 'string' && card.alert_triggered_at.trim() !== ''
-        ? card.alert_triggered_at.trim()
-        : null;
-    const rawStatusLabel = typeof card?.status_label === 'string' && card.status_label.trim() !== ''
-        ? card.status_label.trim()
-        : 'NO DATA';
 
     if (normalizedStatus === 'alert') {
-        return alertTriggeredAt ? formatCompactTimestamp(alertTriggeredAt) : 'Alerted';
+        return {
+            label: 'Alerted',
+            timestamp: card?.alert_triggered_at ?? card?.display_timestamp ?? card?.last_telemetry_at ?? null,
+        };
+    }
+
+    if (normalizedStatus === 'offline') {
+        return {
+            label: 'Last online',
+            timestamp: card?.last_online_at ?? card?.display_timestamp ?? card?.last_telemetry_at ?? null,
+        };
     }
 
     if (normalizedStatus === 'normal') {
-        return 'Normal';
+        return {
+            label: 'Updated',
+            timestamp: card?.display_timestamp ?? card?.last_telemetry_at ?? null,
+        };
     }
 
-    return rawStatusLabel
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((segment) => segment !== '')
-        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-        .join(' ');
+    return {
+        label: 'Last update',
+        timestamp: card?.display_timestamp ?? card?.last_telemetry_at ?? null,
+    };
 }

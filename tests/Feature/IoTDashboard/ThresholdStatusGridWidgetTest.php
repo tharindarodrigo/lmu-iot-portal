@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Alerts\Models\Alert;
 use App\Domain\Automation\Models\AutomationNotificationProfile;
 use App\Domain\Automation\Models\AutomationThresholdPolicy;
 use App\Domain\Automation\Services\GuidedConditionService;
@@ -32,7 +33,8 @@ it('renders threshold status cards with normal, alert, offline, no-data, and ina
     $fixture = createThresholdStatusCardFixture();
     $normalRecordedAt = now()->subMinute();
     $alertRecordedAt = now()->subSeconds(30);
-    $offlineRecordedAt = now()->subMinute();
+    $alertTriggeredAt = now()->subMinutes(5);
+    $offlineRecordedAt = now()->subHours(5);
     $inactiveRecordedAt = now()->subMinute();
 
     createThresholdStatusCardTelemetryLog($fixture['devices']['normal'], $fixture['topic'], 4.2, $normalRecordedAt);
@@ -40,6 +42,13 @@ it('renders threshold status cards with normal, alert, offline, no-data, and ina
     createThresholdStatusCardTelemetryLog($fixture['devices']['offline'], $fixture['topic'], 4.5, $offlineRecordedAt);
     createThresholdStatusCardTelemetryLog($fixture['devices']['no_data'], $fixture['topic'], 4.0, now()->subHours(6));
     createThresholdStatusCardTelemetryLog($fixture['devices']['inactive'], $fixture['topic'], 4.4, $inactiveRecordedAt);
+    Alert::query()->create([
+        'organization_id' => $fixture['organization']->id,
+        'threshold_policy_id' => $fixture['policies']['alert']->id,
+        'device_id' => $fixture['devices']['alert']->id,
+        'parameter_definition_id' => $fixture['parameter']->id,
+        'alerted_at' => $alertTriggeredAt,
+    ]);
 
     $response = $this->getJson(route('admin.iot-dashboard.dashboards.snapshots', [
         'dashboard' => $fixture['dashboard'],
@@ -64,10 +73,19 @@ it('renders threshold status cards with normal, alert, offline, no-data, and ina
         ->and(data_get($cardsByTitle['CLD 03 - 02 Threshold Status'], 'card.current_value_display'))->toBe('4.2°C')
         ->and(data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.status'))->toBe('alert')
         ->and(data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.status_label'))->toBe('ALERT')
-        ->and(data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.alert_triggered_at'))->toBe($alertRecordedAt->toIso8601String())
-        ->and((string) data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.edit_url'))->toContain('/automation-threshold-policies/')
+        ->and(data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.threshold_state'))->toBe('alert')
+        ->and(data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.threshold_breached_at'))->toBe($alertTriggeredAt->toIso8601String())
+        ->and(data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.alert_triggered_at'))->toBe($alertTriggeredAt->toIso8601String())
+        ->and((string) data_get($cardsByTitle['CLD 04 - 02 Threshold Status'], 'card.edit_url'))->toContain('/threshold-policies/')
         ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.status'))->toBe('offline')
         ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.connection_state'))->toBe('OFFLINE')
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.threshold_state'))->toBe('normal')
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.threshold_breached_at'))->toBeNull()
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.last_online_at'))->toBe($fixture['devices']['offline']->lastSeenAt()?->toIso8601String())
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.current_value_display'))->toBe('4.5°C')
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.last_value_display'))->toBe('4.5°C')
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.last_value_recorded_at'))->toBe($offlineRecordedAt->toIso8601String())
+        ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.display_timestamp'))->toBe($fixture['devices']['offline']->lastSeenAt()?->toIso8601String())
         ->and(data_get($cardsByTitle['CLD 05 - 02 Threshold Status'], 'card.alert_triggered_at'))->toBeNull()
         ->and(data_get($cardsByTitle['CLD 06 - 02 Threshold Status'], 'card.status'))->toBe('no_data')
         ->and(data_get($cardsByTitle['CLD 06 - 02 Threshold Status'], 'card.current_value_display'))->toBe('—')

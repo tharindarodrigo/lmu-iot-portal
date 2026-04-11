@@ -116,6 +116,7 @@ function renderStandardCard(card) {
     const editUrl = typeof card?.edit_url === 'string' && card.edit_url.trim() !== ''
         ? card.edit_url.trim()
         : null;
+    const displayTimestamp = resolveCardTimestamp(card);
 
     return `
         <article class="iot-threshold-grid__card">
@@ -124,7 +125,7 @@ function renderStandardCard(card) {
                 ${editUrl ? `<a class="iot-threshold-grid__edit-link" href="${escapeHtml(editUrl)}">Edit</a>` : ''}
             </header>
             <div class="iot-threshold-grid__badge ${resolveConnectionTone(connectionState)}">${escapeHtml(connectionState)}</div>
-            <div class="iot-threshold-grid__timestamp">${escapeHtml(formatTimestamp(card?.last_telemetry_at ?? null, 'standard'))}</div>
+            <div class="iot-threshold-grid__timestamp">${escapeHtml(formatTimestamp(displayTimestamp, 'standard'))}</div>
             <div class="iot-threshold-grid__range">${escapeHtml(rangeLabel)}</div>
             <div class="iot-threshold-grid__badge ${resolveStatusTone(card?.status)}">${escapeHtml(statusLabel)}</div>
             <div class="iot-threshold-grid__value">${escapeHtml(currentValueDisplay)}</div>
@@ -148,17 +149,34 @@ function renderSriLankanCard(card) {
     const currentValueDisplay = typeof card?.current_value_display === 'string' && card.current_value_display.trim() !== ''
         ? card.current_value_display.trim()
         : '—';
+    const displayTimestamp = resolveCardTimestamp(card);
 
     return `
         <article class="iot-threshold-grid__card iot-threshold-grid__card--sri-lankan">
             <div class="iot-threshold-grid__device-name iot-threshold-grid__device-name--sri-lankan">${escapeHtml(deviceName)}</div>
             <div class="iot-threshold-grid__badge iot-threshold-grid__badge--sri-lankan ${resolveConnectionTone(connectionState)}">${escapeHtml(connectionState)}</div>
-            <div class="iot-threshold-grid__timestamp iot-threshold-grid__timestamp--sri-lankan">${escapeHtml(formatTimestamp(card?.last_telemetry_at ?? null, 'sri_lankan_temperature'))}</div>
+            <div class="iot-threshold-grid__timestamp iot-threshold-grid__timestamp--sri-lankan">${escapeHtml(formatTimestamp(displayTimestamp, 'sri_lankan_temperature'))}</div>
             <div class="iot-threshold-grid__range iot-threshold-grid__range--sri-lankan">${escapeHtml(rangeLabel)}</div>
             <div class="iot-threshold-grid__badge iot-threshold-grid__badge--sri-lankan ${resolveStatusTone(card?.status)}">${escapeHtml(statusLabel)}</div>
             <div class="iot-threshold-grid__value iot-threshold-grid__value--sri-lankan">${escapeHtml(currentValueDisplay)}</div>
         </article>
     `;
+}
+
+function resolveCardTimestamp(card) {
+    const normalizedStatus = typeof card?.status === 'string'
+        ? card.status.trim().toLowerCase()
+        : '';
+
+    if (normalizedStatus === 'alert') {
+        return card?.alert_triggered_at ?? card?.display_timestamp ?? card?.last_telemetry_at ?? null;
+    }
+
+    if (normalizedStatus === 'offline') {
+        return card?.last_online_at ?? card?.display_timestamp ?? card?.last_telemetry_at ?? null;
+    }
+
+    return card?.display_timestamp ?? card?.last_telemetry_at ?? null;
 }
 
 export function renderThresholdStatusGridMarkup(widget) {
