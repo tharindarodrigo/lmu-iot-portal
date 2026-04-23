@@ -1,0 +1,168 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Database\Seeders;
+
+use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceSchema\Enums\MetricUnit;
+use App\Domain\DeviceSchema\Enums\ParameterDataType;
+use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Domain\DeviceSchema\Models\ParameterDefinition;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+
+class TeejayTemperatureSeeder extends TeejayMigrationSeederSupport
+{
+    private const DEVICE_TYPE_KEY = 'temperature_sensor';
+
+    private const DEVICE_TYPE_NAME = 'Temperature Sensor';
+
+    private const BASE_TOPIC = 'temperature';
+
+    private const SCHEMA_NAME = 'Temperature Sensor Contract';
+
+    private const VERSION_OFFSET = 1;
+
+    public function run(): void
+    {
+        $organization = $this->ensureOrganization();
+        $hubs = $this->ensureHubs($organization);
+        $inventory = TeejayMigrationInventory::devicesForType('Temperature');
+        $schemaVersions = [];
+        $expectedExternalIds = [];
+
+        foreach (array_values($this->schemaMutationsBySignature($inventory)) as $index => $schemaConfig) {
+            $schemaVersions[$schemaConfig['signature']] = $this->upsertSchemaVersion(
+                deviceTypeKey: self::DEVICE_TYPE_KEY,
+                deviceTypeName: self::DEVICE_TYPE_NAME,
+                baseTopic: self::BASE_TOPIC,
+                schemaName: self::SCHEMA_NAME,
+                version: self::VERSION_OFFSET + $index,
+                status: 'draft',
+                notes: 'Recovered Teejay temperature calibration variant: '.$schemaConfig['variant'],
+                parameters: [
+                    [
+                        'key' => 'temperature',
+                        'label' => 'Temperature',
+                        'json_path' => '$.temperature',
+                        'type' => ParameterDataType::Decimal,
+                        'unit' => MetricUnit::Celsius->value,
+                        'required' => true,
+                        'is_critical' => true,
+                        'validation_rules' => ['min' => -100, 'max' => 500, 'category' => 'static'],
+                        'mutation_expression' => $schemaConfig['temperature_mutation'],
+                        'sequence' => 1,
+                    ],
+                ],
+            );
+        }
+
+        foreach ($inventory as $deviceConfig) {
+            $parentDevice = $hubs[$deviceConfig['hub_imei']] ?? null;
+            $signature = $this->schemaSignatureFor($deviceConfig);
+            $schemaVersion = $schemaVersions[$signature] ?? null;
+
+            if (! $parentDevice instanceof Device || ! $schemaVersion instanceof DeviceSchemaVersion || ! is_string($deviceConfig['peripheral_type_hex'])) {
+                continue;
+            }
+
+            $device = $this->upsertChildDevice(
+                organization: $organization,
+                parentDevice: $parentDevice,
+                schemaVersion: $schemaVersion,
+                externalId: $deviceConfig['external_id'],
+                name: $deviceConfig['name'],
+                metadata: [
+                    'migration_origin' => TeejayMigrationSeeder::ORGANIZATION_SLUG,
+                    'migration_role' => 'physical_device',
+                    'migration_device_type' => 'Temperature',
+                    'source_adapter' => 'imoni',
+                    'schema_variant' => $this->schemaMutationsBySignature([$deviceConfig])[$signature]['variant'] ?? 'temperature',
+                    'legacy_device_uid' => $deviceConfig['legacy_device_uid'],
+                    'legacy_virtual_device_id' => $deviceConfig['legacy_virtual_device_id'],
+                    'legacy_hub_imei' => $deviceConfig['hub_imei'],
+                    'legacy_peripheral_type_hex' => $deviceConfig['peripheral_type_hex'],
+                    'legacy_parameter_map' => $deviceConfig['parameter_map'],
+                    'legacy_calibrations' => $deviceConfig['calibrations'],
+                    'legacy_conditional_calibrations' => $deviceConfig['conditional_calibrations'],
+                    'legacy_metadata' => $deviceConfig['metadata'],
+                ],
+            );
+
+            $topic = $schemaVersion->topics()->where('key', 'telemetry')->first();
+
+            if (! $topic instanceof SchemaVersionTopic) {
+                continue;
+            }
+
+            /** @var ParameterDefinition|null $parameter */
+            $parameter = $topic->parameters()->where('key', 'temperature')->first();
+
+            if (! $parameter instanceof ParameterDefinition) {
+                continue;
+            }
+
+            $legacyPath = $deviceConfig['parameter_map']['temperature'] ?? null;
+            $sourceJsonPath = is_string($legacyPath) ? $this->normalizedSourcePath($legacyPath) : null;
+
+            if (! is_string($sourceJsonPath)) {
+                continue;
+            }
+
+            $this->syncBindings(
+                device: $device,
+                hubImei: $deviceConfig['hub_imei'],
+                peripheralTypeHex: $deviceConfig['peripheral_type_hex'],
+                parametersByKey: ['temperature' => $parameter],
+                bindingDefinitions: [
+                    'temperature' => [
+                        'source_json_path' => $sourceJsonPath,
+                        'legacy_source_path' => $legacyPath,
+                        'sequence' => 0,
+                    ],
+                ],
+                deviceMetadata: ['legacy_device_uid' => $deviceConfig['legacy_device_uid']],
+            );
+
+            $expectedExternalIds[] = $deviceConfig['external_id'];
+        }
+
+        $this->cleanupDevices($organization, 'Temperature', $expectedExternalIds);
+        $this->cleanupUnusedDraftSchemaVersions(self::DEVICE_TYPE_KEY, self::SCHEMA_NAME, $this->schemaVersionNumbers($schemaVersions));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $inventory
+     * @return array<string, array{signature: string, variant: string, temperature_mutation: array<string, mixed>|null}>
+     */
+    private function schemaMutationsBySignature(array $inventory): array
+    {
+        $schemas = [];
+
+        foreach ($inventory as $deviceConfig) {
+            $signature = $this->schemaSignatureFor($deviceConfig);
+
+            if (array_key_exists($signature, $schemas)) {
+                continue;
+            }
+
+            $temperatureMutation = $this->mutationExpressionForParameter($deviceConfig, 'temperature');
+
+            $schemas[$signature] = [
+                'signature' => $signature,
+                'variant' => $this->schemaVariantKey('temperature', $temperatureMutation),
+                'temperature_mutation' => $temperatureMutation,
+            ];
+        }
+
+        return $schemas;
+    }
+
+    /**
+     * @param  array<string, mixed>  $deviceConfig
+     */
+    private function schemaSignatureFor(array $deviceConfig): string
+    {
+        return md5(json_encode($this->mutationExpressionForParameter($deviceConfig, 'temperature'), JSON_THROW_ON_ERROR));
+    }
+}

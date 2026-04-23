@@ -24,6 +24,10 @@ use App\Domain\DeviceManagement\Publishing\Nats\BasisNatsDeviceStateStore;
 use App\Domain\DeviceManagement\Publishing\Nats\BasisNatsPublisherFactory;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsDeviceStateStore;
 use App\Domain\DeviceManagement\Publishing\Nats\NatsPublisherFactory;
+use App\Domain\DeviceSchema\Models\DerivedParameterDefinition;
+use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Domain\DeviceSchema\Models\ParameterDefinition;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\Reporting\Models\ReportRun;
@@ -139,6 +143,19 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(TelemetryReceived::class, QueueTelemetryThresholdAlertRecords::class);
         Event::listen(TelemetryReceived::class, QueueTelemetryHotStateWrites::class);
         Event::listen(TelemetryReceived::class, QueueTelemetryAnalyticsPublishes::class);
+
+        $invalidateTelemetrySchemaMetadata = static function (): void {
+            TelemetrySchemaMetadataCache::invalidateSharedVersion();
+        };
+
+        ParameterDefinition::saved($invalidateTelemetrySchemaMetadata);
+        ParameterDefinition::deleted($invalidateTelemetrySchemaMetadata);
+        DerivedParameterDefinition::saved($invalidateTelemetrySchemaMetadata);
+        DerivedParameterDefinition::deleted($invalidateTelemetrySchemaMetadata);
+        SchemaVersionTopic::saved($invalidateTelemetrySchemaMetadata);
+        SchemaVersionTopic::deleted($invalidateTelemetrySchemaMetadata);
+        DeviceSchemaVersion::saved($invalidateTelemetrySchemaMetadata);
+        DeviceSchemaVersion::deleted($invalidateTelemetrySchemaMetadata);
 
         if ($this->shouldApplyHorizonRuntimeConfiguration()) {
             $this->app->make(HorizonRuntimeConfigurator::class)->apply();
