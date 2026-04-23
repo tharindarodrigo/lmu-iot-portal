@@ -40,6 +40,9 @@ class DatabaseSeeder extends Seeder
             TextripDashboardSeeder::class,
             SriLankanMigrationSeeder::class,
             SriLankanDashboardSeeder::class,
+            TeejayMigrationSeeder::class,
+            ImportLegacyEntitiesSeeder::class,
+
         ]);
     }
 }

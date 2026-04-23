@@ -72,3 +72,38 @@ it('skips unresolved derived definitions when dependencies are unavailable', fun
             'temp_c' => 25.0,
         ]);
 });
+
+it('derives compressor status from phase a current threshold', function (float $phaseACurrent, int $expectedStatus): void {
+    $service = new TelemetryDerivationService;
+
+    $definitions = new Collection([
+        new DerivedParameterDefinition([
+            'key' => 'status',
+            'data_type' => ParameterDataType::Integer,
+            'expression' => [
+                'if' => [
+                    ['>' => [['var' => 'PhaseACurrent'], 10]],
+                    1,
+                    0,
+                ],
+            ],
+            'dependencies' => ['PhaseACurrent'],
+        ]),
+    ]);
+
+    $result = $service->derive(
+        mutatedValues: ['PhaseACurrent' => $phaseACurrent],
+        derivedParameters: $definitions,
+    );
+
+    expect($result['derived_values'])->toMatchArray([
+        'status' => $expectedStatus,
+    ])->and($result['final_values'])->toMatchArray([
+        'PhaseACurrent' => $phaseACurrent,
+        'status' => $expectedStatus,
+    ]);
+})->with([
+    'below threshold' => [9.99, 0],
+    'at threshold' => [10.0, 0],
+    'above threshold' => [10.01, 1],
+]);

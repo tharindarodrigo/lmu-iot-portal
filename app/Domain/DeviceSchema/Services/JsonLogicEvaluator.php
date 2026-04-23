@@ -40,8 +40,41 @@ class JsonLogicEvaluator
             '==', '===', '!=', '!==', '>', '>=', '<', '<=' => $this->applyComparisonOperator($operator, $values, $data),
             'and', 'or', '!' => $this->applyLogicalOperator($operator, $values, $data),
             'if' => $this->applyIf($values, $data),
+            'reinterpret_big_endian_float', 'decode_big_endian_float' => $this->applyReinterpretBigEndianFloat($values, $data),
             default => $values,
         };
+    }
+
+    /**
+     * Reinterprets an unsigned integer bit pattern as a big-endian IEEE-754 float.
+     *
+     * This is useful when upstream systems emit the numeric bit-pattern instead of
+     * the decoded engineering value, while schema mutations still need to normalize
+     * the device-type-specific payload.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function applyReinterpretBigEndianFloat(mixed $values, array $data): mixed
+    {
+        $items = is_array($values) ? array_values($values) : [$values];
+        $rawValue = $this->evaluate($items[0] ?? null, $data);
+        $mode = $this->evaluate($items[1] ?? 'auto', $data);
+
+        $integerValue = $this->normalizeUnsignedInteger($rawValue);
+
+        if ($integerValue === null) {
+            return $rawValue;
+        }
+
+        $decodedValue = match ($mode) {
+            4, '4', 'float32', '32' => $this->reinterpretBigEndianFloatFromInteger($integerValue, 4),
+            8, '8', 'float64', '64' => $this->reinterpretBigEndianFloatFromInteger($integerValue, 8),
+            default => $integerValue <= 0xFFFFFFFF
+                ? $this->reinterpretBigEndianFloatFromInteger($integerValue, 4)
+                : $this->reinterpretBigEndianFloatFromInteger($integerValue, 8),
+        };
+
+        return $decodedValue ?? $rawValue;
     }
 
     /**
@@ -194,6 +227,84 @@ class JsonLogicEvaluator
         }
 
         return 0.0;
+    }
+
+    private function normalizeUnsignedInteger(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value >= 0 ? $value : null;
+        }
+
+        if (is_float($value)) {
+            if (! is_finite($value) || $value < 0 || floor($value) !== $value || $value > PHP_INT_MAX) {
+                return null;
+            }
+
+            return (int) $value;
+        }
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $normalized = trim($value);
+
+        if ($normalized === '' || ! ctype_digit($normalized)) {
+            return null;
+        }
+
+        $maxInteger = (string) PHP_INT_MAX;
+
+        if (strlen($normalized) > strlen($maxInteger)) {
+            return null;
+        }
+
+        if (strlen($normalized) === strlen($maxInteger) && strcmp($normalized, $maxInteger) > 0) {
+            return null;
+        }
+
+        return (int) $normalized;
+    }
+
+    private function reinterpretBigEndianFloatFromInteger(int $value, int $byteLength): ?float
+    {
+        if ($value < 0) {
+            return null;
+        }
+
+        if ($byteLength === 4 && $value > 0xFFFFFFFF) {
+            return null;
+        }
+
+        $hex = str_pad(dechex($value), $byteLength * 2, '0', STR_PAD_LEFT);
+
+        return $this->decodeBigEndianFloat($hex, $byteLength);
+    }
+
+    private function decodeBigEndianFloat(string $hex, int $expectedByteLength): ?float
+    {
+        if (strlen($hex) !== $expectedByteLength * 2) {
+            return null;
+        }
+
+        $binary = @hex2bin($hex);
+
+        if (! is_string($binary) || strlen($binary) !== $expectedByteLength) {
+            return null;
+        }
+
+        $format = $expectedByteLength === 8 ? 'E' : 'G';
+        $decoded = unpack($format, $binary);
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $value = $decoded[1] ?? null;
+
+        return is_float($value) || is_int($value)
+            ? (float) $value
+            : null;
     }
 
     private function compareValues(mixed $left, mixed $right): int

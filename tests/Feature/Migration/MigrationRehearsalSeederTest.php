@@ -10,7 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('seeds the witco, miracle dome, textrip, and srilankan pilots plus the shared migration catalog by default', function (): void {
+it('seeds the witco, miracle dome, textrip, teejay, and srilankan pilots plus the shared migration catalog by default', function (): void {
     $this->seed(DatabaseSeeder::class);
     $this->seed(DatabaseSeeder::class);
 
@@ -33,15 +33,22 @@ it('seeds the witco, miracle dome, textrip, and srilankan pilots plus the shared
         'main-organization',
         'miracle-dome',
         'srilankan-airlines',
+        'teejay',
         'textrip',
         'witco',
     ])->and($deviceTypeKeys)->toBe([
         'energy_meter',
+        'fabric_length_counter',
         'imoni_status',
         'legacy_climate_sensor',
         'legacy_egravity_sensor',
         'legacy_hub',
+        'pressure_sensor',
+        'steam_meter',
+        'stenter_line',
         'tank_level_sensor',
+        'temperature_sensor',
+        'water_flow_meter',
     ])->and(Organization::query()->where('slug', 'migration-rehearsal')->exists())->toBeFalse()
         ->and($allDeviceExternalIds)->not->toContain('869244049087921-00')
         ->and($allDeviceExternalIds)->not->toContain('869244049087921-11')

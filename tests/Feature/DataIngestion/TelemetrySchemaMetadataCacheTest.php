@@ -13,9 +13,13 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-it('reuses cached active parameter metadata for a topic within the ttl window', function (): void {
+beforeEach(function (): void {
     config()->set('ingestion.metadata_ttl_seconds', 300);
 
+    TelemetrySchemaMetadataCache::invalidateSharedVersion();
+});
+
+it('reuses cached active parameter metadata for a topic within the ttl window', function (): void {
     $schemaVersion = DeviceSchemaVersion::factory()->create();
     $topic = SchemaVersionTopic::factory()->publish()->create([
         'device_schema_version_id' => $schemaVersion->id,
@@ -53,8 +57,6 @@ it('reuses cached active parameter metadata for a topic within the ttl window', 
 });
 
 it('reuses cached derived parameter metadata for a schema version within the ttl window', function (): void {
-    config()->set('ingestion.metadata_ttl_seconds', 300);
-
     $schemaVersion = DeviceSchemaVersion::factory()->create();
 
     DerivedParameterDefinition::factory()->create([
@@ -75,4 +77,67 @@ it('reuses cached derived parameter metadata for a schema version within the ttl
         ->and($first->pluck('key')->all())->toBe(['temp_f'])
         ->and($second->pluck('key')->all())->toBe(['temp_f'])
         ->and(count(DB::getQueryLog()))->toBe(0);
+});
+
+it('refreshes cached active parameter metadata immediately after parameter changes', function (): void {
+    $schemaVersion = DeviceSchemaVersion::factory()->create();
+    $topic = SchemaVersionTopic::factory()->publish()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'temp_c',
+        'type' => ParameterDataType::Decimal,
+        'is_active' => true,
+        'sequence' => 1,
+    ]);
+
+    $cache = app(TelemetrySchemaMetadataCache::class);
+
+    $first = $cache->activeParametersFor($topic);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'humidity',
+        'type' => ParameterDataType::Decimal,
+        'is_active' => true,
+        'sequence' => 2,
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $second = $cache->activeParametersFor($topic);
+
+    expect($first->pluck('key')->all())->toBe(['temp_c'])
+        ->and($second->pluck('key')->all())->toBe(['temp_c', 'humidity'])
+        ->and(count(DB::getQueryLog()))->toBeGreaterThan(0);
+});
+
+it('refreshes cached derived parameter metadata immediately after schema changes', function (): void {
+    $schemaVersion = DeviceSchemaVersion::factory()->create();
+
+    DerivedParameterDefinition::factory()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'temp_f',
+    ]);
+
+    $cache = app(TelemetrySchemaMetadataCache::class);
+
+    $first = $cache->derivedParametersFor($schemaVersion);
+
+    DerivedParameterDefinition::factory()->create([
+        'device_schema_version_id' => $schemaVersion->id,
+        'key' => 'temp_k',
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $second = $cache->derivedParametersFor($schemaVersion);
+
+    expect($first->pluck('key')->all())->toBe(['temp_f'])
+        ->and($second->pluck('key')->all())->toBe(['temp_f', 'temp_k'])
+        ->and(count(DB::getQueryLog()))->toBeGreaterThan(0);
 });
