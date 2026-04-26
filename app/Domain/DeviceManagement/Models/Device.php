@@ -73,6 +73,7 @@ class Device extends Model
     protected function casts(): array
     {
         return [
+            'is_virtual' => 'bool',
             'is_active' => 'bool',
             'last_seen_at' => 'datetime',
             'offline_deadline_at' => 'datetime',
@@ -120,6 +121,26 @@ class Device extends Model
     public function childDevices(): HasMany
     {
         return $this->hasMany(self::class, 'parent_device_id');
+    }
+
+    /**
+     * @return HasMany<VirtualDeviceLink, $this>
+     */
+    public function virtualDeviceLinks(): HasMany
+    {
+        return $this->hasMany(VirtualDeviceLink::class, 'virtual_device_id')
+            ->orderBy('purpose')
+            ->orderBy('sequence');
+    }
+
+    /**
+     * @return HasMany<VirtualDeviceLink, $this>
+     */
+    public function sourceDeviceLinks(): HasMany
+    {
+        return $this->hasMany(VirtualDeviceLink::class, 'source_device_id')
+            ->orderBy('purpose')
+            ->orderBy('sequence');
     }
 
     /**
@@ -198,9 +219,32 @@ class Device extends Model
         return $this->childDevices()->exists();
     }
 
+    public function isVirtual(): bool
+    {
+        return (bool) $this->getAttribute('is_virtual');
+    }
+
     public function isChildDevice(): bool
     {
         return $this->parent_device_id !== null;
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeVirtual(Builder $query): Builder
+    {
+        return $query->where('is_virtual', true);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopePhysical(Builder $query): Builder
+    {
+        return $query->where('is_virtual', false);
     }
 
     public function canBeControlled(): bool

@@ -36,6 +36,12 @@ class DeviceInfolist
                             ->label('External ID')
                             ->placeholder('None'),
 
+                        TextEntry::make('is_virtual')
+                            ->label('Kind')
+                            ->badge()
+                            ->formatStateUsing(fn (bool $state): string => $state ? 'Virtual' : 'Physical')
+                            ->color(fn (bool $state): string => $state ? 'warning' : 'gray'),
+
                         TextEntry::make('parentDevice.name')
                             ->label('Parent Hub')
                             ->placeholder('None'),
@@ -98,8 +104,35 @@ class DeviceInfolist
                         TextEntry::make('child_devices_count')
                             ->label('Child Devices')
                             ->state(fn (Device $record): int => $record->childDevices()->count()),
+
+                        TextEntry::make('virtual_source_count')
+                            ->label('Virtual Sources')
+                            ->state(fn (Device $record): int => $record->virtualDeviceLinks()->count())
+                            ->visible(fn (Device $record): bool => $record->isVirtual()),
                     ])
                     ->columns(2),
+
+                Section::make('Virtual Composition')
+                    ->visible(fn (Device $record): bool => $record->isVirtual())
+                    ->schema([
+                        TextEntry::make('virtual_source_summary')
+                            ->label('Source Devices')
+                            ->state(function (Device $record): string {
+                                $record->loadMissing('virtualDeviceLinks.sourceDevice');
+
+                                return $record->virtualDeviceLinks
+                                    ->map(function ($link): string {
+                                        $sourceDevice = $link->sourceDevice;
+                                        $sourceName = $sourceDevice instanceof Device ? $sourceDevice->name : 'Unknown Device';
+
+                                        return Str::headline((string) $link->purpose).' → '.$sourceName;
+                                    })
+                                    ->implode(PHP_EOL);
+                            })
+                            ->placeholder('No virtual source devices attached.')
+                            ->extraAttributes(['class' => 'whitespace-pre-wrap'])
+                            ->columnSpanFull(),
+                    ]),
 
                 Section::make('X.509 Security')
                     ->schema([

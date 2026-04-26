@@ -7,8 +7,10 @@ namespace App\Filament\Admin\Resources\DeviceManagement\Devices\Schemas;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -74,6 +76,8 @@ class DeviceForm
                             ->afterStateUpdated(function (Set $set): void {
                                 $set('device_type_id', null);
                                 $set('device_schema_version_id', null);
+                                $set('parent_device_id', null);
+                                $set('virtual_device_links', []);
                             }),
 
                         Select::make('device_type_id')
@@ -102,13 +106,26 @@ class DeviceForm
                             ->disabled(fn (Get $get) => ! $get('device_type_id'))
                             ->helperText('Only active schema versions for the selected device type are shown'),
 
+                        Toggle::make('is_virtual')
+                            ->label('Virtual Device')
+                            ->default(false)
+                            ->live()
+                            ->helperText('Use virtual devices for standards that combine multiple physical devices by purpose.')
+                            ->afterStateUpdated(function (Set $set, mixed $state): void {
+                                if ($state) {
+                                    $set('parent_device_id', null);
+                                }
+                            }),
+
                         Select::make('parent_device_id')
                             ->label('Parent Hub')
                             ->options(fn (Get $get, ?Device $record): array => self::parentDeviceOptions($get, $record))
                             ->searchable()
                             ->preload()
                             ->placeholder('No parent hub')
-                            ->helperText('Assign this device to a hub for grouped visibility and health tracking.'),
+                            ->helperText('Assign this physical device to a hub for grouped visibility and health tracking.')
+                            ->visible(fn (Get $get): bool => ! (bool) $get('is_virtual'))
+                            ->dehydrated(fn (Get $get): bool => ! (bool) $get('is_virtual')),
 
                         Placeholder::make('onboarding_hint')
                             ->label('Onboarding Hint')
@@ -130,6 +147,40 @@ class DeviceForm
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
+
+                Section::make('Virtual Composition')
+                    ->description('Attach the physical source devices that power this virtual device using semantic purposes like status, energy, or length.')
+                    ->visible(fn (Get $get): bool => (bool) $get('is_virtual'))
+                    ->schema([
+                        Repeater::make('virtual_device_links')
+                            ->label('Source Devices')
+                            ->default([])
+                            ->reorderable()
+                            ->addActionLabel('Add Source Device')
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->itemLabel(function (array $state): ?string {
+                                $purpose = trim((string) ($state['purpose'] ?? ''));
+
+                                return $purpose !== '' ? Str::headline($purpose) : null;
+                            })
+                            ->schema([
+                                Hidden::make('id'),
+                                TextInput::make('purpose')
+                                    ->required()
+                                    ->maxLength(100)
+                                    ->placeholder('status')
+                                    ->helperText('Use lowercase semantic purposes such as status, energy, or length.')
+                                    ->regex('/^[a-z0-9_-]+$/'),
+                                Select::make('source_device_id')
+                                    ->label('Source Device')
+                                    ->options(fn (Get $get): array => self::sourceDeviceOptions($get))
+                                    ->searchable()
+                                    ->preload()
+                                    ->required()
+                                    ->helperText('Only physical devices from the selected organization can be attached.'),
+                            ]),
+                    ]),
 
                 Section::make('Status')
                     ->schema([
@@ -283,6 +334,7 @@ class DeviceForm
 
         $query = Device::query()
             ->where('organization_id', $resolvedOrganizationId)
+            ->physical()
             ->whereNull('parent_device_id')
             ->orderBy('name');
 
@@ -302,5 +354,65 @@ class DeviceForm
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function sourceDeviceOptions(Get $get): array
+    {
+        $organizationId = self::resolvedOrganizationId($get);
+
+        if ($organizationId === null) {
+            return [];
+        }
+
+        $query = Device::query()
+            ->where('organization_id', $organizationId)
+            ->physical()
+            ->orderBy('name');
+
+        $currentRecordId = self::currentRecordId();
+
+        if ($currentRecordId !== null) {
+            $query->whereKeyNot($currentRecordId);
+        }
+
+        return $query
+            ->get(['id', 'name', 'external_id'])
+            ->mapWithKeys(function (Device $device): array {
+                $externalId = is_string($device->external_id) && trim($device->external_id) !== ''
+                    ? " · {$device->external_id}"
+                    : '';
+
+                return [
+                    (int) $device->id => "{$device->name}{$externalId}",
+                ];
+            })
+            ->all();
+    }
+
+    private static function resolvedOrganizationId(Get $get): ?int
+    {
+        foreach (['organization_id', '../../organization_id'] as $path) {
+            $organizationId = $get($path);
+
+            if (is_numeric($organizationId)) {
+                return (int) $organizationId;
+            }
+        }
+
+        return null;
+    }
+
+    private static function currentRecordId(): ?int
+    {
+        $record = request()->route('record');
+
+        if ($record instanceof Device && is_numeric($record->getKey())) {
+            return (int) $record->getKey();
+        }
+
+        return is_numeric($record) ? (int) $record : null;
     }
 }
