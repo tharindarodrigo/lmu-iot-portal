@@ -61,6 +61,26 @@ class WidgetFormOptionsService
     /**
      * @return array<int|string, string>
      */
+    public function compressorDeviceOptions(IoTDashboard $dashboard): array
+    {
+        return Device::query()
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_virtual', false)
+            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'energy_meter'))
+            ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'status'))
+            ->orderBy('name')
+            ->get(['id', 'name', 'external_id'])
+            ->mapWithKeys(fn (Device $device): array => [
+                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
+                    ? "{$device->name} ({$device->external_id})"
+                    : $device->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
     public function topicOptions(IoTDashboard $dashboard, mixed $deviceId): array
     {
         if (! is_numeric($deviceId)) {
@@ -418,6 +438,10 @@ class WidgetFormOptionsService
             return $this->resolveStenterUtilizationInput($dashboard, $data);
         }
 
+        if (($data['widget_type'] ?? null) === WidgetType::CompressorUtilization->value) {
+            return $this->resolveCompressorUtilizationInput($dashboard, $data);
+        }
+
         $deviceId = is_numeric($data['device_id'] ?? null)
             ? (int) $data['device_id']
             : null;
@@ -602,6 +626,69 @@ class WidgetFormOptionsService
             'series' => [],
             'parameter_metadata' => [],
             'stenter_sources' => $sources,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     device: Device,
+     *     topic: SchemaVersionTopic,
+     *     series: array<int, array{key: string, label: string, color: string, unit?: string|null}>,
+     *     parameter_metadata: array<string, array{
+     *         label: string,
+     *         compact_label: string,
+     *         option_label: string,
+     *         unit: string|null,
+     *         default_color: string,
+     *         is_counter: bool
+     *     }>,
+     *     compressor_sources: array{status: array{device_id: int, schema_version_topic_id: int, parameter_key: string}|null}
+     * }|null
+     */
+    private function resolveCompressorUtilizationInput(IoTDashboard $dashboard, array $data): ?array
+    {
+        $deviceId = is_numeric($data['device_id'] ?? null)
+            ? (int) $data['device_id']
+            : null;
+
+        if ($deviceId === null) {
+            return null;
+        }
+
+        $device = Device::query()
+            ->with(['schemaVersion.topics', 'schemaVersion.derivedParameters', 'deviceType'])
+            ->whereKey($deviceId)
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_virtual', false)
+            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'energy_meter'))
+            ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'status'))
+            ->first();
+
+        if (! $device instanceof Device) {
+            return null;
+        }
+
+        $topic = $device->schemaVersion?->topics
+            ?->first(fn (SchemaVersionTopic $topic): bool => $topic->key === 'telemetry')
+            ?? $device->schemaVersion?->topics?->first(fn (SchemaVersionTopic $topic): bool => $topic->isPublish());
+
+        if (! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        return [
+            'device' => $device,
+            'topic' => $topic,
+            'series' => [],
+            'parameter_metadata' => [],
+            'compressor_sources' => [
+                'status' => [
+                    'device_id' => (int) $device->id,
+                    'schema_version_topic_id' => (int) $topic->id,
+                    'parameter_key' => 'status',
+                ],
+            ],
         ];
     }
 

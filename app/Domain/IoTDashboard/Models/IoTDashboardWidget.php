@@ -11,6 +11,7 @@ use App\Domain\IoTDashboard\Casts\WidgetLayoutCast;
 use App\Domain\IoTDashboard\Contracts\WidgetConfig;
 use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarChartConfig;
+use App\Domain\IoTDashboard\Widgets\CompressorUtilization\CompressorUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeChartConfig;
 use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
@@ -97,6 +98,7 @@ class IoTDashboardWidget extends Model
             WidgetType::ThresholdStatusCard => ThresholdStatusCardConfig::fromArray([]),
             WidgetType::ThresholdStatusGrid => ThresholdStatusGridConfig::fromArray([]),
             WidgetType::StenterUtilization => StenterUtilizationConfig::fromArray([]),
+            WidgetType::CompressorUtilization => CompressorUtilizationConfig::fromArray([]),
         };
     }
 

@@ -9,6 +9,7 @@ use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Models\IoTDashboardWidget;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarChartConfig;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarInterval;
+use App\Domain\IoTDashboard\Widgets\CompressorUtilization\CompressorUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeChartConfig;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeStyle;
 use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
@@ -115,6 +116,11 @@ class WidgetConfigFactory
         }
 
         if ($config instanceof StenterUtilizationConfig) {
+            $data['shifts'] = $config->shifts();
+            $data['percentage_thresholds'] = $config->percentageThresholds();
+        }
+
+        if ($config instanceof CompressorUtilizationConfig) {
             $data['shifts'] = $config->shifts();
             $data['percentage_thresholds'] = $config->percentageThresholds();
         }
@@ -238,12 +244,18 @@ class WidgetConfigFactory
                 'shifts' => $data['shifts'] ?? $current['shifts'] ?? StenterUtilizationConfig::defaultShifts(),
                 'percentage_thresholds' => $data['percentage_thresholds'] ?? $current['percentage_thresholds'] ?? StenterUtilizationConfig::defaultPercentageThresholds(),
             ]),
+            WidgetType::CompressorUtilization => CompressorUtilizationConfig::fromArray([
+                ...$base,
+                'sources' => $resolvedInput['compressor_sources'] ?? $current['sources'] ?? [],
+                'shifts' => $data['shifts'] ?? $current['shifts'] ?? CompressorUtilizationConfig::defaultShifts(),
+                'percentage_thresholds' => $data['percentage_thresholds'] ?? $current['percentage_thresholds'] ?? CompressorUtilizationConfig::defaultPercentageThresholds(),
+            ]),
         };
     }
 
     private function defaultWebsocket(WidgetType $type): bool
     {
-        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization], true);
+        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization, WidgetType::CompressorUtilization], true);
     }
 
     private function defaultPollingInterval(WidgetType $type): int
@@ -253,6 +265,7 @@ class WidgetConfigFactory
             WidgetType::ThresholdStatusCard => 15,
             WidgetType::ThresholdStatusGrid => 15,
             WidgetType::StenterUtilization => 30,
+            WidgetType::CompressorUtilization => 30,
             default => 10,
         };
     }
@@ -269,6 +282,7 @@ class WidgetConfigFactory
             WidgetType::ThresholdStatusCard => 180,
             WidgetType::ThresholdStatusGrid => 180,
             WidgetType::StenterUtilization => 1440,
+            WidgetType::CompressorUtilization => 1440,
         };
     }
 
@@ -284,6 +298,7 @@ class WidgetConfigFactory
             WidgetType::ThresholdStatusCard => 1,
             WidgetType::ThresholdStatusGrid => 1,
             WidgetType::StenterUtilization => 60,
+            WidgetType::CompressorUtilization => 60,
         };
     }
 

@@ -202,6 +202,19 @@ class IoTDashboard extends Page
                     ->action(function (array $data): void {
                         $this->createWidget(WidgetType::StenterUtilization, $data);
                     }),
+
+                Action::make('addCompressorUtilizationWidget')
+                    ->label('Add Compressor Widget')
+                    ->icon(Heroicon::OutlinedPresentationChartBar)
+                    ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                    ->slideOver()
+                    ->modalWidth('7xl')
+                    ->schema(fn (): array => $this->selectedDashboard() instanceof IoTDashboardModel
+                        ? $this->widgetFormSchemaFactory()->compressorUtilizationSchema($this->selectedDashboard())
+                        : [])
+                    ->action(function (array $data): void {
+                        $this->createWidget(WidgetType::CompressorUtilization, $data);
+                    }),
             ])
                 ->label('Add Widget')
                 ->icon(Heroicon::OutlinedPlus)

@@ -70,6 +70,7 @@ trait InteractsWithWidgets
                 WidgetType::ThresholdStatusCard => 'Threshold status card added',
                 WidgetType::ThresholdStatusGrid => 'Threshold grid added',
                 WidgetType::StenterUtilization => 'Stenter utilization widget added',
+                WidgetType::CompressorUtilization => 'Compressor utilization widget added',
             })
             ->success()
             ->send();
@@ -151,7 +152,7 @@ trait InteractsWithWidgets
      */
     private function normalizeWidgetActionInput(WidgetType $type, array $data): array
     {
-        if (in_array($type, [WidgetType::LineChart, WidgetType::StatusSummary, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization], true)) {
+        if (in_array($type, [WidgetType::LineChart, WidgetType::StatusSummary, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization, WidgetType::CompressorUtilization], true)) {
             return [
                 ...$data,
                 'widget_type' => $type->value,

@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Domain\IoTDashboard\Application\WidgetRegistry;
 use App\Domain\IoTDashboard\Contracts\WidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarChartWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\CompressorUtilization\CompressorUtilizationWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeChartWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\LineChart\LineChartWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardWidgetDefinition;
@@ -30,6 +31,7 @@ class IoTDashboardServiceProvider extends ServiceProvider
         $this->app->singleton(ThresholdStatusCardWidgetDefinition::class);
         $this->app->singleton(ThresholdStatusGridWidgetDefinition::class);
         $this->app->singleton(StenterUtilizationWidgetDefinition::class);
+        $this->app->singleton(CompressorUtilizationWidgetDefinition::class);
 
         $this->app->tag([
             LineChartWidgetDefinition::class,
@@ -41,6 +43,7 @@ class IoTDashboardServiceProvider extends ServiceProvider
             ThresholdStatusCardWidgetDefinition::class,
             ThresholdStatusGridWidgetDefinition::class,
             StenterUtilizationWidgetDefinition::class,
+            CompressorUtilizationWidgetDefinition::class,
         ], WidgetDefinition::class);
 
         $this->app->singleton(WidgetRegistry::class, function ($app): WidgetRegistry {
