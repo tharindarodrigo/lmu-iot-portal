@@ -410,14 +410,22 @@ it('seeds teejay status devices with special comparison logic and distinct share
     $stenter06Status = Device::query()->where('name', 'TJ-Stenter06 Status')->firstOrFail();
     $stenter07Status = Device::query()->where('name', 'TJ-Stenter07 Status')->firstOrFail();
     $stenter08Status = Device::query()->where('name', 'TJ-Stenter08 Status')->firstOrFail();
-    $telemetryTopic = $stenter02Status->schemaVersion?->topics()->where('key', 'telemetry')->first();
-    $parameter = $telemetryTopic?->parameters()->where('key', 'status')->first();
+    $schema = DeviceSchema::query()
+        ->where('name', 'Status')
+        ->whereHas('deviceType', fn ($query) => $query->where('key', 'status'))
+        ->firstOrFail();
+    $statusSchemaVersions = $schema->versions()->get();
+    $binding = DeviceSignalBinding::query()
+        ->where('device_id', $stenter02Status->id)
+        ->first();
 
     expect($stenter02Status->external_id)->toBe('869604063871403-51')
         ->and($stenter06Status->external_id)->toBe('869604063852510-00-1')
         ->and($stenter07Status->external_id)->toBe('869604063852510-00-2')
         ->and($stenter08Status->external_id)->toBe('869604063852510-00-3')
-        ->and($parameter?->getAttribute('mutation_expression'))->toMatchArray([
+        ->and($statusSchemaVersions)->toHaveCount(1)
+        ->and($statusSchemaVersions->first()?->status)->toBe('active')
+        ->and($binding?->metadata['mutation_expression'] ?? null)->toMatchArray([
             'if' => [
                 [
                     '==' => [

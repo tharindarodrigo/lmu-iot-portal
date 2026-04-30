@@ -13,7 +13,7 @@ final class LineChartConfig implements WidgetConfig
     use NormalizesWidgetConfig;
 
     /**
-     * @param  array<int, array{key: string, label: string, color: string}>  $series
+     * @param  array<int, array{key: string, label: string, color: string, unit?: string|null, source?: array<string, mixed>}>  $series
      */
     private function __construct(
         private readonly array $series,
@@ -72,6 +72,9 @@ final class LineChartConfig implements WidgetConfig
         return WidgetType::LineChart;
     }
 
+    /**
+     * @return array<int, array{key: string, label: string, color: string, unit?: string|null, source?: array<string, mixed>}>
+     */
     public function series(): array
     {
         return $this->series;

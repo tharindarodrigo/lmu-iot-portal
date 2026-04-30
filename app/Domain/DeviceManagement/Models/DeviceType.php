@@ -6,7 +6,9 @@ namespace App\Domain\DeviceManagement\Models;
 
 use App\Domain\DeviceManagement\Casts\ProtocolConfigCast;
 use App\Domain\DeviceManagement\Enums\ProtocolType;
+use App\Domain\DeviceManagement\Services\VirtualStandardProfileRegistry;
 use App\Domain\DeviceManagement\ValueObjects\Protocol\ProtocolConfigInterface;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardProfile;
 use App\Domain\DeviceSchema\Models\DeviceSchema;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\Shared\Models\Organization;
@@ -21,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 /**
  * @property ProtocolConfigInterface|null $protocol_config
  * @property ProtocolType $default_protocol
+ * @property array<string, mixed>|null $virtual_standard_profile
  */
 class DeviceType extends Model
 {
@@ -44,6 +47,7 @@ class DeviceType extends Model
         return [
             'default_protocol' => ProtocolType::class,
             'protocol_config' => ProtocolConfigCast::class,
+            'virtual_standard_profile' => 'array',
         ];
     }
 
@@ -90,6 +94,16 @@ class DeviceType extends Model
     public function getProtocolConfig(): ?ProtocolConfigInterface
     {
         return $this->protocol_config;
+    }
+
+    public function virtualStandardProfile(): ?VirtualStandardProfile
+    {
+        return app(VirtualStandardProfileRegistry::class)->forDeviceType($this);
+    }
+
+    public function isVirtualStandard(): bool
+    {
+        return $this->virtualStandardProfile() !== null;
     }
 
     /**

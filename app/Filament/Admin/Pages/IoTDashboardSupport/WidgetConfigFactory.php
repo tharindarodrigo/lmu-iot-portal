@@ -16,6 +16,7 @@ use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardStyle;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
 use BackedEnum;
@@ -111,6 +112,11 @@ class WidgetConfigFactory
 
         if ($config instanceof ThresholdStatusCardConfig) {
             $data['policy_id'] = (string) $config->policyId();
+        }
+
+        if ($config instanceof StenterUtilizationConfig) {
+            $data['shifts'] = $config->shifts();
+            $data['percentage_thresholds'] = $config->percentageThresholds();
         }
 
         return $data;
@@ -226,12 +232,18 @@ class WidgetConfigFactory
                 'policy_ids' => $data['policy_ids'] ?? $current['policy_ids'] ?? [],
                 'device_cards' => $data['device_cards'] ?? $current['device_cards'] ?? [],
             ]),
+            WidgetType::StenterUtilization => StenterUtilizationConfig::fromArray([
+                ...$base,
+                'sources' => $resolvedInput['stenter_sources'] ?? $current['sources'] ?? [],
+                'shifts' => $data['shifts'] ?? $current['shifts'] ?? StenterUtilizationConfig::defaultShifts(),
+                'percentage_thresholds' => $data['percentage_thresholds'] ?? $current['percentage_thresholds'] ?? StenterUtilizationConfig::defaultPercentageThresholds(),
+            ]),
         };
     }
 
     private function defaultWebsocket(WidgetType $type): bool
     {
-        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid], true);
+        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization], true);
     }
 
     private function defaultPollingInterval(WidgetType $type): int
@@ -240,6 +252,7 @@ class WidgetConfigFactory
             WidgetType::BarChart => 60,
             WidgetType::ThresholdStatusCard => 15,
             WidgetType::ThresholdStatusGrid => 15,
+            WidgetType::StenterUtilization => 30,
             default => 10,
         };
     }
@@ -255,6 +268,7 @@ class WidgetConfigFactory
             WidgetType::StateTimeline => 360,
             WidgetType::ThresholdStatusCard => 180,
             WidgetType::ThresholdStatusGrid => 180,
+            WidgetType::StenterUtilization => 1440,
         };
     }
 
@@ -269,6 +283,7 @@ class WidgetConfigFactory
             WidgetType::StateTimeline => 240,
             WidgetType::ThresholdStatusCard => 1,
             WidgetType::ThresholdStatusGrid => 1,
+            WidgetType::StenterUtilization => 60,
         };
     }
 

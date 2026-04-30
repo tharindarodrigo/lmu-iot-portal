@@ -12,6 +12,7 @@ use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
@@ -78,6 +79,7 @@ class WidgetConfigCast implements CastsAttributes
             WidgetType::StateTimeline => StateTimelineConfig::fromArray($config),
             WidgetType::ThresholdStatusCard => ThresholdStatusCardConfig::fromArray($config),
             WidgetType::ThresholdStatusGrid => ThresholdStatusGridConfig::fromArray($config),
+            WidgetType::StenterUtilization => StenterUtilizationConfig::fromArray($config),
         };
     }
 

@@ -9,6 +9,7 @@ use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarInterval;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeStyle;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardStyle;
+use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use Closure;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Hidden;
@@ -253,6 +254,29 @@ class WidgetFormSchemaFactory
     /**
      * @return array<int, Component>
      */
+    public function stenterUtilizationSchema(IoTDashboard $dashboard): array
+    {
+        return [
+            TextInput::make('title')
+                ->label('Widget title')
+                ->required()
+                ->default('Stenter Utilization')
+                ->maxLength(255),
+            Select::make('device_id')
+                ->label('Stenter')
+                ->options(fn (): array => $this->optionsService->stenterDeviceOptions($dashboard))
+                ->searchable()
+                ->required(),
+            $this->stenterShiftsRepeater(),
+            $this->stenterPercentageThresholdsRepeater(),
+            ...$this->transportSchema(false, true, 30, 1440, 60),
+            ...$this->layoutSchema('4', 768),
+        ];
+    }
+
+    /**
+     * @return array<int, Component>
+     */
     public function editSchema(IoTDashboard $dashboard): array
     {
         return [
@@ -263,8 +287,15 @@ class WidgetFormSchemaFactory
                 visibleCondition: fn (Get $get): bool => ! in_array($get('widget_type'), [
                     WidgetType::ThresholdStatusCard->value,
                     WidgetType::ThresholdStatusGrid->value,
+                    WidgetType::StenterUtilization->value,
                 ], true),
             ),
+            Select::make('device_id')
+                ->label('Stenter')
+                ->options(fn (): array => $this->optionsService->stenterDeviceOptions($dashboard))
+                ->searchable()
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::StenterUtilization->value)
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::StenterUtilization->value),
             Select::make('policy_id')
                 ->label('Threshold policy')
                 ->searchable()
@@ -380,6 +411,12 @@ class WidgetFormSchemaFactory
             $this->thresholdStatusGridDeviceCardsRepeater($dashboard)
                 ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value && $get('scope') === 'device_cards')
                 ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::ThresholdStatusGrid->value && $get('scope') === 'device_cards'),
+            $this->stenterShiftsRepeater()
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::StenterUtilization->value)
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::StenterUtilization->value),
+            $this->stenterPercentageThresholdsRepeater()
+                ->visible(fn (Get $get): bool => $get('widget_type') === WidgetType::StenterUtilization->value)
+                ->required(fn (Get $get): bool => $get('widget_type') === WidgetType::StenterUtilization->value),
             ...$this->transportSchema(
                 true,
                 true,
@@ -628,6 +665,67 @@ class WidgetFormSchemaFactory
             ->columns(5)
             ->columnSpanFull()
             ->helperText('Configure a fixed device set when this widget should mirror SriLankan production temperature cards.');
+    }
+
+    private function stenterShiftsRepeater(): Repeater
+    {
+        return Repeater::make('shifts')
+            ->label('Shifts (UTC)')
+            ->default(StenterUtilizationConfig::defaultShifts())
+            ->minItems(1)
+            ->maxItems(6)
+            ->reorderable()
+            ->schema([
+                TextInput::make('label')
+                    ->required()
+                    ->maxLength(40),
+                TextInput::make('start_time')
+                    ->label('Start UTC')
+                    ->placeholder('06:00')
+                    ->regex('/^([01]\\d|2[0-3]):[0-5]\\d$/')
+                    ->required(),
+                TextInput::make('end_time')
+                    ->label('End UTC')
+                    ->placeholder('14:00')
+                    ->regex('/^([01]\\d|2[0-3]):[0-5]\\d$/')
+                    ->required(),
+            ])
+            ->columns(3)
+            ->columnSpanFull()
+            ->helperText('Store shift windows in UTC. The widget displays these times in each viewer’s local timezone.');
+    }
+
+    private function stenterPercentageThresholdsRepeater(): Repeater
+    {
+        return Repeater::make('percentage_thresholds')
+            ->label('Percentage thresholds')
+            ->default(StenterUtilizationConfig::defaultPercentageThresholds())
+            ->minItems(1)
+            ->maxItems(6)
+            ->reorderable()
+            ->schema([
+                TextInput::make('label')
+                    ->required()
+                    ->maxLength(40),
+                TextInput::make('minimum')
+                    ->label('Min %')
+                    ->numeric()
+                    ->minValue(0)
+                    ->maxValue(100)
+                    ->required(),
+                TextInput::make('maximum')
+                    ->label('Max %')
+                    ->numeric()
+                    ->minValue(0)
+                    ->maxValue(100)
+                    ->required(),
+                ColorPicker::make('color')
+                    ->regex('/^#[0-9a-fA-F]{6}$/')
+                    ->required(),
+            ])
+            ->columns(4)
+            ->columnSpanFull()
+            ->helperText('These thresholds color every percentage value in the Stenter widget, including current shift and daily efficiencies.');
     }
 
     private function statusSummaryRowsRepeater(IoTDashboard $dashboard): Repeater

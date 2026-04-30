@@ -6,6 +6,7 @@ namespace App\Domain\DataIngestion\Models;
 
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
+use App\Domain\DeviceSchema\Services\JsonLogicEvaluator;
 use Database\Factories\Domain\DataIngestion\Models\DeviceSignalBindingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -75,10 +76,36 @@ class DeviceSignalBinding extends Model
         $decodedValue = $this->extractDecodedSourceValue($payload);
 
         if ($decodedValue['found']) {
-            return $decodedValue;
+            return [
+                'found' => true,
+                'value' => $this->mutateSourceValue($decodedValue['value']),
+            ];
         }
 
-        return $this->extractValueAtPath($payload, $this->normalizedSourceJsonPath());
+        $sourceValue = $this->extractValueAtPath($payload, $this->normalizedSourceJsonPath());
+
+        if (! $sourceValue['found']) {
+            return $sourceValue;
+        }
+
+        return [
+            'found' => true,
+            'value' => $this->mutateSourceValue($sourceValue['value']),
+        ];
+    }
+
+    private function mutateSourceValue(mixed $value): mixed
+    {
+        $metadata = $this->getAttribute('metadata');
+        $mutationExpression = is_array($metadata) ? ($metadata['mutation_expression'] ?? null) : null;
+
+        if (! is_array($mutationExpression) || $mutationExpression === []) {
+            return $value;
+        }
+
+        return (new JsonLogicEvaluator)->evaluate($mutationExpression, [
+            'val' => $value,
+        ]);
     }
 
     /**

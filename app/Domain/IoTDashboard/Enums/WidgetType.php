@@ -16,6 +16,7 @@ enum WidgetType: string implements HasLabel
     case StateTimeline = 'state_timeline';
     case ThresholdStatusCard = 'threshold_status_card';
     case ThresholdStatusGrid = 'threshold_status_grid';
+    case StenterUtilization = 'stenter_utilization';
 
     public function getLabel(): string
     {
@@ -28,6 +29,7 @@ enum WidgetType: string implements HasLabel
             self::StateTimeline => 'State Timeline',
             self::ThresholdStatusCard => 'Threshold Status Card',
             self::ThresholdStatusGrid => 'Threshold Status Grid',
+            self::StenterUtilization => 'Stenter Utilization',
         };
     }
 

@@ -34,13 +34,13 @@ class WitcoMigrationSeeder extends Seeder
 
     private const HUB_SCHEMA_NAME = 'Legacy Hub Presence';
 
-    private const STATUS_DEVICE_TYPE_KEY = 'imoni_status';
+    private const STATUS_DEVICE_TYPE_KEY = 'status';
 
-    private const STATUS_DEVICE_TYPE_NAME = 'IMONI Status';
+    private const STATUS_DEVICE_TYPE_NAME = 'Status';
 
-    private const STATUS_BASE_TOPIC = 'devices/imoni-status';
+    private const STATUS_BASE_TOPIC = 'devices/status';
 
-    private const STATUS_SCHEMA_NAME = 'IMONI Status';
+    private const STATUS_SCHEMA_NAME = 'Status';
 
     private const STATUS_PERIPHERAL_TYPE_HEX = '00';
 

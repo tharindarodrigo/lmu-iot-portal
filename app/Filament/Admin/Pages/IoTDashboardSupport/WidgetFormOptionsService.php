@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Pages\IoTDashboardSupport;
 
 use App\Domain\Automation\Models\AutomationThresholdPolicy;
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceManagement\Models\VirtualDeviceLink;
 use App\Domain\DeviceSchema\Enums\ParameterCategory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
@@ -26,6 +27,27 @@ class WidgetFormOptionsService
     {
         return Device::query()
             ->where('organization_id', $dashboard->organization_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'external_id'])
+            ->mapWithKeys(fn (Device $device): array => [
+                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
+                    ? "{$device->name} ({$device->external_id})"
+                    : $device->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
+    public function stenterDeviceOptions(IoTDashboard $dashboard): array
+    {
+        return Device::query()
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_virtual', true)
+            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'stenter_line'))
+            ->whereHas('virtualDeviceLinks', fn (Builder $query): Builder => $query->where('purpose', 'status'))
+            ->whereHas('virtualDeviceLinks', fn (Builder $query): Builder => $query->where('purpose', 'length'))
             ->orderBy('name')
             ->get(['id', 'name', 'external_id'])
             ->mapWithKeys(fn (Device $device): array => [
@@ -392,6 +414,10 @@ class WidgetFormOptionsService
             return $this->resolveThresholdStatusGridInput($dashboard, $data);
         }
 
+        if (($data['widget_type'] ?? null) === WidgetType::StenterUtilization->value) {
+            return $this->resolveStenterUtilizationInput($dashboard, $data);
+        }
+
         $deviceId = is_numeric($data['device_id'] ?? null)
             ? (int) $data['device_id']
             : null;
@@ -511,6 +537,104 @@ class WidgetFormOptionsService
             'topic' => $topic,
             'series' => [],
             'parameter_metadata' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     device: Device,
+     *     topic: SchemaVersionTopic,
+     *     series: array<int, array{key: string, label: string, color: string, unit?: string|null}>,
+     *     parameter_metadata: array<string, array{
+     *         label: string,
+     *         compact_label: string,
+     *         option_label: string,
+     *         unit: string|null,
+     *         default_color: string,
+     *         is_counter: bool
+     *     }>,
+     *     stenter_sources: array{status: array{device_id: int, schema_version_topic_id: int, parameter_key: string}|null, length: array{device_id: int, schema_version_topic_id: int, parameter_key: string}|null}
+     * }|null
+     */
+    private function resolveStenterUtilizationInput(IoTDashboard $dashboard, array $data): ?array
+    {
+        $deviceId = is_numeric($data['device_id'] ?? null)
+            ? (int) $data['device_id']
+            : null;
+
+        if ($deviceId === null) {
+            return null;
+        }
+
+        $device = Device::query()
+            ->with(['schemaVersion.topics', 'deviceType', 'virtualDeviceLinks.sourceDevice.schemaVersion.topics.parameters'])
+            ->whereKey($deviceId)
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_virtual', true)
+            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'stenter_line'))
+            ->first();
+
+        if (! $device instanceof Device) {
+            return null;
+        }
+
+        $topic = $device->schemaVersion?->topics
+            ?->first(fn (SchemaVersionTopic $topic): bool => $topic->key === 'telemetry')
+            ?? $device->schemaVersion?->topics?->first(fn (SchemaVersionTopic $topic): bool => $topic->isPublish());
+
+        if (! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        $sources = [
+            'status' => $this->resolveVirtualLinkSource($device, 'status', 'status'),
+            'length' => $this->resolveVirtualLinkSource($device, 'length', 'length'),
+        ];
+
+        if ($sources['status'] === null || $sources['length'] === null) {
+            return null;
+        }
+
+        return [
+            'device' => $device,
+            'topic' => $topic,
+            'series' => [],
+            'parameter_metadata' => [],
+            'stenter_sources' => $sources,
+        ];
+    }
+
+    /**
+     * @return array{device_id: int, schema_version_topic_id: int, parameter_key: string}|null
+     */
+    private function resolveVirtualLinkSource(Device $virtualDevice, string $purpose, string $parameterKey): ?array
+    {
+        $link = $virtualDevice->virtualDeviceLinks
+            ->first(fn (VirtualDeviceLink $candidate): bool => $candidate->purpose === $purpose && $candidate->sourceDevice instanceof Device);
+        $sourceDevice = $link?->sourceDevice;
+
+        if (! $sourceDevice instanceof Device) {
+            return null;
+        }
+
+        $topic = $sourceDevice->schemaVersion?->topics
+            ?->first(function (SchemaVersionTopic $topic) use ($parameterKey): bool {
+                if (! $topic->isPublish()) {
+                    return false;
+                }
+
+                return $topic->parameters->contains(fn (ParameterDefinition $parameter): bool => $parameter->key === $parameterKey && (bool) $parameter->is_active);
+            });
+
+        if (! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        return [
+            'device_id' => (int) $sourceDevice->id,
+            'schema_version_topic_id' => (int) $topic->id,
+            'parameter_key' => $parameterKey,
         ];
     }
 
@@ -755,6 +879,7 @@ class WidgetFormOptionsService
             ->get(['key', 'label', 'unit', 'category', 'validation_rules', 'control_ui', 'type']);
 
         foreach ($parameters as $index => $parameter) {
+            /** @var ParameterDefinition $parameter */
             if ($parameter->isDashboardStateParameter()) {
                 continue;
             }

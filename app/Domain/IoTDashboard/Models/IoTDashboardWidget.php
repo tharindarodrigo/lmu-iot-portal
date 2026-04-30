@@ -16,6 +16,7 @@ use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
 use Database\Factories\Domain\IoTDashboard\Models\IoTDashboardWidgetFactory;
@@ -95,6 +96,7 @@ class IoTDashboardWidget extends Model
             WidgetType::StateTimeline => StateTimelineConfig::fromArray([]),
             WidgetType::ThresholdStatusCard => ThresholdStatusCardConfig::fromArray([]),
             WidgetType::ThresholdStatusGrid => ThresholdStatusGridConfig::fromArray([]),
+            WidgetType::StenterUtilization => StenterUtilizationConfig::fromArray([]),
         };
     }
 

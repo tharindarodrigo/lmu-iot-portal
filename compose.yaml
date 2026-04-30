@@ -124,6 +124,12 @@ services:
             timeout: 5s
     redis:
         image: 'redis:alpine'
+        command:
+            - redis-server
+            - '--save'
+            - ''
+            - '--appendonly'
+            - 'no'
         ports:
             - '${FORWARD_REDIS_PORT:-6380}:6379'
         volumes:

@@ -6,6 +6,10 @@ namespace App\Filament\Admin\Resources\DeviceManagement\Devices\Pages\Concerns;
 
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\VirtualDeviceLink;
+use App\Domain\DeviceManagement\Services\VirtualStandardProfileRegistry;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardProfile;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardSource;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 trait InteractsWithVirtualDeviceLinks
@@ -40,10 +44,17 @@ trait InteractsWithVirtualDeviceLinks
     protected function prepareVirtualDeviceFormDataForPersistence(array $data, ?Device $device = null): array
     {
         $links = $this->normalizeVirtualDeviceLinks($data['virtual_device_links'] ?? []);
+        $profile = $this->resolveVirtualStandardProfile($data, $device);
 
         unset($data['virtual_device_links']);
 
         $isVirtual = (bool) ($data['is_virtual'] ?? false);
+
+        if ($profile !== null && ! $isVirtual) {
+            throw ValidationException::withMessages([
+                'is_virtual' => sprintf('%s devices must remain virtual.', $profile->label),
+            ]);
+        }
 
         if ($isVirtual) {
             $data['parent_device_id'] = null;
@@ -56,10 +67,16 @@ trait InteractsWithVirtualDeviceLinks
                 $links,
                 $organizationId,
                 $device?->getKey(),
+                $profile,
             );
         } else {
             $links = [];
         }
+
+        $data['metadata'] = $this->mergeVirtualStandardMetadata(
+            $data['metadata'] ?? $device?->getAttribute('metadata'),
+            $profile,
+        );
 
         $this->virtualDeviceLinkPayload = $links;
 
@@ -113,9 +130,10 @@ trait InteractsWithVirtualDeviceLinks
     /**
      * @param  array<int, array{id?: int|null, purpose: string, source_device_id: int|null}>  $links
      */
-    private function validateVirtualDeviceLinks(array $links, ?int $organizationId, mixed $deviceId): void
+    private function validateVirtualDeviceLinks(array $links, ?int $organizationId, mixed $deviceId, ?VirtualStandardProfile $profile = null): void
     {
         $errors = [];
+        $registry = app(VirtualStandardProfileRegistry::class);
 
         if ($organizationId === null && $links !== []) {
             throw ValidationException::withMessages([
@@ -131,11 +149,13 @@ trait InteractsWithVirtualDeviceLinks
             ->all();
 
         $sourceDevices = Device::query()
+            ->with('deviceType:id,key')
             ->whereIn('id', $sourceDeviceIds)
-            ->get(['id', 'organization_id', 'is_virtual'])
+            ->get(['id', 'organization_id', 'device_type_id', 'is_virtual'])
             ->keyBy('id');
 
         $seenCombinations = [];
+        $seenPurposes = [];
         $resolvedDeviceId = is_numeric($deviceId) ? (int) $deviceId : null;
 
         foreach ($links as $index => $link) {
@@ -161,6 +181,7 @@ trait InteractsWithVirtualDeviceLinks
             }
 
             $seenCombinations[$combinationKey] = true;
+            $seenPurposes[$purpose] = true;
 
             $sourceDevice = $sourceDevices->get($sourceDeviceId);
 
@@ -180,6 +201,47 @@ trait InteractsWithVirtualDeviceLinks
 
             if ($sourceDevice->isVirtual()) {
                 $errors["virtual_device_links.{$index}.source_device_id"] = 'Only physical devices can be attached as virtual device sources.';
+            }
+
+            if ($profile !== null) {
+                $allowedDeviceTypeKeys = $registry->allowedDeviceTypeKeysForPurpose($profile, $purpose);
+                $sourceDeviceTypeKey = $sourceDevice->deviceType?->key;
+
+                if ($allowedDeviceTypeKeys !== [] && (! is_string($sourceDeviceTypeKey) || ! in_array($sourceDeviceTypeKey, $allowedDeviceTypeKeys, true))) {
+                    $allowedSourceTypes = collect($allowedDeviceTypeKeys)
+                        ->map(fn (string $key): string => Str::headline($key))
+                        ->implode(', ');
+
+                    $sourceProfile = $profile->source($purpose);
+                    $sourceLabel = $sourceProfile instanceof VirtualStandardSource ? $sourceProfile->label : Str::headline($purpose);
+
+                    $errors["virtual_device_links.{$index}.source_device_id"] = "{$sourceLabel} sources must use one of: {$allowedSourceTypes}.";
+                }
+            }
+        }
+
+        if ($profile !== null) {
+            $missingPurposes = collect($registry->requiredPurposes($profile))
+                ->reject(fn (string $purpose): bool => isset($seenPurposes[$purpose]))
+                ->values()
+                ->all();
+
+            if ($missingPurposes !== []) {
+                $missingSourceLabels = collect($missingPurposes)
+                    ->map(function (string $purpose) use ($profile): string {
+                        $sourceProfile = $profile->source($purpose);
+
+                        return $sourceProfile instanceof VirtualStandardSource
+                            ? $sourceProfile->label
+                            : Str::headline($purpose);
+                    })
+                    ->implode(', ');
+
+                $missingPurposeErrorKey = $links === []
+                    ? 'virtual_device_links'
+                    : 'virtual_device_links.0.purpose';
+
+                $errors[$missingPurposeErrorKey] = "{$profile->label} requires sources for: {$missingSourceLabels}.";
             }
         }
 
@@ -212,5 +274,38 @@ trait InteractsWithVirtualDeviceLinks
             ->filter(fn (array $link): bool => $link['purpose'] !== '' || $link['source_device_id'] !== null)
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function resolveVirtualStandardProfile(array $data, ?Device $device = null): ?VirtualStandardProfile
+    {
+        $deviceTypeId = $data['device_type_id'] ?? $device?->device_type_id;
+
+        if (! is_numeric($deviceTypeId)) {
+            return null;
+        }
+
+        return app(VirtualStandardProfileRegistry::class)->forDeviceTypeId((int) $deviceTypeId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mergeVirtualStandardMetadata(mixed $metadata, ?VirtualStandardProfile $profile): array
+    {
+        $resolvedMetadata = is_array($metadata) ? $metadata : [];
+        $registry = app(VirtualStandardProfileRegistry::class);
+
+        foreach (VirtualStandardProfile::MANAGED_METADATA_KEYS as $managedMetadataKey) {
+            unset($resolvedMetadata[$managedMetadataKey]);
+        }
+
+        if ($profile === null) {
+            return $resolvedMetadata;
+        }
+
+        return array_merge($resolvedMetadata, $registry->managedMetadata($profile));
     }
 }

@@ -41,6 +41,7 @@ class DatabaseSeeder extends Seeder
             SriLankanMigrationSeeder::class,
             SriLankanDashboardSeeder::class,
             TeejayMigrationSeeder::class,
+            TeejayDashboardSeeder::class,
             ImportLegacyEntitiesSeeder::class,
 
         ]);

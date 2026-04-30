@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\IoTDashboard\Widgets\LineChart;
 
+use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceManagement\Models\VirtualDeviceLink;
+use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\IoTDashboard\Application\DashboardHistoryRange;
 use App\Domain\IoTDashboard\Contracts\WidgetConfig;
 use App\Domain\IoTDashboard\Contracts\WidgetSnapshotResolver;
@@ -26,22 +29,24 @@ class LineChartSnapshotResolver implements WidgetSnapshotResolver
             throw new InvalidArgumentException('Line chart widgets require LineChartConfig.');
         }
 
-        $deviceId = is_numeric($widget->device_id) ? (int) $widget->device_id : null;
-        $logs = $deviceId === null
-            ? collect()
-            : $this->fetchTelemetryLogs(
-                schemaVersionTopicId: (int) $widget->schema_version_topic_id,
-                deviceId: $deviceId,
-                lookbackMinutes: $config->lookbackMinutes(),
-                maxPoints: $config->maxPoints(),
-                historyRange: $historyRange,
-            );
-
         $series = [];
+        $logsBySourceKey = [];
 
         foreach ($config->series() as $seriesConfiguration) {
             $points = [];
             $key = $seriesConfiguration['key'];
+            $source = array_key_exists('source', $seriesConfiguration) ? $seriesConfiguration['source'] : [];
+            $sourceBinding = $this->resolveSeriesSourceBinding($widget, $source);
+            $sourceKey = $this->sourceCacheKey($sourceBinding);
+            $logs = $logsBySourceKey[$sourceKey] ??= $sourceBinding === null
+                ? collect()
+                : $this->fetchTelemetryLogs(
+                    schemaVersionTopicId: $sourceBinding['schema_version_topic_id'],
+                    deviceId: $sourceBinding['device_id'],
+                    lookbackMinutes: $config->lookbackMinutes(),
+                    maxPoints: $config->maxPoints(),
+                    historyRange: $historyRange,
+                );
 
             foreach ($logs as $log) {
                 $value = $this->extractNumericValue($log->transformed_values, $key);
@@ -62,12 +67,18 @@ class LineChartSnapshotResolver implements WidgetSnapshotResolver
                 ];
             }
 
-            $series[] = [
+            $resolvedSeries = [
                 'key' => $seriesConfiguration['key'],
                 'label' => $seriesConfiguration['label'],
                 'color' => $seriesConfiguration['color'],
                 'points' => $points,
             ];
+
+            if (array_key_exists('source', $seriesConfiguration)) {
+                $resolvedSeries['source'] = $seriesConfiguration['source'];
+            }
+
+            $series[] = $resolvedSeries;
         }
 
         return [
@@ -75,6 +86,90 @@ class LineChartSnapshotResolver implements WidgetSnapshotResolver
             'generated_at' => now()->toIso8601String(),
             'series' => $series,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|mixed  $source
+     * @return array{device_id: int, schema_version_topic_id: int}|null
+     */
+    private function resolveSeriesSourceBinding(IoTDashboardWidget $widget, mixed $source): ?array
+    {
+        if (is_array($source) && ($source['type'] ?? null) === 'virtual_device_link') {
+            $purpose = is_string($source['purpose'] ?? null) ? trim((string) $source['purpose']) : '';
+
+            if ($purpose === '') {
+                return null;
+            }
+
+            $sourceDevice = $this->resolveVirtualSourceDevice($widget, $purpose);
+
+            return $sourceDevice instanceof Device
+                ? $this->bindingForDevice($sourceDevice)
+                : null;
+        }
+
+        $deviceId = (int) $widget->device_id;
+        $schemaVersionTopicId = (int) $widget->schema_version_topic_id;
+
+        if ($deviceId < 1 || $schemaVersionTopicId < 1) {
+            return null;
+        }
+
+        return [
+            'device_id' => $deviceId,
+            'schema_version_topic_id' => $schemaVersionTopicId,
+        ];
+    }
+
+    private function resolveVirtualSourceDevice(IoTDashboardWidget $widget, string $purpose): ?Device
+    {
+        $virtualDeviceId = (int) $widget->device_id;
+
+        if ($virtualDeviceId < 1) {
+            return null;
+        }
+
+        $link = VirtualDeviceLink::query()
+            ->with('sourceDevice.schemaVersion.topics')
+            ->where('virtual_device_id', $virtualDeviceId)
+            ->where('purpose', $purpose)
+            ->orderBy('sequence')
+            ->first();
+
+        return $link?->sourceDevice;
+    }
+
+    /**
+     * @return array{device_id: int, schema_version_topic_id: int}|null
+     */
+    private function bindingForDevice(Device $device): ?array
+    {
+        $device->loadMissing('schemaVersion.topics');
+
+        $topic = $device->schemaVersion?->topics
+            ?->first(fn (SchemaVersionTopic $topic): bool => $topic->key === 'telemetry')
+            ?? $device->schemaVersion?->topics?->first(fn (SchemaVersionTopic $topic): bool => $topic->isPublish());
+
+        if (! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        return [
+            'device_id' => (int) $device->id,
+            'schema_version_topic_id' => (int) $topic->id,
+        ];
+    }
+
+    /**
+     * @param  array{device_id: int, schema_version_topic_id: int}|null  $sourceBinding
+     */
+    private function sourceCacheKey(?array $sourceBinding): string
+    {
+        if ($sourceBinding === null) {
+            return 'missing';
+        }
+
+        return $sourceBinding['device_id'].':'.$sourceBinding['schema_version_topic_id'];
     }
 
     /**

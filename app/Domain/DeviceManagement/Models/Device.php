@@ -9,6 +9,8 @@ use App\Domain\DeviceControl\Models\DeviceCommandLog;
 use App\Domain\DeviceControl\Models\DeviceDesiredState;
 use App\Domain\DeviceControl\Models\DeviceDesiredTopicState;
 use App\Domain\DeviceManagement\Services\DevicePresencePolicy;
+use App\Domain\DeviceManagement\Services\VirtualStandardProfileRegistry;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardProfile;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Shared\Models\Organization;
@@ -227,6 +229,16 @@ class Device extends Model
     public function isChildDevice(): bool
     {
         return $this->parent_device_id !== null;
+    }
+
+    public function virtualStandardProfile(): ?VirtualStandardProfile
+    {
+        return app(VirtualStandardProfileRegistry::class)->forDevice($this);
+    }
+
+    public function isVirtualStandard(): bool
+    {
+        return $this->virtualStandardProfile() !== null;
     }
 
     /**
