@@ -1,0 +1,636 @@
+:root {
+    color-scheme: dark;
+    --classic-bg: #08111f;
+    --classic-panel: #0f1e33;
+    --classic-panel-dark: #07111f;
+    --classic-border: #3b5878;
+    --classic-grid: rgba(125, 171, 217, 0.12);
+    --classic-text: #d8e8f8;
+    --classic-muted: #83a2bf;
+    --classic-green: #27d86f;
+    --classic-yellow: #ffce33;
+    --classic-red: #ff4545;
+    --classic-blue: #42b8ff;
+    --classic-cyan: #36e2e2;
+    --classic-purple: #b59cff;
+    font-family: "Arial Narrow", "Roboto Condensed", Arial, Helvetica, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    min-height: 100%;
+    margin: 0;
+    background: var(--classic-bg);
+    color: var(--classic-text);
+}
+
+button {
+    font: inherit;
+}
+
+.classic-scada {
+    min-height: 100vh;
+    padding: 0.85rem;
+    background:
+        linear-gradient(var(--classic-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--classic-grid) 1px, transparent 1px),
+        radial-gradient(circle at 50% -10%, rgba(66, 184, 255, 0.18), transparent 42rem),
+        #07111f;
+    background-size: 24px 24px, 24px 24px, auto, auto;
+}
+
+.classic-scada__fallback {
+    max-width: 48rem;
+    margin: 20vh auto 0;
+    padding: 2rem;
+    border: 2px solid var(--classic-border);
+    background: var(--classic-panel);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 18px 70px rgba(0, 0, 0, 0.35);
+}
+
+.classic-scada__frame {
+    min-height: calc(100vh - 1.7rem);
+    display: grid;
+    grid-template-rows: auto minmax(38rem, 1fr) auto;
+    gap: 0.6rem;
+    border: 2px solid #52759b;
+    background: rgba(3, 10, 22, 0.64);
+    box-shadow: inset 0 0 0 2px rgba(4, 13, 27, 0.82), 0 20px 80px rgba(0, 0, 0, 0.34);
+}
+
+.classic-scada__header,
+.classic-scada__footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem 0.85rem;
+    border-bottom: 2px solid #52759b;
+    background: linear-gradient(180deg, #173456, #0d2139);
+}
+
+.classic-scada__footer {
+    border-top: 2px solid #52759b;
+    border-bottom: 0;
+    color: var(--classic-muted);
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.classic-scada__title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+}
+
+.classic-scada__title h1 {
+    margin: 0;
+    color: #eff8ff;
+    font-size: clamp(1.15rem, 2.2vw, 2rem);
+    line-height: 1;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.classic-scada__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.8rem;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid #82a7c7;
+    background: #09182c;
+    color: #d7ecff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.classic-scada__tag::before {
+    width: 0.55rem;
+    height: 0.55rem;
+    content: "";
+    border-radius: 999px;
+    background: var(--tag-color, var(--classic-green));
+    box-shadow: 0 0 14px var(--tag-color, var(--classic-green));
+}
+
+.classic-scada__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+}
+
+.classic-scada__button {
+    min-height: 2.1rem;
+    padding: 0.36rem 0.65rem;
+    border: 1px solid #7da2c3;
+    background: linear-gradient(180deg, #254868, #10243c);
+    color: #edf7ff;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.classic-scada__button:hover,
+.classic-scada__button:focus-visible {
+    border-color: #c7e8ff;
+    background: linear-gradient(180deg, #356b99, #173a61);
+    outline: none;
+}
+
+.classic-scada__button.is-active {
+    border-color: #6ff2a7;
+    color: #dbffe8;
+}
+
+.classic-scada__button.is-danger {
+    border-color: #ff8b8b;
+    color: #ffd7d7;
+}
+
+.classic-scada__content {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 0.6rem;
+    padding: 0.6rem;
+}
+
+.classic-scada__canvas-panel,
+.classic-scada__side-panel {
+    min-width: 0;
+    min-height: 0;
+    border: 2px solid #385b7f;
+    background: #09182c;
+}
+
+.classic-scada__canvas-panel {
+    position: relative;
+    overflow: hidden;
+}
+
+.classic-scada__side-panel {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 0.55rem;
+    padding: 0.6rem;
+}
+
+.classic-scada__panel-heading {
+    margin: 0;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid #41688f;
+    background: linear-gradient(180deg, #173456, #10233c);
+    color: #e7f6ff;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.classic-scada__summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.classic-scada__summary-tile {
+    min-height: 4.3rem;
+    padding: 0.55rem;
+    border: 1px solid #385b7f;
+    background: #061326;
+}
+
+.classic-scada__summary-tile span,
+.classic-scada__alarm-time,
+.classic-scada__node-label,
+.classic-scada__node-kv span {
+    display: block;
+    color: var(--classic-muted);
+    font-size: 0.66rem;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.classic-scada__summary-tile strong {
+    display: block;
+    margin-top: 0.4rem;
+    color: #f6fbff;
+    font-family: "Courier New", monospace;
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.classic-scada__alarm-list {
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    align-content: start;
+    gap: 0.45rem;
+}
+
+.classic-scada__alarm {
+    display: grid;
+    gap: 0.24rem;
+    padding: 0.52rem;
+    border: 1px solid color-mix(in srgb, var(--alarm-color, var(--classic-yellow)) 64%, #385b7f 36%);
+    background: color-mix(in srgb, var(--alarm-color, var(--classic-yellow)) 16%, #061326 84%);
+}
+
+.classic-scada__alarm strong {
+    color: #f8fbff;
+    font-size: 0.78rem;
+    line-height: 1.25;
+}
+
+.classic-scada__alarm p {
+    margin: 0;
+    color: #b8cce0;
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+.classic-scada .react-flow {
+    background:
+        linear-gradient(rgba(105, 148, 190, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(105, 148, 190, 0.12) 1px, transparent 1px),
+        radial-gradient(circle at 50% 50%, rgba(54, 226, 226, 0.08), transparent 34rem),
+        #08172a;
+    background-size: 32px 32px, 32px 32px, auto, auto;
+}
+
+.classic-scada .react-flow__node {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.classic-scada .react-flow__handle {
+    width: 0.55rem;
+    height: 0.55rem;
+    border: 1px solid #cdefff;
+    background: var(--status-color, var(--classic-blue));
+}
+
+.classic-scada .react-flow__edge-path {
+    stroke-width: 5;
+    filter: drop-shadow(0 0 5px var(--edge-glow, rgba(66, 184, 255, 0.65)));
+}
+
+.classic-scada .react-flow__edge-textbg {
+    fill: #07111f;
+    stroke: #345778;
+    stroke-width: 1;
+}
+
+.classic-scada .react-flow__edge-text {
+    fill: #dff4ff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.classic-scada .react-flow__controls,
+.classic-scada .react-flow__minimap {
+    border: 1px solid #52759b;
+    background: #07111f;
+    box-shadow: none;
+}
+
+.classic-scada .react-flow__controls-button {
+    border-bottom-color: #52759b;
+    background: #10243c;
+    color: #e8f7ff;
+}
+
+.classic-scada .react-flow__attribution {
+    display: none;
+}
+
+.classic-scada__flow-panel {
+    padding: 0.45rem 0.55rem;
+    border: 1px solid #52759b;
+    background: rgba(7, 17, 31, 0.94);
+    color: #dff4ff;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.classic-scada__node {
+    position: relative;
+    min-width: 10rem;
+    border: 2px solid color-mix(in srgb, var(--status-color, var(--classic-blue)) 52%, #587da3 48%);
+    background: linear-gradient(180deg, #183556, #0c1e33);
+    color: #eaf7ff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 26px rgba(0, 0, 0, 0.24);
+}
+
+.classic-scada__node-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem;
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid #456d93;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.classic-scada__node-title {
+    overflow: hidden;
+    color: #f8fcff;
+    font-size: 0.75rem;
+    font-weight: 950;
+    letter-spacing: 0.07em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.classic-scada__node-status {
+    flex: 0 0 auto;
+    width: 0.78rem;
+    height: 0.78rem;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    background: var(--status-color, var(--classic-green));
+    box-shadow: 0 0 14px var(--status-color, var(--classic-green));
+}
+
+.classic-scada__node-body {
+    padding: 0.55rem;
+}
+
+.classic-scada__node-kv {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.3rem 0.5rem;
+    align-items: baseline;
+}
+
+.classic-scada__node-kv strong {
+    color: #f6fbff;
+    font-family: "Courier New", monospace;
+    font-size: 0.92rem;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.classic-scada__symbol {
+    display: grid;
+    place-items: center;
+    min-height: 4.2rem;
+    margin-bottom: 0.45rem;
+}
+
+.classic-scada__tank {
+    position: relative;
+    width: 5rem;
+    height: 5.9rem;
+    overflow: hidden;
+    border: 3px solid #b7ccdd;
+    border-radius: 0 0 1.8rem 1.8rem;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02));
+}
+
+.classic-scada__tank-fill {
+    position: absolute;
+    inset: auto 0 0;
+    height: var(--fill-level, 50%);
+    background: linear-gradient(180deg, rgba(54, 226, 226, 0.92), rgba(15, 118, 180, 0.88));
+    transition: height 500ms ease;
+}
+
+.classic-scada__tank-fill::before {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 0.45rem;
+    content: "";
+    background: rgba(231, 252, 255, 0.42);
+}
+
+.classic-scada__pump {
+    width: 4.7rem;
+    height: 4.7rem;
+    display: grid;
+    place-items: center;
+    border: 3px solid #cbd8e4;
+    border-radius: 999px;
+    background: radial-gradient(circle, #284a6c 0 28%, #10243c 29% 100%);
+}
+
+.classic-scada__pump::before {
+    width: 2.1rem;
+    height: 2.1rem;
+    content: "";
+    border: 0.55rem solid transparent;
+    border-left-color: var(--status-color, var(--classic-green));
+    border-right-color: var(--status-color, var(--classic-green));
+    animation: scada-spin 1.4s linear infinite;
+}
+
+.classic-scada__valve {
+    width: 5.4rem;
+    height: 3.2rem;
+    position: relative;
+}
+
+.classic-scada__valve::before,
+.classic-scada__valve::after {
+    position: absolute;
+    top: 50%;
+    width: 2.45rem;
+    height: 2.45rem;
+    content: "";
+    border: 3px solid #ccd9e5;
+    background: color-mix(in srgb, var(--status-color, var(--classic-green)) 28%, #10243c 72%);
+    transform: translateY(-50%) rotate(45deg);
+}
+
+.classic-scada__valve::before {
+    left: 0.2rem;
+}
+
+.classic-scada__valve::after {
+    right: 0.2rem;
+}
+
+.classic-scada__valve-stem {
+    position: absolute;
+    inset: 0.1rem 50% auto auto;
+    width: 0.35rem;
+    height: 1.2rem;
+    background: #cbd8e4;
+    transform: translateX(50%);
+}
+
+.classic-scada__heat-exchanger {
+    width: 6rem;
+    height: 4.3rem;
+    border: 3px solid #ccd9e5;
+    background:
+        repeating-linear-gradient(90deg, transparent 0 0.55rem, rgba(255, 255, 255, 0.22) 0.55rem 0.72rem),
+        linear-gradient(180deg, rgba(255, 206, 51, 0.28), rgba(66, 184, 255, 0.14));
+}
+
+.classic-scada__machine {
+    width: 7rem;
+    height: 4.6rem;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.28rem;
+    padding: 0.45rem;
+    border: 3px solid #ccd9e5;
+    background: #10243c;
+}
+
+.classic-scada__machine span {
+    border: 1px solid color-mix(in srgb, var(--status-color, var(--classic-green)) 58%, #ccd9e5 42%);
+    background: color-mix(in srgb, var(--status-color, var(--classic-green)) 34%, transparent 66%);
+}
+
+.classic-scada__rack {
+    width: 6.4rem;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.18rem;
+    padding: 0.32rem;
+    border: 3px solid #ccd9e5;
+    background: #0a1728;
+}
+
+.classic-scada__rack span {
+    height: 3.8rem;
+    border: 1px solid #4b6e90;
+    background: linear-gradient(180deg, #1e3a59, #0c1c31);
+}
+
+.classic-scada__rack span::after {
+    display: block;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin: 0.35rem auto 0;
+    content: "";
+    border-radius: 999px;
+    background: var(--status-color, var(--classic-green));
+    box-shadow: 0 0 10px var(--status-color, var(--classic-green));
+}
+
+.classic-scada__gateway {
+    width: 6.5rem;
+    height: 4.8rem;
+    display: grid;
+    place-items: center;
+    border: 3px solid #ccd9e5;
+    background: linear-gradient(180deg, #1a3b5e, #0a1728);
+    color: var(--status-color, var(--classic-green));
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.classic-scada__meter {
+    width: 5.6rem;
+    height: 5.6rem;
+    display: grid;
+    place-items: center;
+    border: 3px solid #ccd9e5;
+    border-radius: 999px;
+    background:
+        conic-gradient(var(--status-color, var(--classic-blue)) 0 var(--meter-value, 65%), rgba(255, 255, 255, 0.12) 0),
+        #10243c;
+}
+
+.classic-scada__meter::before {
+    width: 3.7rem;
+    height: 3.7rem;
+    content: "";
+    border-radius: 999px;
+    background: #09182c;
+}
+
+.classic-scada__display {
+    display: inline-flex;
+    justify-content: center;
+    min-width: 5rem;
+    padding: 0.34rem 0.45rem;
+    border: 1px solid #345778;
+    background: #020a13;
+    color: var(--status-color, var(--classic-green));
+    font-family: "Courier New", monospace;
+    font-size: 1rem;
+    font-weight: 900;
+    text-shadow: 0 0 10px currentColor;
+}
+
+.classic-scada__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    align-items: center;
+}
+
+.classic-scada__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.classic-scada__legend-item::before {
+    width: 0.72rem;
+    height: 0.72rem;
+    content: "";
+    background: var(--legend-color);
+    box-shadow: 0 0 10px var(--legend-color);
+}
+
+@keyframes scada-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 1100px) {
+    .classic-scada__content {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(38rem, 68vh) auto;
+    }
+
+    .classic-scada__side-panel {
+        grid-template-rows: auto auto auto;
+    }
+}
+
+@media (max-width: 720px) {
+    .classic-scada {
+        padding: 0.45rem;
+    }
+
+    .classic-scada__content {
+        padding: 0.4rem;
+        grid-template-rows: minmax(34rem, 70vh) auto;
+    }
+
+    .classic-scada__toolbar,
+    .classic-scada__header,
+    .classic-scada__footer {
+        justify-content: flex-start;
+    }
+
+    .classic-scada__summary-grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -13,6 +13,7 @@ import { renderThresholdStatusCardMarkup } from '../widgets/threshold-status-car
 import { renderThresholdStatusGridMarkup } from '../widgets/threshold-status-grid/renderer';
 import { renderStenterUtilizationMarkup } from '../widgets/stenter-utilization/renderer';
 import { renderCompressorUtilizationMarkup } from '../widgets/compressor-utilization/renderer';
+import { renderSteamMeterMarkup } from '../widgets/steam-meter/renderer';
 
 const WIDGET_TYPES = Object.freeze({
     lineChart: 'line_chart',
@@ -25,6 +26,7 @@ const WIDGET_TYPES = Object.freeze({
     thresholdStatusGrid: 'threshold_status_grid',
     stenterUtilization: 'stenter_utilization',
     compressorUtilization: 'compressor_utilization',
+    steamMeter: 'steam_meter',
 });
 
 function buildChartOption(widget, series) {
@@ -88,6 +90,10 @@ function isStenterUtilizationWidget(widget) {
 
 function isCompressorUtilizationWidget(widget) {
     return widget?.type === WIDGET_TYPES.compressorUtilization;
+}
+
+function isSteamMeterWidget(widget) {
+    return widget?.type === WIDGET_TYPES.steamMeter;
 }
 
 function isStateWidget(widget) {
@@ -469,6 +475,12 @@ class DashboardRuntime {
             return;
         }
 
+        if (isSteamMeterWidget(widget)) {
+            this.renderSteamMeterWidget(widget);
+
+            return;
+        }
+
         const chart = this.ensureChart(widget.id);
 
         if (!chart) {
@@ -548,6 +560,18 @@ class DashboardRuntime {
         }
 
         target.innerHTML = renderCompressorUtilizationMarkup(widget);
+    }
+
+    renderSteamMeterWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderSteamMeterMarkup(widget);
     }
 
     requestInitialSnapshots() {
@@ -697,6 +721,19 @@ class DashboardRuntime {
         }
 
         if (isCompressorUtilizationWidget(widget)) {
+            widget.card = snapshot?.card && typeof snapshot.card === 'object' ? snapshot.card : null;
+            widget.device_connection_state = typeof snapshot?.device_connection_state === 'string'
+                ? snapshot.device_connection_state
+                : widget.device_connection_state;
+            widget.device_last_seen_at = typeof snapshot?.device_last_seen_at === 'string'
+                ? snapshot.device_last_seen_at
+                : widget.device_last_seen_at;
+            this.renderWidget(widget);
+
+            return;
+        }
+
+        if (isSteamMeterWidget(widget)) {
             widget.card = snapshot?.card && typeof snapshot.card === 'object' ? snapshot.card : null;
             widget.device_connection_state = typeof snapshot?.device_connection_state === 'string'
                 ? snapshot.device_connection_state

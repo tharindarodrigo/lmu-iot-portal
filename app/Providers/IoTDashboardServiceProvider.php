@@ -13,6 +13,7 @@ use App\Domain\IoTDashboard\Widgets\LineChart\LineChartWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\SteamMeter\SteamMeterWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridWidgetDefinition;
@@ -32,6 +33,7 @@ class IoTDashboardServiceProvider extends ServiceProvider
         $this->app->singleton(ThresholdStatusGridWidgetDefinition::class);
         $this->app->singleton(StenterUtilizationWidgetDefinition::class);
         $this->app->singleton(CompressorUtilizationWidgetDefinition::class);
+        $this->app->singleton(SteamMeterWidgetDefinition::class);
 
         $this->app->tag([
             LineChartWidgetDefinition::class,
@@ -44,6 +46,7 @@ class IoTDashboardServiceProvider extends ServiceProvider
             ThresholdStatusGridWidgetDefinition::class,
             StenterUtilizationWidgetDefinition::class,
             CompressorUtilizationWidgetDefinition::class,
+            SteamMeterWidgetDefinition::class,
         ], WidgetDefinition::class);
 
         $this->app->singleton(WidgetRegistry::class, function ($app): WidgetRegistry {

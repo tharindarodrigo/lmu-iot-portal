@@ -17,6 +17,7 @@ use App\Domain\IoTDashboard\Widgets\LineChart\LineChartConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\SteamMeter\SteamMeterConfig;
 use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
@@ -99,6 +100,7 @@ class IoTDashboardWidget extends Model
             WidgetType::ThresholdStatusGrid => ThresholdStatusGridConfig::fromArray([]),
             WidgetType::StenterUtilization => StenterUtilizationConfig::fromArray([]),
             WidgetType::CompressorUtilization => CompressorUtilizationConfig::fromArray([]),
+            WidgetType::SteamMeter => SteamMeterConfig::fromArray([]),
         };
     }
 

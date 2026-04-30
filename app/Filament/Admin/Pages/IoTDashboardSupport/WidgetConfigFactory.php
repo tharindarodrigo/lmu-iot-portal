@@ -17,6 +17,7 @@ use App\Domain\IoTDashboard\Widgets\StateCard\StateCardConfig;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardStyle;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineConfig;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryConfig;
+use App\Domain\IoTDashboard\Widgets\SteamMeter\SteamMeterConfig;
 use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardConfig;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridConfig;
@@ -123,6 +124,10 @@ class WidgetConfigFactory
         if ($config instanceof CompressorUtilizationConfig) {
             $data['shifts'] = $config->shifts();
             $data['percentage_thresholds'] = $config->percentageThresholds();
+        }
+
+        if ($config instanceof SteamMeterConfig) {
+            $data['shifts'] = $config->shifts();
         }
 
         return $data;
@@ -250,12 +255,17 @@ class WidgetConfigFactory
                 'shifts' => $data['shifts'] ?? $current['shifts'] ?? CompressorUtilizationConfig::defaultShifts(),
                 'percentage_thresholds' => $data['percentage_thresholds'] ?? $current['percentage_thresholds'] ?? CompressorUtilizationConfig::defaultPercentageThresholds(),
             ]),
+            WidgetType::SteamMeter => SteamMeterConfig::fromArray([
+                ...$base,
+                'sources' => $resolvedInput['steam_meter_sources'] ?? $current['sources'] ?? [],
+                'shifts' => $data['shifts'] ?? $current['shifts'] ?? SteamMeterConfig::defaultShifts(),
+            ]),
         };
     }
 
     private function defaultWebsocket(WidgetType $type): bool
     {
-        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization, WidgetType::CompressorUtilization], true);
+        return ! in_array($type, [WidgetType::BarChart, WidgetType::ThresholdStatusCard, WidgetType::ThresholdStatusGrid, WidgetType::StenterUtilization, WidgetType::CompressorUtilization, WidgetType::SteamMeter], true);
     }
 
     private function defaultPollingInterval(WidgetType $type): int
@@ -266,6 +276,7 @@ class WidgetConfigFactory
             WidgetType::ThresholdStatusGrid => 15,
             WidgetType::StenterUtilization => 30,
             WidgetType::CompressorUtilization => 30,
+            WidgetType::SteamMeter => 30,
             default => 10,
         };
     }
@@ -283,6 +294,7 @@ class WidgetConfigFactory
             WidgetType::ThresholdStatusGrid => 180,
             WidgetType::StenterUtilization => 1440,
             WidgetType::CompressorUtilization => 1440,
+            WidgetType::SteamMeter => 1440,
         };
     }
 
@@ -299,6 +311,7 @@ class WidgetConfigFactory
             WidgetType::ThresholdStatusGrid => 1,
             WidgetType::StenterUtilization => 60,
             WidgetType::CompressorUtilization => 60,
+            WidgetType::SteamMeter => 1,
         };
     }
 

@@ -1,0 +1,138 @@
+.iot-steam-meter {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 1rem;
+    color: var(--gray-900);
+}
+
+:is(.dark, .dark *) .iot-steam-meter {
+    color: var(--gray-100);
+}
+
+.iot-steam-meter--empty {
+    align-items: center;
+    justify-content: center;
+    color: var(--gray-400);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.iot-steam-meter .iot-status-summary__meta {
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+:is(.dark, .dark *) .iot-steam-meter .iot-status-summary__meta {
+    border-bottom-color: var(--gray-700);
+}
+
+.iot-steam-meter__total,
+.iot-steam-meter__flow,
+.iot-steam-meter__metric {
+    border: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gray-200) 45%, transparent 55%);
+}
+
+:is(.dark, .dark *) .iot-steam-meter__total,
+:is(.dark, .dark *) .iot-steam-meter__flow,
+:is(.dark, .dark *) .iot-steam-meter__metric {
+    border-color: var(--gray-700);
+    background: color-mix(in srgb, var(--gray-900) 82%, black 18%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gray-700) 55%, transparent 45%);
+}
+
+.iot-steam-meter__total {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.55rem;
+    padding: 0.75rem;
+    border-radius: 0.55rem;
+}
+
+.iot-steam-meter__total-icon {
+    align-self: center;
+    color: var(--gray-500);
+    font-size: 1rem;
+}
+
+.iot-steam-meter__total strong {
+    font-size: clamp(1.55rem, 2.4vw, 2.55rem);
+    line-height: 1;
+    font-weight: 900;
+}
+
+.iot-steam-meter__total span:last-child,
+.iot-steam-meter__flow small,
+.iot-steam-meter__metric small {
+    color: var(--gray-500);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.iot-steam-meter__flow {
+    display: grid;
+    justify-items: center;
+    gap: 0.2rem;
+    padding: 0.9rem;
+    border-radius: 0.65rem;
+}
+
+.iot-steam-meter__flow span,
+.iot-steam-meter__metric span:not(.iot-steam-meter__metric-icon) {
+    color: var(--gray-500);
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.iot-steam-meter__flow strong {
+    font-size: clamp(1.6rem, 3vw, 3rem);
+    line-height: 1;
+    font-weight: 900;
+}
+
+.iot-steam-meter__metrics {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: auto;
+}
+
+.iot-steam-meter__metric {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 0.55rem;
+}
+
+.iot-steam-meter__metric-icon {
+    color: var(--gray-500);
+    font-size: 1.1rem;
+}
+
+.iot-steam-meter__metric div {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.iot-steam-meter__metric strong {
+    font-size: clamp(1.05rem, 1.5vw, 1.55rem);
+    line-height: 1.1;
+    font-weight: 850;
+}
+
+:is(.dark, .dark *) .iot-steam-meter__total-icon,
+:is(.dark, .dark *) .iot-steam-meter__metric-icon,
+:is(.dark, .dark *) .iot-steam-meter__total span:last-child,
+:is(.dark, .dark *) .iot-steam-meter__flow span,
+:is(.dark, .dark *) .iot-steam-meter__flow small,
+:is(.dark, .dark *) .iot-steam-meter__metric span,
+:is(.dark, .dark *) .iot-steam-meter__metric small {
+    color: var(--gray-400);
+}

@@ -81,6 +81,27 @@ class WidgetFormOptionsService
     /**
      * @return array<int|string, string>
      */
+    public function steamMeterDeviceOptions(IoTDashboard $dashboard): array
+    {
+        return Device::query()
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_virtual', false)
+            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'steam_meter'))
+            ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'totalisedCount'))
+            ->whereHas('schemaVersion.topics.parameters', fn (Builder $query): Builder => $query->where('key', 'flow'))
+            ->orderBy('name')
+            ->get(['id', 'name', 'external_id'])
+            ->mapWithKeys(fn (Device $device): array => [
+                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
+                    ? "{$device->name} ({$device->external_id})"
+                    : $device->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
     public function topicOptions(IoTDashboard $dashboard, mixed $deviceId): array
     {
         if (! is_numeric($deviceId)) {
@@ -442,6 +463,10 @@ class WidgetFormOptionsService
             return $this->resolveCompressorUtilizationInput($dashboard, $data);
         }
 
+        if (($data['widget_type'] ?? null) === WidgetType::SteamMeter->value) {
+            return $this->resolveSteamMeterInput($dashboard, $data);
+        }
+
         $deviceId = is_numeric($data['device_id'] ?? null)
             ? (int) $data['device_id']
             : null;
@@ -687,6 +712,73 @@ class WidgetFormOptionsService
                     'device_id' => (int) $device->id,
                     'schema_version_topic_id' => (int) $topic->id,
                     'parameter_key' => 'status',
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     device: Device,
+     *     topic: SchemaVersionTopic,
+     *     series: array<int, array{key: string, label: string, color: string, unit?: string|null}>,
+     *     parameter_metadata: array<string, array{
+     *         label: string,
+     *         compact_label: string,
+     *         option_label: string,
+     *         unit: string|null,
+     *         default_color: string,
+     *         is_counter: bool
+     *     }>,
+     *     steam_meter_sources: array{flow: array{device_id: int, schema_version_topic_id: int, parameter_key: string}|null, total: array{device_id: int, schema_version_topic_id: int, parameter_key: string}|null}
+     * }|null
+     */
+    private function resolveSteamMeterInput(IoTDashboard $dashboard, array $data): ?array
+    {
+        $deviceId = is_numeric($data['device_id'] ?? null)
+            ? (int) $data['device_id']
+            : null;
+
+        if ($deviceId === null) {
+            return null;
+        }
+
+        $device = Device::query()
+            ->with(['schemaVersion.topics.parameters', 'schemaVersion.derivedParameters', 'deviceType'])
+            ->whereKey($deviceId)
+            ->where('organization_id', $dashboard->organization_id)
+            ->where('is_virtual', false)
+            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'steam_meter'))
+            ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'totalisedCount'))
+            ->first();
+
+        if (! $device instanceof Device) {
+            return null;
+        }
+
+        $topic = $device->schemaVersion?->topics
+            ?->first(fn (SchemaVersionTopic $topic): bool => $topic->isPublish() && $topic->parameters->contains(fn (ParameterDefinition $parameter): bool => $parameter->key === 'flow' && (bool) $parameter->is_active));
+
+        if (! $topic instanceof SchemaVersionTopic) {
+            return null;
+        }
+
+        return [
+            'device' => $device,
+            'topic' => $topic,
+            'series' => [],
+            'parameter_metadata' => [],
+            'steam_meter_sources' => [
+                'flow' => [
+                    'device_id' => (int) $device->id,
+                    'schema_version_topic_id' => (int) $topic->id,
+                    'parameter_key' => 'flow',
+                ],
+                'total' => [
+                    'device_id' => (int) $device->id,
+                    'schema_version_topic_id' => (int) $topic->id,
+                    'parameter_key' => 'totalisedCount',
                 ],
             ],
         ];

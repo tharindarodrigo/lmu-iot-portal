@@ -18,6 +18,7 @@ enum WidgetType: string implements HasLabel
     case ThresholdStatusGrid = 'threshold_status_grid';
     case StenterUtilization = 'stenter_utilization';
     case CompressorUtilization = 'compressor_utilization';
+    case SteamMeter = 'steam_meter';
 
     public function getLabel(): string
     {
@@ -32,6 +33,7 @@ enum WidgetType: string implements HasLabel
             self::ThresholdStatusGrid => 'Threshold Status Grid',
             self::StenterUtilization => 'Stenter Utilization',
             self::CompressorUtilization => 'Compressor Utilization',
+            self::SteamMeter => 'Steam Meter',
         };
     }
 
