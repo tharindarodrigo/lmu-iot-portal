@@ -328,6 +328,35 @@ it('renders threshold cards with the presence meta row and a button that opens t
         ->toContain("window.Livewire.dispatch('iot-dashboard-edit-threshold-policy', { policyId });");
 });
 
+it('uses dashboard-consistent stenter utilization panels and filled efficiency boxes', function (): void {
+    $stylesheet = file_get_contents(resource_path('css/iot-dashboard/widgets/stenter-utilization.css'));
+    $renderer = file_get_contents(resource_path('js/iot-dashboard/widgets/stenter-utilization/renderer.js'));
+
+    expect($stylesheet)->toBeString()
+        ->toContain('.iot-stenter-utilization__shift-time {')
+        ->toContain('background: var(--gray-50);')
+        ->toContain('border-radius: 0;')
+        ->toContain('background: color-mix(in srgb, var(--gray-900) 82%, black 18%);')
+        ->toContain('.iot-stenter-utilization__shift-value {')
+        ->toContain('display: inline-flex;')
+        ->toContain('align-items: baseline;')
+        ->toContain('.iot-stenter-utilization__percent-symbol {')
+        ->toContain('font-size: 0.5em;')
+        ->toContain('.iot-stenter-utilization__efficiency {')
+        ->toContain('border-color: color-mix(in srgb, var(--stenter-percentage-color) 52%, var(--gray-200) 48%);')
+        ->toContain('linear-gradient(135deg, color-mix(in srgb, var(--stenter-percentage-color) 26%, white 74%), color-mix(in srgb, var(--stenter-percentage-color) 12%, white 88%))')
+        ->toContain('border-color: color-mix(in srgb, var(--stenter-percentage-color) 72%, var(--gray-700) 28%);')
+        ->toContain('linear-gradient(135deg, color-mix(in srgb, var(--stenter-percentage-color) 48%, black 52%), color-mix(in srgb, var(--stenter-percentage-color) 22%, #111827 78%))')
+        ->toContain('font-size: clamp(2.1rem, 2.9vw, 3.35rem);')
+        ->toContain('white-space: nowrap;')
+        ->not->toContain('.iot-stenter-utilization__meter')
+        ->and($renderer)->toBeString()
+        ->toContain('function renderPercentMarkup(value)')
+        ->toContain('function mergeStatusSegments(segments)')
+        ->toContain('return mergeStatusSegments(segments)')
+        ->not->toContain('iot-stenter-utilization__meter');
+});
+
 it('edits a threshold policy from the dashboard slide-over action', function (): void {
     [$dashboard, $topic, $device] = createDashboardTopicForPageTest();
 

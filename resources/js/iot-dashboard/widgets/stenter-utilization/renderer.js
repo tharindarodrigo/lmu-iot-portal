@@ -10,6 +10,16 @@ function formatPercent(value) {
     return `${numericValue.toFixed(1)}%`;
 }
 
+function renderPercentMarkup(value) {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue)) {
+        return '—';
+    }
+
+    return `<span class="iot-stenter-utilization__percent-number">${escapeHtml(numericValue.toFixed(1))}</span><span class="iot-stenter-utilization__percent-symbol">%</span>`;
+}
+
 function formatDuration(minutes) {
     const numericMinutes = Number(minutes);
 
@@ -93,6 +103,47 @@ function thresholdColor(card, value) {
         : '#f59e0b';
 }
 
+function normalizeSegmentPercent(value) {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.min(100, numericValue));
+}
+
+function mergeStatusSegments(segments) {
+    return segments
+        .map((segment) => {
+            const state = segment?.state === 'off' ? 'off' : 'on';
+            const left = normalizeSegmentPercent(segment?.start_percent ?? 0);
+            const width = normalizeSegmentPercent(segment?.width_percent ?? 0);
+
+            return {
+                state,
+                left,
+                width: Math.max(0, Math.min(100 - left, width)),
+            };
+        })
+        .filter((segment) => segment.width > 0)
+        .sort((first, second) => first.left - second.left)
+        .reduce((merged, segment) => {
+            const previous = merged.at(-1);
+            const previousEnd = previous ? previous.left + previous.width : 0;
+
+            if (previous && previous.state === segment.state && segment.left <= previousEnd + 0.1) {
+                previous.width = Math.max(previous.width, (segment.left + segment.width) - previous.left);
+
+                return merged;
+            }
+
+            merged.push({ ...segment });
+
+            return merged;
+        }, []);
+}
+
 function renderSegments(card) {
     const segments = Array.isArray(card?.status_segments) ? card.status_segments : [];
 
@@ -100,13 +151,9 @@ function renderSegments(card) {
         return '<div class="iot-stenter-utilization__no-status">NO STATUS DATA</div>';
     }
 
-    return segments
+    return mergeStatusSegments(segments)
         .map((segment) => {
-            const state = segment?.state === 'off' ? 'off' : 'on';
-            const left = Number(segment?.start_percent ?? 0);
-            const width = Number(segment?.width_percent ?? 0);
-
-            return `<i class="iot-stenter-utilization__segment is-${state}" style="left: ${Math.max(0, Math.min(100, left))}%; width: ${Math.max(0, Math.min(100, width))}%;"></i>`;
+            return `<i class="iot-stenter-utilization__segment is-${segment.state}" style="left: ${segment.left}%; width: ${segment.width}%;"></i>`;
         })
         .join('');
 }
@@ -122,8 +169,7 @@ function renderDailyEfficiencies(card) {
             return `
             <div class="iot-stenter-utilization__efficiency" style="--stenter-percentage-color: ${escapeHtml(color)};">
                 <span>${escapeHtml(typeof day?.label === 'string' ? day.label : '')}</span>
-                <div class="iot-stenter-utilization__meter"><i style="width: ${Math.max(0, Math.min(100, Number(day?.efficiency_percent ?? 0)))}%;"></i></div>
-                <strong>${escapeHtml(formatPercent(day?.efficiency_percent))}</strong>
+                <strong>${renderPercentMarkup(day?.efficiency_percent)}</strong>
             </div>
         `;
         })
@@ -153,7 +199,7 @@ export function renderStenterUtilizationMarkup(widget) {
                     <span>${escapeHtml(typeof currentShift?.label === 'string' ? currentShift.label : 'Current Shift')}</span>
                     <strong>${escapeHtml(formatShiftRange(currentShift))}</strong>
                 </div>
-                <strong class="iot-stenter-utilization__shift-value" style="--stenter-percentage-color: ${escapeHtml(currentShiftColor)};">${escapeHtml(formatPercent(currentShift?.efficiency_percent))}</strong>
+                <strong class="iot-stenter-utilization__shift-value" style="--stenter-percentage-color: ${escapeHtml(currentShiftColor)};">${renderPercentMarkup(currentShift?.efficiency_percent)}</strong>
             </section>
 
             <section class="iot-stenter-utilization__status" aria-label="Last hour status">
