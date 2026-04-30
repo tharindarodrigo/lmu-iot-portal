@@ -41,6 +41,30 @@ function normalizeDisplayUnit(unit) {
     return normalizedUnit;
 }
 
+function estimateValueWidthCharacters(value, unit) {
+    const valueWidth = Array.from(String(value)).reduce((width, character) => {
+        if (character === '.' || character === ',' || character === ' ') {
+            return width + 0.38;
+        }
+
+        if (character === '-' || character === '+') {
+            return width + 0.55;
+        }
+
+        return width + 1;
+    }, 0);
+    const unitWidth = unit === '' ? 0 : (Array.from(unit).length * 0.5) + 0.8;
+
+    return Math.max(1, valueWidth + unitWidth);
+}
+
+function valueFitSize(value, unit) {
+    const widthCharacters = estimateValueWidthCharacters(value, unit);
+    const fitSize = Math.max(5, Math.min(30, 135 / widthCharacters));
+
+    return `${fitSize.toFixed(2)}cqw`;
+}
+
 function resolveDisplayLabel(entry) {
     const key = typeof entry?.key === 'string' ? entry.key.trim() : '';
     const label = typeof entry?.label === 'string' ? entry.label.trim() : '';
@@ -83,7 +107,7 @@ function renderValueMarkup(entry, latestPoint) {
     }
 
     return `
-        <div class="iot-status-summary__value">
+        <div class="iot-status-summary__value" style="--summary-value-fit-size: ${escapeHtml(valueFitSize(value, unit))};">
             <span class="iot-status-summary__value-number">${escapeHtml(value)}</span>
             ${unit !== '' ? `<span class="iot-status-summary__value-unit">${escapeHtml(unit)}</span>` : ''}
         </div>

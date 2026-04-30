@@ -4,6 +4,13 @@
     flex-direction: column;
     gap: 0.35rem;
     padding: 0.65rem;
+    border: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    color: var(--gray-900);
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization {
+    border-color: var(--gray-700);
     background: #151821;
     color: #e5e7eb;
 }
@@ -41,6 +48,12 @@
     display: grid;
     align-content: center;
     padding: 0.45rem 0.65rem;
+    border: 1px solid var(--gray-200);
+    background: white;
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__shift-time {
+    border-color: transparent;
     background: #2d2d34;
 }
 
@@ -49,11 +62,19 @@
 .iot-stenter-utilization__efficiency span,
 .iot-stenter-utilization__status-meta,
 .iot-stenter-utilization__section-label {
-    color: #9ca3af;
+    color: var(--gray-500);
     font-size: 0.68rem;
     font-weight: 900;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__shift-time span,
+:is(.dark, .dark *) .iot-stenter-utilization__tile span,
+:is(.dark, .dark *) .iot-stenter-utilization__efficiency span,
+:is(.dark, .dark *) .iot-stenter-utilization__status-meta,
+:is(.dark, .dark *) .iot-stenter-utilization__section-label {
+    color: #9ca3af;
 }
 
 .iot-stenter-utilization__shift-time strong {
@@ -86,6 +107,12 @@
 
 .iot-stenter-utilization__status {
     padding: 0.65rem;
+    border: 1px solid var(--gray-200);
+    background: white;
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__status {
+    border-color: transparent;
     background: #24242b;
 }
 
@@ -102,8 +129,16 @@
     position: relative;
     height: 3rem;
     overflow: hidden;
-    border-left: 1px solid rgba(255, 255, 255, 0.2);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    border-left: 1px solid rgba(15, 23, 42, 0.18);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.18);
+    background:
+        linear-gradient(to right, rgba(15, 23, 42, 0.08) 1px, transparent 1px) 0 0 / 20% 100%,
+        rgba(241, 245, 249, 0.82);
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__chart {
+    border-left-color: rgba(255, 255, 255, 0.2);
+    border-bottom-color: rgba(255, 255, 255, 0.2);
     background:
         linear-gradient(to right, rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 20% 100%,
         rgba(8, 13, 21, 0.38);
@@ -114,7 +149,7 @@
     top: 0;
     height: 100%;
     border-radius: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 .iot-stenter-utilization__segment.is-on {
@@ -129,10 +164,14 @@
     height: 100%;
     display: grid;
     place-items: center;
-    color: #9ca3af;
+    color: var(--gray-500);
     font-size: 0.7rem;
     font-weight: 900;
     letter-spacing: 0.08em;
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__no-status {
+    color: #9ca3af;
 }
 
 .iot-stenter-utilization__durations,
@@ -153,6 +192,13 @@
     display: grid;
     gap: 0.45rem;
     padding: 0.55rem;
+    border: 1px solid var(--gray-200);
+    background: white;
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__tile,
+:is(.dark, .dark *) .iot-stenter-utilization__efficiency {
+    border-color: transparent;
     background: #24242b;
 }
 
@@ -193,6 +239,10 @@
     height: 0.72rem;
     overflow: hidden;
     border-radius: 999px;
+    background: var(--gray-200);
+}
+
+:is(.dark, .dark *) .iot-stenter-utilization__meter {
     background: rgba(255, 255, 255, 0.08);
 }
 
