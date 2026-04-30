@@ -7,11 +7,14 @@ namespace App\Providers;
 use App\Domain\IoTDashboard\Application\WidgetRegistry;
 use App\Domain\IoTDashboard\Contracts\WidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\BarChart\BarChartWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\CompressorUtilization\CompressorUtilizationWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\GaugeChart\GaugeChartWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\LineChart\LineChartWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateCard\StateCardWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StateTimeline\StateTimelineWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\StatusSummary\StatusSummaryWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\SteamMeter\SteamMeterWidgetDefinition;
+use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusCard\ThresholdStatusCardWidgetDefinition;
 use App\Domain\IoTDashboard\Widgets\ThresholdStatusGrid\ThresholdStatusGridWidgetDefinition;
 use Illuminate\Support\ServiceProvider;
@@ -28,6 +31,9 @@ class IoTDashboardServiceProvider extends ServiceProvider
         $this->app->singleton(StateTimelineWidgetDefinition::class);
         $this->app->singleton(ThresholdStatusCardWidgetDefinition::class);
         $this->app->singleton(ThresholdStatusGridWidgetDefinition::class);
+        $this->app->singleton(StenterUtilizationWidgetDefinition::class);
+        $this->app->singleton(CompressorUtilizationWidgetDefinition::class);
+        $this->app->singleton(SteamMeterWidgetDefinition::class);
 
         $this->app->tag([
             LineChartWidgetDefinition::class,
@@ -38,6 +44,9 @@ class IoTDashboardServiceProvider extends ServiceProvider
             StateTimelineWidgetDefinition::class,
             ThresholdStatusCardWidgetDefinition::class,
             ThresholdStatusGridWidgetDefinition::class,
+            StenterUtilizationWidgetDefinition::class,
+            CompressorUtilizationWidgetDefinition::class,
+            SteamMeterWidgetDefinition::class,
         ], WidgetDefinition::class);
 
         $this->app->singleton(WidgetRegistry::class, function ($app): WidgetRegistry {

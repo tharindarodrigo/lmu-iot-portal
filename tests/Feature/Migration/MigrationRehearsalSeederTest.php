@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
+use App\Domain\IoTDashboard\Enums\WidgetType;
+use App\Domain\IoTDashboard\Models\IoTDashboard;
+use App\Domain\IoTDashboard\Widgets\StenterUtilization\StenterUtilizationConfig;
 use App\Domain\Shared\Models\Organization;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,6 +32,28 @@ it('seeds the witco, miracle dome, textrip, teejay, and srilankan pilots plus th
         ->pluck('external_id')
         ->all();
 
+    $stenterStandard = Device::query()
+        ->where('external_id', 'tj-stenter01-agr')
+        ->first();
+
+    $stenterStandard?->load('virtualDeviceLinks.sourceDevice');
+
+    $stenterDashboard = IoTDashboard::query()
+        ->with('widgets')
+        ->where('slug', 'teejay-stenter-standards')
+        ->first();
+
+    $stenterWidgetTitles = $stenterDashboard?->widgets
+        ->pluck('title')
+        ->all() ?? [];
+    $stenterWidgetTypes = $stenterDashboard?->widgets
+        ->pluck('type')
+        ->unique()
+        ->values()
+        ->all() ?? [];
+    $stenterFirstWidget = $stenterDashboard?->widgets
+        ->firstWhere('title', 'TJ - Stenter01  (AGR) · Utilization');
+
     expect($organizationSlugs)->toBe([
         'main-organization',
         'miracle-dome',
@@ -39,11 +64,11 @@ it('seeds the witco, miracle dome, textrip, teejay, and srilankan pilots plus th
     ])->and($deviceTypeKeys)->toBe([
         'energy_meter',
         'fabric_length_counter',
-        'imoni_status',
         'legacy_climate_sensor',
         'legacy_egravity_sensor',
         'legacy_hub',
         'pressure_sensor',
+        'status',
         'steam_meter',
         'stenter_line',
         'tank_level_sensor',
@@ -60,5 +85,19 @@ it('seeds the witco, miracle dome, textrip, teejay, and srilankan pilots plus th
         ->and(Device::query()->where('external_id', '869244041759394-21')->exists())->toBeTrue()
         ->and(Device::query()->where('external_id', '869604063866064-51')->exists())->toBeTrue()
         ->and(Device::query()->where('external_id', '869244041754767')->exists())->toBeTrue()
-        ->and(Device::query()->where('external_id', 'ea2b48f3-911f-4c90-88b7-29ac47799ed7')->exists())->toBeTrue();
+        ->and(Device::query()->where('external_id', 'ea2b48f3-911f-4c90-88b7-29ac47799ed7')->exists())->toBeTrue()
+        ->and($stenterStandard?->isVirtual())->toBeTrue()
+        ->and($stenterStandard?->parent_device_id)->toBeNull()
+        ->and($stenterStandard?->virtualDeviceLinks)->toHaveCount(3)
+        ->and($stenterStandard?->virtualDeviceLinks->pluck('purpose')->all())->toEqualCanonicalizing(['energy', 'status', 'length'])
+        ->and($stenterStandard?->virtualDeviceLinks->every(fn ($link): bool => $link->sourceDevice?->isVirtual() === false))->toBeTrue()
+        ->and($stenterDashboard)->not->toBeNull()
+        ->and($stenterWidgetTypes)->toBe([WidgetType::StenterUtilization->value])
+        ->and($stenterWidgetTitles)->toContain('TJ - Stenter01  (AGR) · Utilization')
+        ->and($stenterFirstWidget?->layoutArray())->toMatchArray([
+            'w' => 4,
+            'h' => 8,
+            'card_height_px' => 768,
+        ])
+        ->and(data_get($stenterFirstWidget?->configArray(), 'percentage_thresholds'))->toBe(StenterUtilizationConfig::defaultPercentageThresholds());
 });

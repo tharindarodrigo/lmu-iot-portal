@@ -30,6 +30,7 @@ class DeviceFactory extends Factory
             'device_type_id' => DeviceType::factory(),
             'device_schema_version_id' => DeviceSchemaVersion::factory(),
             'parent_device_id' => null,
+            'is_virtual' => false,
             'uuid' => (string) Str::uuid(),
             'name' => $this->faker->words(2, true),
             'external_id' => $this->faker->optional()->bothify('EXT-####'),
@@ -38,5 +39,13 @@ class DeviceFactory extends Factory
             'connection_state' => 'offline',
             'last_seen_at' => null,
         ];
+    }
+
+    public function virtual(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'is_virtual' => true,
+            'parent_device_id' => null,
+        ]);
     }
 }

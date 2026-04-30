@@ -845,6 +845,46 @@ it('returns the latest seven numeric values for status summary widgets', functio
     ]);
 });
 
+it('backfills status summary units from parameter metadata', function (): void {
+    $admin = User::factory()->create(['is_super_admin' => true]);
+    $this->actingAs($admin);
+
+    [, $dashboard, $topic, $widget, $device] = createStatusSummaryWidgetSnapshotContext(
+        buildStatusSummaryWidgetConfig([
+            ['tiles' => [[
+                'key' => 'V1',
+                'label' => 'V1',
+                'base_color' => '#0ea5e9',
+                'unit' => null,
+                'threshold_ranges' => [],
+                'source' => [
+                    'type' => 'latest_parameter',
+                    'parameter_key' => 'V1',
+                ],
+            ]]],
+        ]),
+    );
+
+    ParameterDefinition::query()
+        ->where('schema_version_topic_id', $topic->id)
+        ->where('key', 'V1')
+        ->update(['unit' => 'Volts']);
+
+    DeviceTelemetryLog::factory()->forDevice($device)->forTopic($topic)->create([
+        'recorded_at' => now()->subMinute(),
+        'transformed_values' => ['V1' => 230.1],
+        'validation_status' => ValidationStatus::Valid,
+    ]);
+
+    $this->getJson(route('admin.iot-dashboard.dashboards.snapshots', [
+        'dashboard' => $dashboard,
+        'widget' => $widget->id,
+    ]))
+        ->assertOk()
+        ->assertJsonPath('widgets.0.series.0.unit', 'V')
+        ->assertJsonPath('widgets.0.series.0.points.0.value', 230.1);
+});
+
 it('applies threshold colors to status summary tiles based on resolved values', function (): void {
     $admin = User::factory()->create(['is_super_admin' => true]);
     $this->actingAs($admin);

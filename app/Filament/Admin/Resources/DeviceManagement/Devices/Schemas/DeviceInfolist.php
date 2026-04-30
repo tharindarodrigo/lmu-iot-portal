@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Filament\Admin\Resources\DeviceManagement\Devices\Schemas;
 
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardProfile;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardShiftSchedule;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardSource;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Filament\Admin\Resources\DeviceManagement\DeviceTypes\DeviceTypeResource;
 use App\Filament\Admin\Resources\DeviceSchema\DeviceSchemaVersions\DeviceSchemaVersionResource;
@@ -35,6 +38,12 @@ class DeviceInfolist
                         TextEntry::make('external_id')
                             ->label('External ID')
                             ->placeholder('None'),
+
+                        TextEntry::make('is_virtual')
+                            ->label('Kind')
+                            ->badge()
+                            ->formatStateUsing(fn (bool $state): string => $state ? 'Virtual' : 'Physical')
+                            ->color(fn (bool $state): string => $state ? 'warning' : 'gray'),
 
                         TextEntry::make('parentDevice.name')
                             ->label('Parent Hub')
@@ -98,6 +107,60 @@ class DeviceInfolist
                         TextEntry::make('child_devices_count')
                             ->label('Child Devices')
                             ->state(fn (Device $record): int => $record->childDevices()->count()),
+
+                        TextEntry::make('virtual_source_count')
+                            ->label('Virtual Sources')
+                            ->state(fn (Device $record): int => $record->virtualDeviceLinks()->count())
+                            ->visible(fn (Device $record): bool => $record->isVirtual()),
+                    ])
+                    ->columns(2),
+
+                Section::make('Virtual Composition')
+                    ->visible(fn (Device $record): bool => $record->isVirtual())
+                    ->schema([
+                        TextEntry::make('virtual_source_summary')
+                            ->label('Source Devices')
+                            ->state(function (Device $record): string {
+                                $record->loadMissing('virtualDeviceLinks.sourceDevice');
+
+                                return $record->virtualDeviceLinks
+                                    ->map(function ($link): string {
+                                        $sourceDevice = $link->sourceDevice;
+                                        $sourceName = $sourceDevice instanceof Device ? $sourceDevice->name : 'Unknown Device';
+
+                                        return Str::headline((string) $link->purpose).' → '.$sourceName;
+                                    })
+                                    ->implode(PHP_EOL);
+                            })
+                            ->placeholder('No virtual source devices attached.')
+                            ->extraAttributes(['class' => 'whitespace-pre-wrap'])
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Standard Profile')
+                    ->visible(fn (Device $record): bool => $record->isVirtualStandard())
+                    ->schema([
+                        TextEntry::make('virtual_standard_profile_label')
+                            ->label('Profile')
+                            ->state(function (Device $record): string {
+                                $profile = $record->virtualStandardProfile();
+
+                                return $profile instanceof VirtualStandardProfile ? $profile->label : '—';
+                            }),
+                        TextEntry::make('virtual_standard_shift_schedule')
+                            ->label('Shift Schedule')
+                            ->state(function (Device $record): string {
+                                $shiftSchedule = $record->virtualStandardProfile()?->shiftSchedule;
+
+                                return $shiftSchedule instanceof VirtualStandardShiftSchedule
+                                    ? $shiftSchedule->label
+                                    : 'Not configured';
+                            }),
+                        TextEntry::make('virtual_standard_purpose_summary')
+                            ->label('Expected Sources')
+                            ->state(fn (Device $record): string => self::virtualStandardPurposeSummary($record))
+                            ->extraAttributes(['class' => 'whitespace-pre-wrap'])
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
 
@@ -233,5 +296,26 @@ class DeviceInfolist
                 default => json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: get_debug_type($value),
             })
             ->all();
+    }
+
+    private static function virtualStandardPurposeSummary(Device $record): string
+    {
+        $profile = $record->virtualStandardProfile();
+
+        if ($profile === null) {
+            return 'No managed standard profile configured.';
+        }
+
+        return collect($profile->sources)
+            ->map(function (VirtualStandardSource $source): string {
+                $allowedTypes = collect($source->allowedDeviceTypeKeys)
+                    ->map(fn (string $key): string => Str::headline($key))
+                    ->implode(', ');
+
+                $requirement = $source->required ? 'required' : 'optional';
+
+                return sprintf('%s (%s) → %s', $source->label, $requirement, $allowedTypes !== '' ? $allowedTypes : 'Any physical device');
+            })
+            ->implode(PHP_EOL);
     }
 }

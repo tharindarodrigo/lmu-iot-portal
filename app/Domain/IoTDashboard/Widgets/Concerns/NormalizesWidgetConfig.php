@@ -8,7 +8,7 @@ trait NormalizesWidgetConfig
 {
     /**
      * @param  array<int, mixed>|mixed  $series
-     * @return array<int, array{key: string, label: string, color: string, unit?: string|null}>
+     * @return array<int, array{key: string, label: string, color: string, unit?: string|null, source?: array<string, mixed>}>
      */
     private static function normalizeSeries(mixed $series): array
     {
@@ -33,7 +33,7 @@ trait NormalizesWidgetConfig
             }
 
             $seen[] = $key;
-            $normalized[] = [
+            $normalizedSeries = [
                 'key' => $key,
                 'label' => is_string($entry['label'] ?? null) && trim((string) $entry['label']) !== ''
                     ? (string) $entry['label']
@@ -45,6 +45,14 @@ trait NormalizesWidgetConfig
                     ? trim((string) $entry['unit'])
                     : null,
             ];
+
+            if (is_array($entry['source'] ?? null)) {
+                /** @var array<string, mixed> $source */
+                $source = $entry['source'];
+                $normalizedSeries['source'] = $source;
+            }
+
+            $normalized[] = $normalizedSeries;
         }
 
         return $normalized;

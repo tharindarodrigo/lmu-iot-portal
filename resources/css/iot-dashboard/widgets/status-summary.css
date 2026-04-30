@@ -37,6 +37,8 @@
     flex: 1 1 auto;
     display: grid;
     gap: 0.75rem;
+    grid-auto-rows: minmax(0, 1fr);
+    min-height: 0;
 }
 
 .iot-status-summary__row {
@@ -44,11 +46,17 @@
     display: grid;
     grid-template-columns: repeat(var(--summary-columns), minmax(0, 1fr));
     gap: 0.75rem;
+    min-height: 0;
 }
 
 .iot-status-summary__item {
+    container-type: size;
     display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 0.35rem;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     padding: 0.75rem;
     border-radius: 0.85rem;
     border: 1px solid var(--gray-200);
@@ -63,19 +71,33 @@
 }
 
 .iot-status-summary__item.is-accented {
-    border-color: color-mix(in srgb, var(--summary-color) 18%, var(--gray-200) 82%);
+    border-color: color-mix(in srgb, var(--summary-color) 52%, var(--gray-200) 48%);
     background:
-        linear-gradient(180deg, color-mix(in srgb, var(--summary-color) 8%, transparent), transparent 42%),
+        linear-gradient(135deg, color-mix(in srgb, var(--summary-color) 26%, white 74%), color-mix(in srgb, var(--summary-color) 12%, white 88%)),
         var(--gray-50);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--summary-color) 10%, transparent 90%);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--summary-color) 28%, transparent 72%),
+        0 10px 26px color-mix(in srgb, var(--summary-color) 16%, transparent 84%);
 }
 
 :is(.dark, .dark *) .iot-status-summary__item.is-accented {
-    border-color: color-mix(in srgb, var(--summary-color) 24%, var(--gray-700) 76%);
+    border-color: color-mix(in srgb, var(--summary-color) 72%, var(--gray-700) 28%);
     background:
-        linear-gradient(180deg, color-mix(in srgb, var(--summary-color) 10%, transparent), transparent 38%),
-        color-mix(in srgb, var(--gray-900) 82%, black 18%);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--summary-color) 14%, transparent 86%);
+        linear-gradient(135deg, color-mix(in srgb, var(--summary-color) 48%, black 52%), color-mix(in srgb, var(--summary-color) 22%, #111827 78%)),
+        color-mix(in srgb, var(--gray-900) 70%, black 30%);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--summary-color) 42%, transparent 58%),
+        0 14px 32px color-mix(in srgb, var(--summary-color) 22%, transparent 78%);
+}
+
+.iot-status-summary__item.is-accented .iot-status-summary__label,
+.iot-status-summary__item.is-accented .iot-status-summary__value-unit {
+    color: color-mix(in srgb, var(--summary-color) 34%, var(--gray-800) 66%);
+}
+
+:is(.dark, .dark *) .iot-status-summary__item.is-accented .iot-status-summary__label,
+:is(.dark, .dark *) .iot-status-summary__item.is-accented .iot-status-summary__value-unit {
+    color: color-mix(in srgb, var(--summary-color) 16%, white 84%);
 }
 
 .iot-status-summary__label {
@@ -92,14 +114,21 @@
 }
 
 .iot-status-summary__value {
+    --summary-value-fit-size: 16cqw;
     display: inline-flex;
     align-items: baseline;
     justify-content: center;
-    flex-wrap: wrap;
+    align-self: center;
+    flex-wrap: nowrap;
     gap: 0.3rem;
+    min-width: 0;
+    min-height: 0;
     width: 100%;
-    font-size: 1.05rem;
-    line-height: 1.35rem;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: clamp(1.05rem, min(42cqh, var(--summary-value-fit-size)), 5rem);
+    line-height: 1;
     font-weight: 800;
     color: var(--gray-900);
 }
@@ -110,11 +139,16 @@
 
 .iot-status-summary__value-number {
     display: inline-block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: clip;
 }
 
 .iot-status-summary__value-unit {
-    font-size: 0.82rem;
-    line-height: 1rem;
+    flex: 0 0 auto;
+    font-size: 0.5em;
+    line-height: 1;
     font-weight: 700;
     color: var(--gray-500);
 }

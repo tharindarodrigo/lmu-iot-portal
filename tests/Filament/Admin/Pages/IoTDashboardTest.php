@@ -255,7 +255,16 @@ it('renders threshold colors with a table repeater in widget configuration', fun
 });
 
 it('uses neutral status summary tiles and centers values', function (): void {
-    $stylesheet = file_get_contents(resource_path('css/iot-dashboard/page.css'));
+    $statusSummaryStylesheet = file_get_contents(resource_path('css/iot-dashboard/widgets/status-summary.css'));
+    $statusSummaryRenderer = file_get_contents(resource_path('js/iot-dashboard/widgets/status-summary/renderer.js'));
+    $stylesheet = implode("\n", array_map(
+        static fn (string $path): string => (string) file_get_contents(resource_path($path)),
+        [
+            'css/iot-dashboard/widget-shell.css',
+            'css/iot-dashboard/widgets/status-summary.css',
+            'css/iot-dashboard/widgets/threshold-status-card.css',
+        ],
+    ));
 
     expect($stylesheet)->toBeString()
         ->toContain('.iot-status-summary__item {')
@@ -287,7 +296,21 @@ it('uses neutral status summary tiles and centers values', function (): void {
         ->toContain('font-size: clamp(1.85rem, min(18cqw, 24cqh), 5.4rem);')
         ->toContain('.iot-threshold-status-card__value.is-alert {')
         ->toContain('color: #ef4444;')
-        ->not->toContain('.iot-threshold-status-card__device-name {');
+        ->not->toContain('.iot-threshold-status-card__device-name {')
+        ->and($statusSummaryStylesheet)->toBeString()
+        ->toContain('container-type: size;')
+        ->toContain('grid-auto-rows: minmax(0, 1fr);')
+        ->toContain('font-size: clamp(1.05rem, min(42cqh, var(--summary-value-fit-size)), 5rem);')
+        ->toContain('align-self: center;')
+        ->toContain('white-space: nowrap;')
+        ->toContain('font-size: 0.5em;')
+        ->toContain('border-color: color-mix(in srgb, var(--summary-color) 52%, var(--gray-200) 48%);')
+        ->toContain('linear-gradient(135deg, color-mix(in srgb, var(--summary-color) 26%, white 74%), color-mix(in srgb, var(--summary-color) 12%, white 88%))')
+        ->toContain('border-color: color-mix(in srgb, var(--summary-color) 72%, var(--gray-700) 28%);')
+        ->toContain('linear-gradient(135deg, color-mix(in srgb, var(--summary-color) 48%, black 52%), color-mix(in srgb, var(--summary-color) 22%, #111827 78%))')
+        ->and($statusSummaryRenderer)->toBeString()
+        ->toContain('function valueFitSize(value, unit)')
+        ->toContain('--summary-value-fit-size: ${escapeHtml(valueFitSize(value, unit))};');
 });
 
 it('renders threshold cards with the presence meta row and a button that opens the dashboard threshold action', function (): void {
@@ -303,6 +326,35 @@ it('renders threshold cards with the presence meta row and a button that opens t
         ->not->toContain('iot-threshold-status-card__device-name')
         ->and($pageScript)->toBeString()
         ->toContain("window.Livewire.dispatch('iot-dashboard-edit-threshold-policy', { policyId });");
+});
+
+it('uses dashboard-consistent stenter utilization panels and filled efficiency boxes', function (): void {
+    $stylesheet = file_get_contents(resource_path('css/iot-dashboard/widgets/stenter-utilization.css'));
+    $renderer = file_get_contents(resource_path('js/iot-dashboard/widgets/stenter-utilization/renderer.js'));
+
+    expect($stylesheet)->toBeString()
+        ->toContain('.iot-stenter-utilization__shift-time {')
+        ->toContain('background: var(--gray-50);')
+        ->toContain('border-radius: 0;')
+        ->toContain('background: color-mix(in srgb, var(--gray-900) 82%, black 18%);')
+        ->toContain('.iot-stenter-utilization__shift-value {')
+        ->toContain('display: inline-flex;')
+        ->toContain('align-items: baseline;')
+        ->toContain('.iot-stenter-utilization__percent-symbol {')
+        ->toContain('font-size: 0.5em;')
+        ->toContain('.iot-stenter-utilization__efficiency {')
+        ->toContain('border-color: color-mix(in srgb, var(--stenter-percentage-color) 52%, var(--gray-200) 48%);')
+        ->toContain('linear-gradient(135deg, color-mix(in srgb, var(--stenter-percentage-color) 26%, white 74%), color-mix(in srgb, var(--stenter-percentage-color) 12%, white 88%))')
+        ->toContain('border-color: color-mix(in srgb, var(--stenter-percentage-color) 72%, var(--gray-700) 28%);')
+        ->toContain('linear-gradient(135deg, color-mix(in srgb, var(--stenter-percentage-color) 48%, black 52%), color-mix(in srgb, var(--stenter-percentage-color) 22%, #111827 78%))')
+        ->toContain('font-size: clamp(2.1rem, 2.9vw, 3.35rem);')
+        ->toContain('white-space: nowrap;')
+        ->not->toContain('.iot-stenter-utilization__meter')
+        ->and($renderer)->toBeString()
+        ->toContain('function renderPercentMarkup(value)')
+        ->toContain('function mergeStatusSegments(segments)')
+        ->toContain('return mergeStatusSegments(segments)')
+        ->not->toContain('iot-stenter-utilization__meter');
 });
 
 it('edits a threshold policy from the dashboard slide-over action', function (): void {

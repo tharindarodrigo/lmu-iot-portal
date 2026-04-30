@@ -11,6 +11,9 @@ import { renderStateCardMarkup } from '../widgets/state-card/renderer';
 import { stateTimelineOption } from '../widgets/state-timeline/renderer';
 import { renderThresholdStatusCardMarkup } from '../widgets/threshold-status-card/renderer';
 import { renderThresholdStatusGridMarkup } from '../widgets/threshold-status-grid/renderer';
+import { renderStenterUtilizationMarkup } from '../widgets/stenter-utilization/renderer';
+import { renderCompressorUtilizationMarkup } from '../widgets/compressor-utilization/renderer';
+import { renderSteamMeterMarkup } from '../widgets/steam-meter/renderer';
 
 const WIDGET_TYPES = Object.freeze({
     lineChart: 'line_chart',
@@ -21,6 +24,9 @@ const WIDGET_TYPES = Object.freeze({
     stateTimeline: 'state_timeline',
     thresholdStatusCard: 'threshold_status_card',
     thresholdStatusGrid: 'threshold_status_grid',
+    stenterUtilization: 'stenter_utilization',
+    compressorUtilization: 'compressor_utilization',
+    steamMeter: 'steam_meter',
 });
 
 function buildChartOption(widget, series) {
@@ -76,6 +82,18 @@ function isThresholdStatusGridWidget(widget) {
 
 function isThresholdStatusCardWidget(widget) {
     return widget?.type === WIDGET_TYPES.thresholdStatusCard;
+}
+
+function isStenterUtilizationWidget(widget) {
+    return widget?.type === WIDGET_TYPES.stenterUtilization;
+}
+
+function isCompressorUtilizationWidget(widget) {
+    return widget?.type === WIDGET_TYPES.compressorUtilization;
+}
+
+function isSteamMeterWidget(widget) {
+    return widget?.type === WIDGET_TYPES.steamMeter;
 }
 
 function isStateWidget(widget) {
@@ -445,6 +463,24 @@ class DashboardRuntime {
             return;
         }
 
+        if (isStenterUtilizationWidget(widget)) {
+            this.renderStenterUtilizationWidget(widget);
+
+            return;
+        }
+
+        if (isCompressorUtilizationWidget(widget)) {
+            this.renderCompressorUtilizationWidget(widget);
+
+            return;
+        }
+
+        if (isSteamMeterWidget(widget)) {
+            this.renderSteamMeterWidget(widget);
+
+            return;
+        }
+
         const chart = this.ensureChart(widget.id);
 
         if (!chart) {
@@ -500,6 +536,42 @@ class DashboardRuntime {
         }
 
         target.innerHTML = renderThresholdStatusCardMarkup(widget);
+    }
+
+    renderStenterUtilizationWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderStenterUtilizationMarkup(widget);
+    }
+
+    renderCompressorUtilizationWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderCompressorUtilizationMarkup(widget);
+    }
+
+    renderSteamMeterWidget(widget) {
+        this.disposeChart(widget.id);
+
+        const target = document.getElementById(`iot-widget-chart-${widget.id}`);
+
+        if (!target) {
+            return;
+        }
+
+        target.innerHTML = renderSteamMeterMarkup(widget);
     }
 
     requestInitialSnapshots() {
@@ -630,6 +702,45 @@ class DashboardRuntime {
 
         if (isThresholdStatusGridWidget(widget)) {
             widget.cards = Array.isArray(snapshot?.cards) ? snapshot.cards : [];
+            this.renderWidget(widget);
+
+            return;
+        }
+
+        if (isStenterUtilizationWidget(widget)) {
+            widget.card = snapshot?.card && typeof snapshot.card === 'object' ? snapshot.card : null;
+            widget.device_connection_state = typeof snapshot?.device_connection_state === 'string'
+                ? snapshot.device_connection_state
+                : widget.device_connection_state;
+            widget.device_last_seen_at = typeof snapshot?.device_last_seen_at === 'string'
+                ? snapshot.device_last_seen_at
+                : widget.device_last_seen_at;
+            this.renderWidget(widget);
+
+            return;
+        }
+
+        if (isCompressorUtilizationWidget(widget)) {
+            widget.card = snapshot?.card && typeof snapshot.card === 'object' ? snapshot.card : null;
+            widget.device_connection_state = typeof snapshot?.device_connection_state === 'string'
+                ? snapshot.device_connection_state
+                : widget.device_connection_state;
+            widget.device_last_seen_at = typeof snapshot?.device_last_seen_at === 'string'
+                ? snapshot.device_last_seen_at
+                : widget.device_last_seen_at;
+            this.renderWidget(widget);
+
+            return;
+        }
+
+        if (isSteamMeterWidget(widget)) {
+            widget.card = snapshot?.card && typeof snapshot.card === 'object' ? snapshot.card : null;
+            widget.device_connection_state = typeof snapshot?.device_connection_state === 'string'
+                ? snapshot.device_connection_state
+                : widget.device_connection_state;
+            widget.device_last_seen_at = typeof snapshot?.device_last_seen_at === 'string'
+                ? snapshot.device_last_seen_at
+                : widget.device_last_seen_at;
             this.renderWidget(widget);
 
             return;

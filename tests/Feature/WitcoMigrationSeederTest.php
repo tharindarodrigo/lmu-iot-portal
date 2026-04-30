@@ -20,6 +20,7 @@ use App\Domain\Telemetry\Models\DeviceTelemetryLog;
 use App\Events\TelemetryReceived;
 use Database\Seeders\WitcoMigrationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 
 uses(RefreshDatabase::class);
@@ -87,9 +88,9 @@ it('seeds witco hubs with mapped peripheral child devices only', function (): vo
 
     expect($statusTopic)->not->toBeNull()
         ->and($statusDevice?->deviceType?->organization_id)->toBeNull()
-        ->and($statusDevice?->deviceType?->key)->toBe('imoni_status')
-        ->and($statusDevice?->schemaVersion?->schema?->name)->toBe('IMONI Status')
-        ->and($statusTopic?->resolvedTopic($statusDevice))->toBe('devices/imoni-status/869244041754866-00-02/telemetry')
+        ->and($statusDevice?->deviceType?->key)->toBe('status')
+        ->and($statusDevice?->schemaVersion?->schema?->name)->toBe('Status')
+        ->and($statusTopic?->resolvedTopic($statusDevice))->toBe('devices/status/869244041754866-00-02/telemetry')
         ->and($statusParameter)->not->toBeNull()
         ->and($statusParameter?->type)->toBe(ParameterDataType::Integer)
         ->and($statusParameter?->category)->toBe(ParameterCategory::State)
@@ -167,7 +168,7 @@ it('marks a witco hub online and ingests source-routed telemetry into physical s
                 'source_key' => '869244041754866:00',
             ],
         ],
-        receivedAt: now(),
+        receivedAt: Carbon::now(),
     ))->toArray());
 
     $job->handle(app(TelemetryIngestionService::class), app(DeviceSignalBindingResolver::class));
@@ -240,5 +241,5 @@ it('removes obsolete witco imoni lite device types, schemas, versions, devices, 
         ->and(Device::withTrashed()->whereKey($obsoleteDevice->id)->exists())->toBeFalse()
         ->and(DeviceTelemetryLog::query()->where('device_schema_version_id', $obsoleteSchemaVersion->id)->exists())->toBeFalse()
         ->and(DeviceType::query()->where('key', 'legacy_hub')->whereNull('organization_id')->exists())->toBeTrue()
-        ->and(DeviceType::query()->where('key', 'imoni_status')->whereNull('organization_id')->exists())->toBeTrue();
+        ->and(DeviceType::query()->where('key', 'status')->whereNull('organization_id')->exists())->toBeTrue();
 });

@@ -189,6 +189,45 @@ class IoTDashboard extends Page
                     ->action(function (array $data): void {
                         $this->createWidget(WidgetType::ThresholdStatusCard, $data);
                     }),
+
+                Action::make('addStenterUtilizationWidget')
+                    ->label('Add Stenter Widget')
+                    ->icon(Heroicon::OutlinedPresentationChartBar)
+                    ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                    ->slideOver()
+                    ->modalWidth('7xl')
+                    ->schema(fn (): array => $this->selectedDashboard() instanceof IoTDashboardModel
+                        ? $this->widgetFormSchemaFactory()->stenterUtilizationSchema($this->selectedDashboard())
+                        : [])
+                    ->action(function (array $data): void {
+                        $this->createWidget(WidgetType::StenterUtilization, $data);
+                    }),
+
+                Action::make('addCompressorUtilizationWidget')
+                    ->label('Add Compressor Widget')
+                    ->icon(Heroicon::OutlinedPresentationChartBar)
+                    ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                    ->slideOver()
+                    ->modalWidth('7xl')
+                    ->schema(fn (): array => $this->selectedDashboard() instanceof IoTDashboardModel
+                        ? $this->widgetFormSchemaFactory()->compressorUtilizationSchema($this->selectedDashboard())
+                        : [])
+                    ->action(function (array $data): void {
+                        $this->createWidget(WidgetType::CompressorUtilization, $data);
+                    }),
+
+                Action::make('addSteamMeterWidget')
+                    ->label('Add Steam Meter Widget')
+                    ->icon(Heroicon::OutlinedPresentationChartBar)
+                    ->visible(fn (): bool => $this->selectedDashboard() instanceof IoTDashboardModel)
+                    ->slideOver()
+                    ->modalWidth('7xl')
+                    ->schema(fn (): array => $this->selectedDashboard() instanceof IoTDashboardModel
+                        ? $this->widgetFormSchemaFactory()->steamMeterSchema($this->selectedDashboard())
+                        : [])
+                    ->action(function (array $data): void {
+                        $this->createWidget(WidgetType::SteamMeter, $data);
+                    }),
             ])
                 ->label('Add Widget')
                 ->icon(Heroicon::OutlinedPlus)

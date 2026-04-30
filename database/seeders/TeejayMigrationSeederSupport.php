@@ -145,6 +145,7 @@ abstract class TeejayMigrationSeederSupport extends Seeder
     /**
      * @param  array<int, array<string, mixed>>  $parameters
      * @param  array<int, array<string, mixed>>  $derivedParameters
+     * @param  array<string, mixed>|null  $virtualStandardProfile
      */
     protected function upsertSchemaVersion(
         string $deviceTypeKey,
@@ -160,6 +161,7 @@ abstract class TeejayMigrationSeederSupport extends Seeder
         string $status = 'active',
         string $notes = 'Teejay migration schema.',
         array $derivedParameters = [],
+        ?array $virtualStandardProfile = null,
     ): DeviceSchemaVersion {
         $deviceType = DeviceType::query()->updateOrCreate(
             [
@@ -178,6 +180,7 @@ abstract class TeejayMigrationSeederSupport extends Seeder
                     baseTopic: $baseTopic,
                     securityMode: MqttSecurityMode::UsernamePassword,
                 ))->toArray(),
+                'virtual_standard_profile' => $virtualStandardProfile,
             ],
         );
 
@@ -495,6 +498,7 @@ abstract class TeejayMigrationSeederSupport extends Seeder
                         'migration_origin' => TeejayMigrationSeeder::ORGANIZATION_SLUG,
                         'legacy_device_uid' => $deviceMetadata['legacy_device_uid'] ?? null,
                         'legacy_source_path' => $bindingDefinition['legacy_source_path'] ?? null,
+                        'mutation_expression' => $bindingDefinition['mutation_expression'] ?? null,
                         'decoder' => $bindingDefinition['decoder'] ?? null,
                     ], static fn (mixed $value): bool => $value !== null),
                 ],

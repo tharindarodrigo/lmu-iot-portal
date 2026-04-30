@@ -13,60 +13,52 @@ use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 
 class TeejayStatusSeeder extends TeejayMigrationSeederSupport
 {
-    private const DEVICE_TYPE_KEY = 'imoni_status';
+    private const DEVICE_TYPE_KEY = 'status';
 
-    private const DEVICE_TYPE_NAME = 'IMONI Status';
+    private const DEVICE_TYPE_NAME = 'Status';
 
-    private const BASE_TOPIC = 'devices/imoni-status';
+    private const BASE_TOPIC = 'devices/status';
 
-    private const SCHEMA_NAME = 'IMONI Status';
-
-    private const VERSION_OFFSET = 10;
+    private const SCHEMA_NAME = 'Status';
 
     public function run(): void
     {
         $organization = $this->ensureOrganization();
         $hubs = $this->ensureHubs($organization);
         $inventory = TeejayMigrationInventory::devicesForType('Status');
-        $schemaVersions = [];
         $expectedExternalIds = [];
 
-        foreach (array_values($this->schemaMutationsBySignature($inventory)) as $index => $schemaConfig) {
-            $schemaVersions[$schemaConfig['signature']] = $this->upsertSchemaVersion(
-                deviceTypeKey: self::DEVICE_TYPE_KEY,
-                deviceTypeName: self::DEVICE_TYPE_NAME,
-                baseTopic: self::BASE_TOPIC,
-                schemaName: self::SCHEMA_NAME,
-                version: self::VERSION_OFFSET + $index,
-                status: 'draft',
-                notes: 'Recovered Teejay status variant: '.$schemaConfig['variant'],
-                parameters: [
-                    [
-                        'key' => 'status',
-                        'label' => 'Status',
-                        'json_path' => '$.status',
-                        'type' => ParameterDataType::Integer,
-                        'category' => ParameterCategory::State,
-                        'required' => false,
-                        'is_critical' => true,
-                        'validation_rules' => ['min' => 0],
-                        'control_ui' => [
-                            'state_mappings' => [
-                                ['value' => 0, 'label' => 'OFF', 'color' => '#ef4444'],
-                                ['value' => 1, 'label' => 'ON', 'color' => '#22c55e'],
-                            ],
+        $schemaVersion = $this->upsertSchemaVersion(
+            deviceTypeKey: self::DEVICE_TYPE_KEY,
+            deviceTypeName: self::DEVICE_TYPE_NAME,
+            baseTopic: self::BASE_TOPIC,
+            schemaName: self::SCHEMA_NAME,
+            version: 1,
+            status: 'active',
+            notes: 'Shared active status contract for Teejay status signals.',
+            parameters: [
+                [
+                    'key' => 'status',
+                    'label' => 'Status',
+                    'json_path' => '$.status',
+                    'type' => ParameterDataType::Integer,
+                    'category' => ParameterCategory::State,
+                    'required' => false,
+                    'is_critical' => true,
+                    'validation_rules' => ['min' => 0],
+                    'control_ui' => [
+                        'state_mappings' => [
+                            ['value' => 0, 'label' => 'OFF', 'color' => '#ef4444'],
+                            ['value' => 1, 'label' => 'ON', 'color' => '#22c55e'],
                         ],
-                        'mutation_expression' => $schemaConfig['status_mutation'],
-                        'sequence' => 1,
                     ],
+                    'sequence' => 1,
                 ],
-            );
-        }
+            ],
+        );
 
         foreach ($inventory as $deviceConfig) {
             $parentDevice = $hubs[$deviceConfig['hub_imei']] ?? null;
-            $signature = $this->schemaSignatureFor($deviceConfig);
-            $schemaVersion = $schemaVersions[$signature] ?? null;
 
             if (! $parentDevice instanceof Device || ! $schemaVersion instanceof DeviceSchemaVersion || ! is_string($deviceConfig['peripheral_type_hex'])) {
                 continue;
@@ -83,7 +75,7 @@ class TeejayStatusSeeder extends TeejayMigrationSeederSupport
                     'migration_role' => 'physical_device',
                     'migration_device_type' => 'Status',
                     'source_adapter' => 'imoni',
-                    'schema_variant' => $this->schemaMutationsBySignature([$deviceConfig])[$signature]['variant'] ?? 'status',
+                    'schema_variant' => 'status',
                     'legacy_device_uid' => $deviceConfig['legacy_device_uid'],
                     'legacy_virtual_device_id' => $deviceConfig['legacy_virtual_device_id'],
                     'legacy_hub_imei' => $deviceConfig['hub_imei'],
@@ -123,6 +115,7 @@ class TeejayStatusSeeder extends TeejayMigrationSeederSupport
                     'status' => [
                         'source_json_path' => $sourceJsonPath,
                         'legacy_source_path' => $legacyPath,
+                        'mutation_expression' => $this->mutationExpressionForParameter($deviceConfig, 'status'),
                         'sequence' => 0,
                     ],
                 ],
@@ -133,41 +126,6 @@ class TeejayStatusSeeder extends TeejayMigrationSeederSupport
         }
 
         $this->cleanupDevices($organization, 'Status', $expectedExternalIds);
-        $this->cleanupUnusedDraftSchemaVersions(self::DEVICE_TYPE_KEY, self::SCHEMA_NAME, $this->schemaVersionNumbers($schemaVersions));
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $inventory
-     * @return array<string, array{signature: string, variant: string, status_mutation: array<string, mixed>|null}>
-     */
-    private function schemaMutationsBySignature(array $inventory): array
-    {
-        $schemas = [];
-
-        foreach ($inventory as $deviceConfig) {
-            $signature = $this->schemaSignatureFor($deviceConfig);
-
-            if (array_key_exists($signature, $schemas)) {
-                continue;
-            }
-
-            $statusMutation = $this->mutationExpressionForParameter($deviceConfig, 'status');
-
-            $schemas[$signature] = [
-                'signature' => $signature,
-                'variant' => $this->schemaVariantKey('status', $statusMutation),
-                'status_mutation' => $statusMutation,
-            ];
-        }
-
-        return $schemas;
-    }
-
-    /**
-     * @param  array<string, mixed>  $deviceConfig
-     */
-    private function schemaSignatureFor(array $deviceConfig): string
-    {
-        return md5(json_encode($this->mutationExpressionForParameter($deviceConfig, 'status'), JSON_THROW_ON_ERROR));
+        $this->cleanupUnusedDraftSchemaVersions(self::DEVICE_TYPE_KEY, self::SCHEMA_NAME, [(int) $schemaVersion->version]);
     }
 }

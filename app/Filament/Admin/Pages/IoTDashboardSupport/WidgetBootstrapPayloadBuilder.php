@@ -76,6 +76,9 @@ class WidgetBootstrapPayloadBuilder
             WidgetType::StateTimeline => 2,
             WidgetType::ThresholdStatusCard => 0,
             WidgetType::ThresholdStatusGrid => 0,
+            WidgetType::StenterUtilization => 0,
+            WidgetType::CompressorUtilization => 0,
+            WidgetType::SteamMeter => 0,
         };
     }
 }

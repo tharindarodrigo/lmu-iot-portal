@@ -6,9 +6,15 @@ namespace App\Filament\Admin\Resources\DeviceManagement\Devices\Schemas;
 
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceManagement\Models\DeviceType;
+use App\Domain\DeviceManagement\Services\VirtualStandardProfileRegistry;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardProfile;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardShiftSchedule;
+use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardSource;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -74,6 +80,8 @@ class DeviceForm
                             ->afterStateUpdated(function (Set $set): void {
                                 $set('device_type_id', null);
                                 $set('device_schema_version_id', null);
+                                $set('parent_device_id', null);
+                                $set('virtual_device_links', []);
                             }),
 
                         Select::make('device_type_id')
@@ -91,6 +99,23 @@ class DeviceForm
                             ->afterStateUpdated(function (Set $set, Get $get): void {
                                 $defaultSchemaVersionId = self::defaultActiveSchemaVersionId($get('device_type_id'));
                                 $set('device_schema_version_id', $defaultSchemaVersionId);
+
+                                $profile = self::selectedVirtualStandardProfile($get);
+
+                                if ($profile === null) {
+                                    return;
+                                }
+
+                                $set('is_virtual', true);
+                                $set('parent_device_id', null);
+
+                                $existingLinks = $get('virtual_device_links');
+
+                                if (is_array($existingLinks) && $existingLinks !== []) {
+                                    return;
+                                }
+
+                                $set('virtual_device_links', self::defaultVirtualDeviceLinksForProfile($profile));
                             }),
 
                         Select::make('device_schema_version_id')
@@ -102,13 +127,26 @@ class DeviceForm
                             ->disabled(fn (Get $get) => ! $get('device_type_id'))
                             ->helperText('Only active schema versions for the selected device type are shown'),
 
+                        Toggle::make('is_virtual')
+                            ->label('Virtual Device')
+                            ->default(false)
+                            ->live()
+                            ->helperText(fn (Get $get): string => self::virtualDeviceHelperText($get))
+                            ->afterStateUpdated(function (Set $set, mixed $state): void {
+                                if ($state) {
+                                    $set('parent_device_id', null);
+                                }
+                            }),
+
                         Select::make('parent_device_id')
                             ->label('Parent Hub')
                             ->options(fn (Get $get, ?Device $record): array => self::parentDeviceOptions($get, $record))
                             ->searchable()
                             ->preload()
                             ->placeholder('No parent hub')
-                            ->helperText('Assign this device to a hub for grouped visibility and health tracking.'),
+                            ->helperText('Assign this physical device to a hub for grouped visibility and health tracking.')
+                            ->visible(fn (Get $get): bool => ! (bool) $get('is_virtual'))
+                            ->dehydrated(fn (Get $get): bool => ! (bool) $get('is_virtual')),
 
                         Placeholder::make('onboarding_hint')
                             ->label('Onboarding Hint')
@@ -130,6 +168,64 @@ class DeviceForm
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
+
+                Section::make('Standard Profile')
+                    ->visible(fn (Get $get): bool => self::selectedVirtualStandardProfile($get) !== null)
+                    ->schema([
+                        Placeholder::make('standard_profile_name')
+                            ->label('Profile')
+                            ->content(function (Get $get): string {
+                                $profile = self::selectedVirtualStandardProfile($get);
+
+                                return $profile instanceof VirtualStandardProfile ? $profile->label : '—';
+                            }),
+                        Placeholder::make('standard_profile_shift_schedule')
+                            ->label('Shift Schedule')
+                            ->content(fn (Get $get): string => self::selectedVirtualStandardShiftScheduleLabel($get)),
+                        Placeholder::make('standard_profile_sources')
+                            ->label('Expected Source Purposes')
+                            ->content(fn (Get $get): string => self::selectedVirtualStandardPurposeSummary($get))
+                            ->columnSpanFull(),
+                        Placeholder::make('standard_profile_source_types')
+                            ->label('Allowed Source Device Types')
+                            ->content(fn (Get $get): string => self::selectedVirtualStandardSourceTypeSummary($get))
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2),
+
+                Section::make('Virtual Composition')
+                    ->description(fn (Get $get): string => self::virtualCompositionDescription($get))
+                    ->visible(fn (Get $get): bool => (bool) $get('is_virtual'))
+                    ->schema([
+                        Repeater::make('virtual_device_links')
+                            ->label('Source Devices')
+                            ->default([])
+                            ->reorderable()
+                            ->addActionLabel('Add Source Device')
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->itemLabel(function (array $state): ?string {
+                                $purpose = trim((string) ($state['purpose'] ?? ''));
+
+                                return $purpose !== '' ? Str::headline($purpose) : null;
+                            })
+                            ->schema([
+                                Hidden::make('id'),
+                                TextInput::make('purpose')
+                                    ->required()
+                                    ->maxLength(100)
+                                    ->placeholder('status')
+                                    ->helperText(fn (Get $get): string => self::purposeHelperText($get))
+                                    ->regex('/^[a-z0-9_-]+$/'),
+                                Select::make('source_device_id')
+                                    ->label('Source Device')
+                                    ->options(fn (Get $get): array => self::sourceDeviceOptions($get))
+                                    ->searchable()
+                                    ->preload()
+                                    ->required()
+                                    ->helperText(fn (Get $get): string => self::sourceDeviceHelperText($get)),
+                            ]),
+                    ]),
 
                 Section::make('Status')
                     ->schema([
@@ -203,12 +299,13 @@ class DeviceForm
         }
 
         return $query
-            ->get(['id', 'name', 'organization_id'])
+            ->get(['id', 'name', 'key', 'organization_id', 'virtual_standard_profile'])
             ->mapWithKeys(function (DeviceType $deviceType): array {
                 $scopeSuffix = $deviceType->organization_id === null ? ' (Global)' : '';
+                $profileSuffix = $deviceType->isVirtualStandard() ? ' · Standard Profile' : '';
 
                 return [
-                    (int) $deviceType->id => "{$deviceType->name}{$scopeSuffix}",
+                    (int) $deviceType->id => "{$deviceType->name}{$scopeSuffix}{$profileSuffix}",
                 ];
             })
             ->all();
@@ -283,6 +380,7 @@ class DeviceForm
 
         $query = Device::query()
             ->where('organization_id', $resolvedOrganizationId)
+            ->physical()
             ->whereNull('parent_device_id')
             ->orderBy('name');
 
@@ -302,5 +400,225 @@ class DeviceForm
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function sourceDeviceOptions(Get $get): array
+    {
+        $organizationId = self::resolvedOrganizationId($get);
+
+        if ($organizationId === null) {
+            return [];
+        }
+
+        $query = Device::query()
+            ->where('organization_id', $organizationId)
+            ->physical()
+            ->orderBy('name');
+
+        $currentRecordId = self::currentRecordId();
+
+        if ($currentRecordId !== null) {
+            $query->whereKeyNot($currentRecordId);
+        }
+
+        return $query
+            ->get(['id', 'name', 'external_id'])
+            ->mapWithKeys(function (Device $device): array {
+                $externalId = is_string($device->external_id) && trim($device->external_id) !== ''
+                    ? " · {$device->external_id}"
+                    : '';
+
+                return [
+                    (int) $device->id => "{$device->name}{$externalId}",
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * Resolve the selected managed virtual standard profile for the current device type state.
+     */
+    private static function selectedVirtualStandardProfile(Get $get): ?VirtualStandardProfile
+    {
+        return self::virtualStandardRegistry()->forDeviceTypeId($get('device_type_id'));
+    }
+
+    /**
+     * @return array<int, array{purpose: string, source_device_id: null}>
+     */
+    private static function defaultVirtualDeviceLinksForProfile(VirtualStandardProfile $profile): array
+    {
+        return collect($profile->purposes())
+            ->map(fn (string $purpose): array => [
+                'purpose' => $purpose,
+                'source_device_id' => null,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private static function virtualDeviceHelperText(Get $get): string
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+
+        if ($profile === null) {
+            return 'Use virtual devices for standards that combine multiple physical devices by purpose.';
+        }
+
+        return "{$profile->label} uses a managed standard profile and should stay virtual.";
+    }
+
+    private static function virtualCompositionDescription(Get $get): string
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+
+        if ($profile === null) {
+            return 'Attach the physical source devices that power this virtual device using semantic purposes like status, energy, or length.';
+        }
+
+        $purposeList = collect($profile->sources)
+            ->map(fn (VirtualStandardSource $source): string => $source->label)
+            ->implode(', ');
+
+        return "{$profile->label} expects these source purposes: {$purposeList}.";
+    }
+
+    private static function purposeHelperText(Get $get): string
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+
+        if ($profile === null) {
+            return 'Use lowercase semantic purposes such as status, energy, or length.';
+        }
+
+        $purposeList = collect($profile->purposes())
+            ->map(fn (string $purpose): string => $purpose)
+            ->implode(', ');
+
+        return "Expected purposes for this profile: {$purposeList}.";
+    }
+
+    private static function sourceDeviceHelperText(Get $get): string
+    {
+        $allowedDeviceTypeKeys = self::allowedSourceDeviceTypeKeys($get);
+
+        if ($allowedDeviceTypeKeys === []) {
+            return 'Only physical devices from the selected organization can be attached.';
+        }
+
+        $allowedDeviceTypes = collect($allowedDeviceTypeKeys)
+            ->map(fn (string $key): string => Str::headline($key))
+            ->implode(', ');
+
+        return "Only physical devices from the selected organization with these types can be attached: {$allowedDeviceTypes}.";
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function allowedSourceDeviceTypeKeys(Get $get): array
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+        $purpose = self::resolvedPurpose($get);
+
+        if ($profile === null || $purpose === null) {
+            return [];
+        }
+
+        return self::virtualStandardRegistry()->allowedDeviceTypeKeysForPurpose($profile, $purpose);
+    }
+
+    private static function resolvedPurpose(Get $get): ?string
+    {
+        foreach (['purpose', '../purpose'] as $path) {
+            $purpose = $get($path);
+
+            if (is_string($purpose) && trim($purpose) !== '') {
+                return trim($purpose);
+            }
+        }
+
+        return null;
+    }
+
+    private static function selectedVirtualStandardShiftScheduleLabel(Get $get): string
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+
+        if ($profile === null) {
+            return 'Not configured';
+        }
+
+        return $profile->shiftSchedule instanceof VirtualStandardShiftSchedule
+            ? $profile->shiftSchedule->label
+            : 'Not configured';
+    }
+
+    private static function selectedVirtualStandardPurposeSummary(Get $get): string
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+
+        if ($profile === null) {
+            return 'No managed standard profile selected.';
+        }
+
+        return collect($profile->sources)
+            ->map(function (VirtualStandardSource $source): string {
+                $suffix = $source->required ? 'required' : 'optional';
+
+                return sprintf('%s (%s)', $source->label, $suffix);
+            })
+            ->implode(', ');
+    }
+
+    private static function selectedVirtualStandardSourceTypeSummary(Get $get): string
+    {
+        $profile = self::selectedVirtualStandardProfile($get);
+
+        if ($profile === null) {
+            return 'No managed source rules.';
+        }
+
+        return collect($profile->sources)
+            ->map(function (VirtualStandardSource $source): string {
+                $allowedTypes = collect($source->allowedDeviceTypeKeys)
+                    ->map(fn (string $key): string => Str::headline($key))
+                    ->implode(', ');
+
+                return $source->label.': '.($allowedTypes !== '' ? $allowedTypes : 'Any physical device');
+            })
+            ->implode(PHP_EOL);
+    }
+
+    private static function virtualStandardRegistry(): VirtualStandardProfileRegistry
+    {
+        return app(VirtualStandardProfileRegistry::class);
+    }
+
+    private static function resolvedOrganizationId(Get $get): ?int
+    {
+        foreach (['organization_id', '../../organization_id'] as $path) {
+            $organizationId = $get($path);
+
+            if (is_numeric($organizationId)) {
+                return (int) $organizationId;
+            }
+        }
+
+        return null;
+    }
+
+    private static function currentRecordId(): ?int
+    {
+        $record = request()->route('record');
+
+        if ($record instanceof Device && is_numeric($record->getKey())) {
+            return (int) $record->getKey();
+        }
+
+        return is_numeric($record) ? (int) $record : null;
     }
 }

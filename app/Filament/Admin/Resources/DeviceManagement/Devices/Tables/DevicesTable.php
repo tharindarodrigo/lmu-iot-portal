@@ -52,6 +52,15 @@ class DevicesTable
                         ? DeviceTypeResource::getUrl('view', ['record' => $record->device_type_id])
                         : null),
 
+                TextColumn::make('device_kind')
+                    ->label('Kind')
+                    ->state(fn (Device $record): string => $record->isVirtual() ? 'Virtual' : 'Physical')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Virtual' ? 'warning' : 'gray')
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query->orderBy('is_virtual', $direction);
+                    }),
+
                 TextColumn::make('schemaVersion.version')
                     ->label('Schema')
                     ->formatStateUsing(fn (mixed $state): string => is_scalar($state) ? "v{$state}" : '—')
@@ -99,6 +108,11 @@ class DevicesTable
                     ->counts('childDevices')
                     ->toggleable(),
 
+                TextColumn::make('virtual_device_links_count')
+                    ->label('Sources')
+                    ->counts('virtualDeviceLinks')
+                    ->toggleable(),
+
                 TextColumn::make('temporaryDevice.expires_at')
                     ->label('Temporary Expires')
                     ->dateTime()
@@ -120,6 +134,22 @@ class DevicesTable
                     ->relationship('deviceType', 'name')
                     ->searchable()
                     ->preload(),
+
+                SelectFilter::make('is_virtual')
+                    ->label('Kind')
+                    ->options([
+                        '0' => 'Physical',
+                        '1' => 'Virtual',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+
+                        return match ($value) {
+                            '0' => $query->where('is_virtual', false),
+                            '1' => $query->where('is_virtual', true),
+                            default => $query,
+                        };
+                    }),
 
                 SelectFilter::make('effective_connection_state')
                     ->label('Status')

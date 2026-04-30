@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/admin');
 
+Route::view('/demo/scada-dashboard', 'demo.scada-dashboard')
+    ->name('demo.scada-dashboard');
+
+Route::view('/demo/classic-scada-network', 'demo.classic-scada-network')
+    ->name('demo.classic-scada-network');
+
 Route::middleware('auth')
     ->prefix('admin/iot-dashboard')
     ->name('admin.iot-dashboard.')
