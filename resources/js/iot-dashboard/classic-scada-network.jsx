@@ -11,6 +11,7 @@ import {
     Panel,
     Position,
     ReactFlow,
+    useNodesState,
 } from '@xyflow/react';
 
 const STATUS = Object.freeze({
@@ -91,9 +92,11 @@ function edge(source, target, networkType, color, label) {
 
 function ClassicScadaNetworkDashboard() {
     const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
+    const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(INITIAL_TELEMETRY, false));
     const [isPaused, setIsPaused] = useState(false);
     const [showTelemetryLinks, setShowTelemetryLinks] = useState(true);
     const [isAlarmDrill, setIsAlarmDrill] = useState(false);
+    const [hasCustomLayout, setHasCustomLayout] = useState(false);
     const [events, setEvents] = useState(() => initialEvents());
 
     useEffect(() => {
@@ -109,9 +112,29 @@ function ClassicScadaNetworkDashboard() {
         return () => window.clearInterval(interval);
     }, [isAlarmDrill, isPaused]);
 
-    const nodes = useMemo(() => buildNodes(telemetry, isAlarmDrill), [isAlarmDrill, telemetry]);
+    useEffect(() => {
+        setNodes((currentNodes) => syncNodesWithTelemetry(currentNodes, telemetry, isAlarmDrill));
+    }, [isAlarmDrill, setNodes, telemetry]);
+
     const edges = useMemo(() => buildEdges(telemetry, showTelemetryLinks, isAlarmDrill), [isAlarmDrill, showTelemetryLinks, telemetry]);
     const summaries = useMemo(() => buildSummaries(telemetry, isAlarmDrill), [isAlarmDrill, telemetry]);
+
+    const handleNodesChange = useCallback((changes) => {
+        if (changes.some((change) => change.type === 'position' && (change.dragging || change.position))) {
+            setHasCustomLayout(true);
+        }
+
+        onNodesChange(changes);
+    }, [onNodesChange]);
+
+    const resetLayout = useCallback(() => {
+        setNodes(buildNodes(telemetry, isAlarmDrill));
+        setHasCustomLayout(false);
+        setEvents((events) => [
+            makeEvent('running', 'SCADA layout reset', 'All draggable components returned to the default process layout.'),
+            ...events,
+        ].slice(0, 12));
+    }, [isAlarmDrill, setNodes, telemetry]);
 
     const toggleAlarmDrill = useCallback(() => {
         setIsAlarmDrill((current) => {
@@ -134,11 +157,18 @@ function ClassicScadaNetworkDashboard() {
                         {isAlarmDrill ? 'Alarm drill' : 'Normal operation'}
                     </span>
                     <span className="classic-scada__tag" style={{ '--tag-color': STATUS.blue?.color ?? '#42b8ff' }}>
-                        React Flow canvas
+                        Drag components
                     </span>
                 </div>
 
                 <div className="classic-scada__toolbar" aria-label="Classic SCADA controls">
+                    <button
+                        className={`classic-scada__button ${hasCustomLayout ? 'is-active' : ''}`}
+                        type="button"
+                        onClick={resetLayout}
+                    >
+                        Reset layout
+                    </button>
                     <button
                         className={`classic-scada__button ${isPaused ? '' : 'is-active'}`}
                         type="button"
@@ -169,16 +199,21 @@ function ClassicScadaNetworkDashboard() {
                         nodes={nodes}
                         edges={edges}
                         nodeTypes={NODE_TYPES}
+                        onNodesChange={handleNodesChange}
                         defaultEdgeOptions={{ type: 'smoothstep' }}
                         fitView
                         fitViewOptions={{ padding: 0.16 }}
                         minZoom={0.38}
                         maxZoom={1.45}
+                        nodesDraggable
+                        nodesConnectable={false}
+                        snapToGrid
+                        snapGrid={[16, 16]}
                         proOptions={{ hideAttribution: true }}
                         colorMode="dark"
                     >
                         <Panel className="classic-scada__flow-panel" position="top-left">
-                            Water → Steam → Stenter • Air utility • PLC telemetry overlay
+                            Drag any SCADA symbol to rearrange • Water → Steam → Stenter • Air utility • PLC telemetry
                         </Panel>
                         <MiniMap
                             pannable
@@ -412,6 +447,29 @@ function buildNodes(telemetry, isAlarmDrill) {
                 ...mergedData,
                 statusColor: status.color,
             },
+        };
+    });
+}
+
+function syncNodesWithTelemetry(currentNodes, telemetry, isAlarmDrill) {
+    const currentById = new Map(currentNodes.map((node) => [node.id, node]));
+
+    return buildNodes(telemetry, isAlarmDrill).map((nextNode) => {
+        const currentNode = currentById.get(nextNode.id);
+
+        if (!currentNode) {
+            return nextNode;
+        }
+
+        return {
+            ...nextNode,
+            dragging: currentNode.dragging,
+            height: currentNode.height,
+            measured: currentNode.measured,
+            position: currentNode.position,
+            selected: currentNode.selected,
+            width: currentNode.width,
+            zIndex: currentNode.zIndex,
         };
     });
 }

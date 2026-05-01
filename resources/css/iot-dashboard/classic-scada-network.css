@@ -276,6 +276,12 @@ button {
     border: 0;
     background: transparent;
     box-shadow: none;
+    cursor: grab;
+}
+
+.classic-scada .react-flow__node.dragging {
+    cursor: grabbing;
+    z-index: 20;
 }
 
 .classic-scada .react-flow__handle {
@@ -339,6 +345,18 @@ button {
     background: linear-gradient(180deg, #183556, #0c1e33);
     color: #eaf7ff;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 26px rgba(0, 0, 0, 0.24);
+    user-select: none;
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.classic-scada .react-flow__node:hover .classic-scada__node,
+.classic-scada .react-flow__node.dragging .classic-scada__node {
+    border-color: #d7f2ff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 14px 34px rgba(54, 226, 226, 0.18);
+}
+
+.classic-scada .react-flow__node.dragging .classic-scada__node {
+    transform: scale(1.015);
 }
 
 .classic-scada__node-header {
