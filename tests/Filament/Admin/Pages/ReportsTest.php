@@ -10,17 +10,21 @@ use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\Reporting\Enums\ReportGrouping;
 use App\Domain\Reporting\Enums\ReportRunStatus;
 use App\Domain\Reporting\Enums\ReportType;
+use App\Domain\Reporting\Jobs\GenerateReportRunJob;
 use App\Domain\Reporting\Models\OrganizationReportSetting;
 use App\Domain\Reporting\Models\ReportRun;
 use App\Domain\Shared\Models\Organization;
 use App\Domain\Shared\Models\User;
 use App\Filament\Admin\Pages\Reports;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
 
 it('renders the reports page and lists report history rows', function (): void {
     $organization = Organization::factory()->create();
+    /** @var User $admin */
     $admin = User::factory()->create(['is_super_admin' => true]);
     $device = Device::factory()->create(['organization_id' => $organization->id]);
 
@@ -41,6 +45,53 @@ it('renders the reports page and lists report history rows', function (): void {
     livewire(Reports::class)
         ->assertSuccessful()
         ->assertCanSeeTableRecords(collect([$reportRun]));
+});
+
+it('queues a report from the reports page without requiring the internal reporting token', function (): void {
+    Queue::fake();
+    Http::fake();
+    config()->set('reporting.api.token', '');
+
+    $organization = Organization::factory()->create();
+    /** @var User $admin */
+    $admin = User::factory()->create();
+    $admin->organizations()->attach($organization->id);
+    $device = Device::factory()->create(['organization_id' => $organization->id]);
+    $topic = SchemaVersionTopic::factory()->publish()->create([
+        'device_schema_version_id' => $device->device_schema_version_id,
+    ]);
+
+    ParameterDefinition::factory()->create([
+        'schema_version_topic_id' => $topic->id,
+        'key' => 'temperature_c',
+        'label' => 'Temperature',
+        'type' => ParameterDataType::Decimal,
+        'category' => ParameterCategory::Measurement,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($admin);
+
+    livewire(Reports::class)
+        ->callAction('generateReport', data: [
+            'organization_id' => $organization->id,
+            'device_id' => $device->id,
+            'type' => ReportType::ParameterValues->value,
+            'from_at' => now()->subDay()->toDateString(),
+            'until_at' => now()->toDateString(),
+            'timezone' => 'UTC',
+        ]);
+
+    $this->assertDatabaseHas('report_runs', [
+        'organization_id' => $organization->id,
+        'device_id' => $device->id,
+        'requested_by_user_id' => $admin->id,
+        'type' => ReportType::ParameterValues->value,
+        'status' => ReportRunStatus::Queued->value,
+    ]);
+
+    Queue::assertPushed(GenerateReportRunJob::class);
+    Http::assertNothingSent();
 });
 
 it('normalizes enum-backed report inputs from the form payload', function (): void {

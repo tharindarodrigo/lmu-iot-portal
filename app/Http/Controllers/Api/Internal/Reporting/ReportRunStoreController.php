@@ -4,12 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Internal\Reporting;
 
-use App\Domain\DeviceManagement\Models\Device;
-use App\Domain\Reporting\Enums\ReportGrouping;
-use App\Domain\Reporting\Enums\ReportRunStatus;
-use App\Domain\Reporting\Enums\ReportType;
-use App\Domain\Reporting\Jobs\GenerateReportRunJob;
-use App\Domain\Reporting\Models\ReportRun;
+use App\Domain\Reporting\Actions\CreateReportRunAction;
 use App\Domain\Shared\Models\User;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreReportRunRequest;
@@ -19,11 +14,11 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ReportRunStoreController extends Controller
 {
-    public function __invoke(StoreReportRunRequest $request): JsonResponse
-    {
-        $organizationId = $request->integer('organization_id');
+    public function __invoke(
+        StoreReportRunRequest $request,
+        CreateReportRunAction $createReportRunAction,
+    ): JsonResponse {
         $requestedByUserId = $request->integer('requested_by_user_id');
-        $deviceId = $request->integer('device_id');
 
         $requestedBy = User::query()->find($requestedByUserId);
 
@@ -33,50 +28,10 @@ class ReportRunStoreController extends Controller
             ]);
         }
 
-        if (! $requestedBy->isSuperAdmin() && ! $requestedBy->organizations()->whereKey($organizationId)->exists()) {
-            throw ValidationException::withMessages([
-                'organization_id' => 'The requesting user does not have access to this organization.',
-            ]);
-        }
+        $payload = $request->validated();
+        unset($payload['requested_by_user_id']);
 
-        $device = Device::query()
-            ->whereKey($deviceId)
-            ->where('organization_id', $organizationId)
-            ->first();
-
-        if (! $device instanceof Device) {
-            throw ValidationException::withMessages([
-                'device_id' => 'The selected device is invalid for the chosen organization.',
-            ]);
-        }
-
-        $type = ReportType::from((string) $request->string('type'));
-        $groupingInput = $request->input('grouping');
-        $isAggregationType = in_array($type, [ReportType::CounterConsumption, ReportType::StateUtilization], true);
-        $grouping = $isAggregationType && is_string($groupingInput) && trim($groupingInput) !== ''
-            ? ReportGrouping::from($groupingInput)
-            : null;
-        $formatValue = $request->input('format', 'csv');
-        $format = is_string($formatValue) && trim($formatValue) !== '' ? $formatValue : 'csv';
-
-        $reportRun = ReportRun::query()->create([
-            'organization_id' => $organizationId,
-            'device_id' => $device->id,
-            'requested_by_user_id' => $requestedBy->id,
-            'type' => $type,
-            'status' => ReportRunStatus::Queued,
-            'format' => $format,
-            'grouping' => $grouping,
-            'parameter_keys' => is_array($request->input('parameter_keys')) ? array_values($request->input('parameter_keys')) : [],
-            'from_at' => $request->date('from_at'),
-            'until_at' => $request->date('until_at'),
-            'timezone' => (string) $request->string('timezone'),
-            'payload' => is_array($request->input('payload')) ? $request->input('payload') : null,
-        ]);
-
-        GenerateReportRunJob::dispatch((int) $reportRun->id);
-
-        $reportRun->loadMissing(['organization:id,name', 'device:id,name,external_id', 'requestedBy:id,name']);
+        $reportRun = $createReportRunAction($requestedBy, $payload);
 
         return response()->json([
             'data' => [

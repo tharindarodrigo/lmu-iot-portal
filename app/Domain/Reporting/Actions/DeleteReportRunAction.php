@@ -5,19 +5,22 @@ declare(strict_types=1);
 namespace App\Domain\Reporting\Actions;
 
 use App\Domain\Reporting\Models\ReportRun;
-use App\Domain\Reporting\Services\ReportingApiClient;
+use Illuminate\Support\Facades\Storage;
 
 class DeleteReportRunAction
 {
-    public function __construct(
-        private readonly ReportingApiClient $reportingApiClient,
-    ) {}
-
     public function __invoke(ReportRun $reportRun): void
     {
-        $this->reportingApiClient->deleteReportRun(
-            reportRunId: (int) $reportRun->id,
-            organizationId: (int) $reportRun->organization_id,
-        );
+        if (
+            is_string($reportRun->storage_disk)
+            && trim($reportRun->storage_disk) !== ''
+            && is_string($reportRun->storage_path)
+            && trim($reportRun->storage_path) !== ''
+            && Storage::disk($reportRun->storage_disk)->exists($reportRun->storage_path)
+        ) {
+            Storage::disk($reportRun->storage_disk)->delete($reportRun->storage_path);
+        }
+
+        $reportRun->delete();
     }
 }

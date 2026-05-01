@@ -15,7 +15,6 @@ use App\Domain\Reporting\Actions\UpdateOrganizationReportSettingsAction;
 use App\Domain\Reporting\Enums\ReportGrouping;
 use App\Domain\Reporting\Enums\ReportRunStatus;
 use App\Domain\Reporting\Enums\ReportType;
-use App\Domain\Reporting\Exceptions\ReportingApiException;
 use App\Domain\Reporting\Models\OrganizationReportSetting;
 use App\Domain\Reporting\Models\ReportRun;
 use App\Domain\Shared\Models\Organization;
@@ -43,6 +42,9 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class Reports extends Page implements HasTable
 {
@@ -71,7 +73,7 @@ class Reports extends Page implements HasTable
                 ->fillForm(fn (): array => $this->defaultGenerateReportFormData())
                 ->action(function (array $data): void {
                     /** @var User|null $user */
-                    $user = auth()->user();
+                    $user = Auth::user();
 
                     if (! $user instanceof User) {
                         Notification::make()->title('You are not authenticated.')->danger()->send();
@@ -134,8 +136,12 @@ class Reports extends Page implements HasTable
 
                     try {
                         app(CreateReportRunAction::class)($user, $requestPayload);
-                    } catch (ReportingApiException $exception) {
-                        Notification::make()->title('Unable to queue report')->body($exception->getMessage())->danger()->send();
+                    } catch (Throwable $exception) {
+                        Notification::make()
+                            ->title('Unable to queue report')
+                            ->body($this->resolveActionErrorMessage($exception))
+                            ->danger()
+                            ->send();
 
                         return;
                     }
@@ -174,8 +180,12 @@ class Reports extends Page implements HasTable
                                 : $this->resolveDefaultMaxRangeDays(),
                             'shift_schedules' => is_array($data['shift_schedules'] ?? null) ? array_values($data['shift_schedules']) : [],
                         ]);
-                    } catch (ReportingApiException $exception) {
-                        Notification::make()->title('Unable to save settings')->body($exception->getMessage())->danger()->send();
+                    } catch (Throwable $exception) {
+                        Notification::make()
+                            ->title('Unable to save settings')
+                            ->body($this->resolveActionErrorMessage($exception))
+                            ->danger()
+                            ->send();
 
                         return;
                     }
@@ -286,12 +296,16 @@ class Reports extends Page implements HasTable
                     ->icon(Heroicon::OutlinedTrash)
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(fn (ReportRun $record): bool => auth()->user()?->can('delete', $record) ?? false)
+                    ->visible(fn (ReportRun $record): bool => Auth::user()?->can('delete', $record) ?? false)
                     ->action(function (ReportRun $record): void {
                         try {
                             app(DeleteReportRunAction::class)($record);
-                        } catch (ReportingApiException $exception) {
-                            Notification::make()->title('Unable to delete report')->body($exception->getMessage())->danger()->send();
+                        } catch (Throwable $exception) {
+                            Notification::make()
+                                ->title('Unable to delete report')
+                                ->body($this->resolveActionErrorMessage($exception))
+                                ->danger()
+                                ->send();
 
                             return;
                         }
@@ -568,8 +582,8 @@ class Reports extends Page implements HasTable
         }
 
         return Organization::query()
-            ->whereIn('id', $organizationIds)
-            ->orderBy('name')
+            ->whereKey($organizationIds)
+            ->orderBy('name', 'asc')
             ->get(['id', 'name'])
             ->mapWithKeys(fn (Organization $organization): array => [
                 (int) $organization->id => (string) $organization->name,
@@ -583,21 +597,21 @@ class Reports extends Page implements HasTable
     private function accessibleOrganizationIds(): array
     {
         /** @var User|null $user */
-        $user = auth()->user();
+        $user = Auth::user();
 
         if (! $user instanceof User) {
             return [];
         }
 
         if ($user->isSuperAdmin()) {
-            $organizationIds = Organization::query()->orderBy('name')->pluck('id')->all();
+            $organizationIds = Organization::query()->orderBy('name', 'asc')->pluck('id')->all();
 
             /** @var array<int, int> $organizationIds */
             return $organizationIds;
         }
 
         $organizationIds = $user->organizations()
-            ->orderBy('name')
+            ->orderBy('name', 'asc')
             ->pluck('organizations.id')
             ->all();
 
@@ -1098,5 +1112,20 @@ class Reports extends Page implements HasTable
         $value = config('reporting.default_max_range_days', 31);
 
         return is_numeric($value) ? (int) $value : 31;
+    }
+
+    private function resolveActionErrorMessage(Throwable $exception): string
+    {
+        if ($exception instanceof ValidationException) {
+            $message = collect($exception->errors())
+                ->flatten()
+                ->first(fn (mixed $error): bool => is_string($error) && trim($error) !== '');
+
+            return is_string($message) ? $message : 'Please review the form input and try again.';
+        }
+
+        $message = trim($exception->getMessage());
+
+        return $message !== '' ? $message : 'Please try again.';
     }
 }

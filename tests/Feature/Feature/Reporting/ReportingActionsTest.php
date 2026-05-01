@@ -9,44 +9,41 @@ use App\Domain\Reporting\Actions\DownloadReportRunAction;
 use App\Domain\Reporting\Actions\UpdateOrganizationReportSettingsAction;
 use App\Domain\Reporting\Enums\ReportRunStatus;
 use App\Domain\Reporting\Enums\ReportType;
+use App\Domain\Reporting\Jobs\GenerateReportRunJob;
 use App\Domain\Reporting\Models\OrganizationReportSetting;
 use App\Domain\Reporting\Models\ReportRun;
 use App\Domain\Shared\Models\Organization;
 use App\Domain\Shared\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    config()->set('reporting.api.base_url', 'https://reporting.local');
-    config()->set('reporting.api.token', 'reporting-token');
-    config()->set('reporting.api.token_header', 'X-Reporting-Token');
+    config()->set('reporting.storage_disk', 'local');
 });
 
-it('creates a report run through the DDD action and internal API client', function (): void {
+function captureReportingDownloadBody(StreamedResponse $response): string
+{
+    ob_start();
+    $response->sendContent();
+    $content = ob_get_clean();
+
+    return is_string($content) ? $content : '';
+}
+
+it('creates a report run through the DDD action without calling the internal API', function (): void {
+    Queue::fake();
+    Http::fake();
+
     $organization = Organization::factory()->create();
     $user = User::factory()->create();
+    $user->organizations()->attach($organization->id);
     $device = Device::factory()->create(['organization_id' => $organization->id]);
-
-    $reportRun = ReportRun::query()->create([
-        'organization_id' => $organization->id,
-        'device_id' => $device->id,
-        'requested_by_user_id' => $user->id,
-        'type' => ReportType::ParameterValues,
-        'status' => ReportRunStatus::Queued,
-        'format' => 'csv',
-        'from_at' => now()->subDay(),
-        'until_at' => now(),
-        'timezone' => 'UTC',
-    ]);
-
-    Http::fake([
-        'https://reporting.local/api/internal/reporting/report-runs' => Http::response([
-            'data' => ['id' => $reportRun->id],
-        ], 201),
-    ]);
 
     $resolved = app(CreateReportRunAction::class)($user, [
         'organization_id' => $organization->id,
@@ -57,48 +54,115 @@ it('creates a report run through the DDD action and internal API client', functi
         'timezone' => 'UTC',
     ]);
 
-    expect($resolved->is($reportRun))->toBeTrue();
+    expect($resolved->organization_id)->toBe($organization->id)
+        ->and($resolved->device_id)->toBe($device->id)
+        ->and($resolved->requested_by_user_id)->toBe($user->id)
+        ->and($resolved->type)->toBe(ReportType::ParameterValues)
+        ->and($resolved->status)->toBe(ReportRunStatus::Queued);
 
-    Http::assertSent(function (Request $request) use ($user): bool {
-        return $request->url() === 'https://reporting.local/api/internal/reporting/report-runs'
-            && $request->method() === 'POST'
-            && $request->hasHeader('X-Reporting-Token', 'reporting-token')
-            && (int) data_get($request->data(), 'requested_by_user_id') === $user->id;
-    });
+    $this->assertDatabaseHas('report_runs', [
+        'id' => $resolved->id,
+        'organization_id' => $organization->id,
+        'device_id' => $device->id,
+        'requested_by_user_id' => $user->id,
+        'type' => ReportType::ParameterValues->value,
+        'status' => ReportRunStatus::Queued->value,
+    ]);
+
+    Queue::assertPushed(GenerateReportRunJob::class, fn (GenerateReportRunJob $job): bool => $job->reportRunId === $resolved->id);
+    Http::assertNothingSent();
 });
 
-it('updates organization report settings through the DDD action', function (): void {
-    $organization = Organization::factory()->create();
-    $settings = OrganizationReportSetting::factory()->create([
-        'organization_id' => $organization->id,
-        'timezone' => 'UTC',
-    ]);
+it('updates organization report settings through the DDD action without calling the internal API', function (): void {
+    Http::fake();
 
-    Http::fake([
-        'https://reporting.local/api/internal/reporting/organization-report-settings' => Http::response([
-            'data' => ['organization_id' => $organization->id],
-        ], 200),
-    ]);
+    $organization = Organization::factory()->create();
 
     $resolved = app(UpdateOrganizationReportSettingsAction::class)([
         'organization_id' => $organization->id,
         'timezone' => 'Asia/Colombo',
         'max_range_days' => 31,
-        'shift_schedules' => [],
+        'shift_schedules' => [
+            [
+                'name' => 'Day / Night',
+                'windows' => [
+                    ['name' => 'Day', 'start' => '06:00', 'end' => '18:00'],
+                    ['name' => 'Night', 'start' => '18:00', 'end' => '06:00'],
+                ],
+            ],
+        ],
     ]);
 
-    expect($resolved->is($settings))->toBeTrue();
+    expect($resolved)->toBeInstanceOf(OrganizationReportSetting::class)
+        ->and($resolved->organization_id)->toBe($organization->id)
+        ->and($resolved->timezone)->toBe('Asia/Colombo')
+        ->and($resolved->max_range_days)->toBe(31)
+        ->and(data_get($resolved->shift_schedules, '0.name'))->toBe('Day / Night');
 
-    Http::assertSent(function (Request $request): bool {
-        return $request->url() === 'https://reporting.local/api/internal/reporting/organization-report-settings'
-            && $request->method() === 'PUT';
-    });
+    $this->assertDatabaseHas('organization_report_settings', [
+        'organization_id' => $organization->id,
+        'timezone' => 'Asia/Colombo',
+        'max_range_days' => 31,
+    ]);
+
+    Http::assertNothingSent();
 });
 
-it('deletes a report run through the DDD action', function (): void {
+it('enforces max range validation when creating report runs directly', function (): void {
+    Queue::fake();
+
+    $organization = Organization::factory()->create();
+    $user = User::factory()->create();
+    $user->organizations()->attach($organization->id);
+    $device = Device::factory()->create(['organization_id' => $organization->id]);
+
+    OrganizationReportSetting::factory()->create([
+        'organization_id' => $organization->id,
+        'max_range_days' => 1,
+    ]);
+
+    expect(fn (): ReportRun => app(CreateReportRunAction::class)($user, [
+        'organization_id' => $organization->id,
+        'device_id' => $device->id,
+        'type' => ReportType::ParameterValues->value,
+        'from_at' => now()->subDays(3)->toIso8601String(),
+        'until_at' => now()->toIso8601String(),
+        'timezone' => 'UTC',
+    ]))
+        ->toThrow(ValidationException::class, 'The selected range exceeds the maximum allowed period of 1 days.');
+
+    Queue::assertNothingPushed();
+});
+
+it('enforces shift schedule validation when updating settings directly', function (): void {
+    $organization = Organization::factory()->create();
+
+    expect(fn (): OrganizationReportSetting => app(UpdateOrganizationReportSettingsAction::class)([
+        'organization_id' => $organization->id,
+        'timezone' => 'UTC',
+        'max_range_days' => 31,
+        'shift_schedules' => [
+            [
+                'name' => 'Overlapping',
+                'windows' => [
+                    ['name' => 'A', 'start' => '06:00', 'end' => '14:00'],
+                    ['name' => 'B', 'start' => '13:00', 'end' => '22:00'],
+                    ['name' => 'C', 'start' => '22:00', 'end' => '06:00'],
+                ],
+            ],
+        ],
+    ]))
+        ->toThrow(ValidationException::class, 'Shift schedule windows must be ordered without overlaps.');
+});
+
+it('deletes a report run through the DDD action without calling the internal API', function (): void {
+    Storage::fake('local');
+    Http::fake();
+
     $organization = Organization::factory()->create();
     $device = Device::factory()->create(['organization_id' => $organization->id]);
     $user = User::factory()->create();
+    Storage::disk('local')->put('reports/sample.csv', "a,b\n1,2\n");
 
     $reportRun = ReportRun::query()->create([
         'organization_id' => $organization->id,
@@ -110,25 +174,27 @@ it('deletes a report run through the DDD action', function (): void {
         'from_at' => now()->subDay(),
         'until_at' => now(),
         'timezone' => 'UTC',
-    ]);
-
-    Http::fake([
-        "https://reporting.local/api/internal/reporting/report-runs/{$reportRun->id}" => Http::response([], 204),
+        'storage_disk' => 'local',
+        'storage_path' => 'reports/sample.csv',
+        'file_name' => 'sample.csv',
     ]);
 
     app(DeleteReportRunAction::class)($reportRun);
 
-    Http::assertSent(function (Request $request) use ($reportRun): bool {
-        return $request->method() === 'DELETE'
-            && $request->url() === "https://reporting.local/api/internal/reporting/report-runs/{$reportRun->id}"
-            && (int) data_get($request->data(), 'organization_id') === (int) $reportRun->organization_id;
-    });
+    expect(ReportRun::query()->find($reportRun->id))->toBeNull()
+        ->and(Storage::disk('local')->exists('reports/sample.csv'))->toBeFalse();
+
+    Http::assertNothingSent();
 });
 
-it('downloads a report through the DDD action', function (): void {
+it('downloads a report through the DDD action without calling the internal API', function (): void {
+    Storage::fake('local');
+    Http::fake();
+
     $organization = Organization::factory()->create();
     $device = Device::factory()->create(['organization_id' => $organization->id]);
     $user = User::factory()->create();
+    Storage::disk('local')->put('reports/sample.csv', "a,b\n1,2\n");
 
     $reportRun = ReportRun::query()->create([
         'organization_id' => $organization->id,
@@ -146,16 +212,13 @@ it('downloads a report through the DDD action', function (): void {
         'file_size' => 12,
     ]);
 
-    Http::fake([
-        'https://reporting.local/api/internal/reporting/report-runs/*/download*' => Http::response(
-            "a,b\n1,2\n",
-            200,
-            ['Content-Type' => 'text/csv; charset=UTF-8'],
-        ),
-    ]);
-
     $response = app(DownloadReportRunAction::class)($reportRun);
+    $body = captureReportingDownloadBody($response);
 
-    expect($response->successful())->toBeTrue()
-        ->and($response->body())->toContain("a,b\n1,2");
+    expect($response)->toBeInstanceOf(StreamedResponse::class)
+        ->and((string) $response->headers->get('content-type'))->toContain('text/csv')
+        ->and((string) $response->headers->get('content-disposition'))->toContain('sample.csv')
+        ->and($body)->toContain("a,b\n1,2");
+
+    Http::assertNothingSent();
 });
