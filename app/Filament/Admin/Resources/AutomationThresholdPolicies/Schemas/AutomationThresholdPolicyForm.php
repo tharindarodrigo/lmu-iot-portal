@@ -10,6 +10,7 @@ use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
 use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
+use App\Support\DeviceSelectOptions;
 use Filament\Forms\Components\CodeEditor;
 use Filament\Forms\Components\CodeEditor\Enums\Language;
 use Filament\Forms\Components\Hidden;
@@ -197,7 +198,7 @@ class AutomationThresholdPolicyForm
     }
 
     /**
-     * @return array<int|string, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     private static function deviceOptions(Get $get): array
     {
@@ -207,16 +208,9 @@ class AutomationThresholdPolicyForm
             return [];
         }
 
-        return Device::query()
-            ->where('organization_id', (int) $organizationId)
-            ->orderBy('name')
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(fn (Device $device): array => [
-                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? "{$device->name} ({$device->external_id})"
-                    : $device->name,
-            ])
-            ->all();
+        return DeviceSelectOptions::groupedByType(
+            Device::query()->where('organization_id', (int) $organizationId),
+        );
     }
 
     /**
@@ -286,16 +280,10 @@ class AutomationThresholdPolicyForm
     }
 
     /**
-     * @param  array<int|string, string>  $options
+     * @param  array<int|string, string>|array<string, array<int|string, string>>  $options
      */
     private static function resolveOptionLabel(array $options, mixed $selectedValue): ?string
     {
-        if (! is_int($selectedValue) && ! is_string($selectedValue)) {
-            return null;
-        }
-
-        $optionKey = (string) $selectedValue;
-
-        return $options[$optionKey] ?? null;
+        return DeviceSelectOptions::findLabel($options, $selectedValue);
     }
 }

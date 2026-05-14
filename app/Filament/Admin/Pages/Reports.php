@@ -19,6 +19,7 @@ use App\Domain\Reporting\Models\OrganizationReportSetting;
 use App\Domain\Reporting\Models\ReportRun;
 use App\Domain\Shared\Models\Organization;
 use App\Domain\Shared\Models\User;
+use App\Support\DeviceSelectOptions;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -627,7 +628,7 @@ class Reports extends Page implements HasTable
     }
 
     /**
-     * @return array<int|string, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     private function deviceOptions(mixed $organizationId): array
     {
@@ -641,18 +642,9 @@ class Reports extends Page implements HasTable
             return [];
         }
 
-        return Device::query()
-            ->where('organization_id', $resolvedOrganizationId)
-            ->orderBy('name')
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(function (Device $device): array {
-                $suffix = is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? " ({$device->external_id})"
-                    : '';
-
-                return [(int) $device->id => "{$device->name}{$suffix}"];
-            })
-            ->all();
+        return DeviceSelectOptions::groupedByType(
+            Device::query()->where('organization_id', $resolvedOrganizationId),
+        );
     }
 
     /**

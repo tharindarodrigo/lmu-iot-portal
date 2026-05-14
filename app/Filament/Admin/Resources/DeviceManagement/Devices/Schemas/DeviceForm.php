@@ -11,6 +11,7 @@ use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardPro
 use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardShiftSchedule;
 use App\Domain\DeviceManagement\ValueObjects\VirtualStandards\VirtualStandardSource;
 use App\Domain\DeviceSchema\Models\DeviceSchemaVersion;
+use App\Support\DeviceSelectOptions;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
@@ -360,7 +361,7 @@ class DeviceForm
     }
 
     /**
-     * @return array<int, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     private static function parentDeviceOptions(Get $get, ?Device $record): array
     {
@@ -388,22 +389,11 @@ class DeviceForm
             $query->whereKeyNot($record->getKey());
         }
 
-        return $query
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(function (Device $device): array {
-                $externalId = is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? " · {$device->external_id}"
-                    : '';
-
-                return [
-                    (int) $device->id => "{$device->name}{$externalId}",
-                ];
-            })
-            ->all();
+        return DeviceSelectOptions::groupedByType($query);
     }
 
     /**
-     * @return array<int, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     private static function sourceDeviceOptions(Get $get): array
     {
@@ -424,18 +414,7 @@ class DeviceForm
             $query->whereKeyNot($currentRecordId);
         }
 
-        return $query
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(function (Device $device): array {
-                $externalId = is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? " · {$device->external_id}"
-                    : '';
-
-                return [
-                    (int) $device->id => "{$device->name}{$externalId}",
-                ];
-            })
-            ->all();
+        return DeviceSelectOptions::groupedByType($query);
     }
 
     /**

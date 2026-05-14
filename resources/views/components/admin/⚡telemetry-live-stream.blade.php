@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\DeviceSelectOptions;
 use App\Domain\DeviceManagement\Models\Device;
 use App\Domain\DeviceSchema\Enums\TopicDirection;
 use Filament\Forms\Components\Select;
@@ -11,8 +12,7 @@ use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new class extends Component implements HasForms
-{
+new class extends Component implements HasForms {
     use InteractsWithForms;
 
     /**
@@ -46,11 +46,11 @@ new class extends Component implements HasForms
     {
         $this->loadTopicOptionsForDevice($this->selectedDevice);
 
-        if ($this->selectedTopicSuffix && ! array_key_exists($this->selectedTopicSuffix, $this->topicOptions)) {
+        if ($this->selectedTopicSuffix && !array_key_exists($this->selectedTopicSuffix, $this->topicOptions)) {
             $this->selectedTopicSuffix = null;
         }
 
-        if (! $this->selectedTopicSuffix && ! empty($this->topicOptions)) {
+        if (!$this->selectedTopicSuffix && !empty($this->topicOptions)) {
             $this->selectedTopicSuffix = (string) array_key_first($this->topicOptions);
         }
     }
@@ -63,20 +63,7 @@ new class extends Component implements HasForms
                     ->label('Device')
                     ->placeholder('Select a device…')
                     ->options(function (): array {
-                        return Device::query()
-                            ->orderBy('name')
-                            ->limit(50)
-                            ->get(['name', 'external_id', 'uuid'])
-                            ->mapWithKeys(function (Device $device): array {
-                                $key = $device->external_id ?: $device->uuid;
-
-                                $label = $device->external_id
-                                    ? "{$device->name} ({$device->external_id})"
-                                    : "{$device->name} ({$device->uuid})";
-
-                                return [$key => $label];
-                            })
-                            ->all();
+                        return DeviceSelectOptions::groupedByType(Device::query()->orderBy('name')->limit(50), valueResolver: static fn(Device $device): string => (string) ($device->external_id ?: $device->uuid), useUuidFallback: true);
                     })
                     ->searchable()
                     ->getSearchResultsUsing(function (string $search): array {
@@ -86,26 +73,7 @@ new class extends Component implements HasForms
                             return [];
                         }
 
-                        return Device::query()
-                            ->where(function ($query) use ($search): void {
-                                $query
-                                    ->where('name', 'ilike', "%{$search}%")
-                                    ->orWhere('external_id', 'ilike', "%{$search}%")
-                                    ->orWhere('uuid', 'ilike', "%{$search}%");
-                            })
-                            ->orderBy('name')
-                            ->limit(50)
-                            ->get(['name', 'external_id', 'uuid'])
-                            ->mapWithKeys(function (Device $device): array {
-                                $key = $device->external_id ?: $device->uuid;
-
-                                $label = $device->external_id
-                                    ? "{$device->name} ({$device->external_id})"
-                                    : "{$device->name} ({$device->uuid})";
-
-                                return [$key => $label];
-                            })
-                            ->all();
+                        return DeviceSelectOptions::groupedByType(DeviceSelectOptions::search(Device::query(), $search, useUuidFallback: true)->orderBy('name')->limit(50), valueResolver: static fn(Device $device): string => (string) ($device->external_id ?: $device->uuid), useUuidFallback: true);
                     })
                     ->getOptionLabelUsing(function (?string $value): ?string {
                         if (blank($value)) {
@@ -124,23 +92,15 @@ new class extends Component implements HasForms
 
                         $device = $deviceQuery->first(['name', 'external_id', 'uuid']);
 
-                        if (! $device) {
+                        if (!$device) {
                             return null;
                         }
 
-                        return $device->external_id
-                            ? "{$device->name} ({$device->external_id})"
-                            : "{$device->name} ({$device->uuid})";
+                        return DeviceSelectOptions::label($device, useUuidFallback: true);
                     })
                     ->live(),
 
-                Select::make('selectedTopicSuffix')
-                    ->label('Topic')
-                    ->placeholder('Select a topic…')
-                    ->options(fn (): array => $this->topicOptions)
-                    ->searchable()
-                    ->disabled(fn (): bool => blank($this->selectedDevice))
-                    ->live(),
+                Select::make('selectedTopicSuffix')->label('Topic')->placeholder('Select a topic…')->options(fn(): array => $this->topicOptions)->searchable()->disabled(fn(): bool => blank($this->selectedDevice))->live(),
 
                 Select::make('payloadPreviewLimit')
                     ->label('Trim')
@@ -151,18 +111,19 @@ new class extends Component implements HasForms
                         240 => '240 chars',
                     ])
                     ->live(),
-            ])->columns(3);
+            ])
+            ->columns(3);
     }
 
     public function updatedSelectedDevice(): void
     {
         $this->loadTopicOptionsForDevice($this->selectedDevice);
 
-        if ($this->selectedTopicSuffix && ! array_key_exists($this->selectedTopicSuffix, $this->topicOptions)) {
+        if ($this->selectedTopicSuffix && !array_key_exists($this->selectedTopicSuffix, $this->topicOptions)) {
             $this->selectedTopicSuffix = null;
         }
 
-        if (! $this->selectedTopicSuffix && ! empty($this->topicOptions)) {
+        if (!$this->selectedTopicSuffix && !empty($this->topicOptions)) {
             $this->selectedTopicSuffix = (string) array_key_first($this->topicOptions);
         }
 
@@ -184,7 +145,7 @@ new class extends Component implements HasForms
     {
         $this->topicOptions = [];
 
-        if (! $selectedDevice) {
+        if (!$selectedDevice) {
             return;
         }
 
@@ -200,18 +161,14 @@ new class extends Component implements HasForms
 
         $device = $deviceQuery->first();
 
-        if (! $device?->schemaVersion) {
+        if (!$device?->schemaVersion) {
             return;
         }
 
         /** @var Collection<int, \App\Domain\DeviceSchema\Models\SchemaVersionTopic> $topics */
-        $topics = $device->schemaVersion->topics
-            ->where('direction', TopicDirection::Publish)
-            ->sortBy('sequence');
+        $topics = $device->schemaVersion->topics->where('direction', TopicDirection::Publish)->sortBy('sequence');
 
-        $this->topicOptions = $topics
-            ->mapWithKeys(fn ($topic): array => [$topic->suffix => $topic->label])
-            ->all();
+        $this->topicOptions = $topics->mapWithKeys(fn($topic): array => [$topic->suffix => $topic->label])->all();
     }
 
     /**
@@ -219,7 +176,7 @@ new class extends Component implements HasForms
      */
     public function handleTelemetryIncoming(array $entry): void
     {
-        if (! $this->selectedDevice || ! $this->selectedTopicSuffix) {
+        if (!$this->selectedDevice || !$this->selectedTopicSuffix) {
             return;
         }
 
@@ -227,13 +184,11 @@ new class extends Component implements HasForms
         $entryDeviceUuid = $entry['device_uuid'] ?? null;
         $entryTopic = $entry['topic'] ?? null;
 
-        $deviceMatches = $this->selectedDevice === $entryDeviceExternalId
-            || $this->selectedDevice === $entryDeviceUuid;
+        $deviceMatches = $this->selectedDevice === $entryDeviceExternalId || $this->selectedDevice === $entryDeviceUuid;
 
-        $topicMatches = is_string($entryTopic)
-            && str_ends_with($entryTopic, '/'.$this->selectedTopicSuffix);
+        $topicMatches = is_string($entryTopic) && str_ends_with($entryTopic, '/' . $this->selectedTopicSuffix);
 
-        if (! $deviceMatches || ! $topicMatches) {
+        if (!$deviceMatches || !$topicMatches) {
             return;
         }
 
@@ -246,11 +201,8 @@ new class extends Component implements HasForms
 };
 ?>
 
-<x-filament::section
-    heading="Pre-Ingestion Stream"
-    description="Live from Reverb — before database ingestion"
-    :icon="\Filament\Support\Icons\Heroicon::OutlinedSignal"
->
+<x-filament::section heading="Pre-Ingestion Stream" description="Live from Reverb — before database ingestion"
+    :icon="\Filament\Support\Icons\Heroicon::OutlinedSignal">
     <x-slot:afterHeader>
         <div style="display:flex; gap: .5rem; align-items:center; flex-wrap:wrap;">
             <x-filament::badge color="gray" size="sm">
@@ -271,32 +223,20 @@ new class extends Component implements HasForms
         {{ $this->form }}
 
         <div style="margin-top: .75rem;">
-            <x-filament::icon-button
-                color="gray"
-                size="sm"
-                :icon="\Filament\Support\Icons\Heroicon::OutlinedArrowPath"
-                tooltip="Clear"
-                wire:click="resetStream"
-            />
+            <x-filament::icon-button color="gray" size="sm" :icon="\Filament\Support\Icons\Heroicon::OutlinedArrowPath" tooltip="Clear"
+                wire:click="resetStream" />
         </div>
     </div>
 
     <div style="margin-top: 1.5rem;"></div>
 
-    @if (! $selectedDevice || ! $selectedTopicSuffix)
-        <x-filament::empty-state
-            heading="Select filters to start"
-            description="Choose a device and topic to begin streaming."
-            :icon="\Filament\Support\Icons\Heroicon::OutlinedSignal"
-            icon-color="gray"
-        />
+    @if (!$selectedDevice || !$selectedTopicSuffix)
+        <x-filament::empty-state heading="Select filters to start"
+            description="Choose a device and topic to begin streaming." :icon="\Filament\Support\Icons\Heroicon::OutlinedSignal" icon-color="gray" />
     @elseif (count($liveTelemetry) === 0)
-        <x-filament::empty-state
-            heading="Waiting for telemetry…"
-            description="Run the simulator to start streaming data for the selected device & topic."
-            :icon="\Filament\Support\Icons\Heroicon::OutlinedSignal"
-            icon-color="gray"
-        />
+        <x-filament::empty-state heading="Waiting for telemetry…"
+            description="Run the simulator to start streaming data for the selected device & topic." :icon="\Filament\Support\Icons\Heroicon::OutlinedSignal"
+            icon-color="gray" />
     @else
         <div class="fi-ta-content-ctn fi-fixed-positioning-context">
             <table class="fi-ta-table">
@@ -314,9 +254,15 @@ new class extends Component implements HasForms
                         @php
                             $time = $entry['received_at'] ?? null;
                             $formattedTime = $time ? \Illuminate\Support\Carbon::parse($time)->format('H:i:s.v') : '—';
-                            $payloadPretty = json_encode($entry['payload'] ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: '{}';
+                            $payloadPretty =
+                                json_encode($entry['payload'] ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?:
+                                '{}';
                             $payloadInline = json_encode($entry['payload'] ?? [], JSON_UNESCAPED_SLASHES) ?: '{}';
-                            $payloadPreview = \Illuminate\Support\Str::limit($payloadInline, (int) $payloadPreviewLimit, '…');
+                            $payloadPreview = \Illuminate\Support\Str::limit(
+                                $payloadInline,
+                                (int) $payloadPreviewLimit,
+                                '…',
+                            );
                         @endphp
 
                         <tr class="fi-ta-row fi-striped">
@@ -332,65 +278,49 @@ new class extends Component implements HasForms
                                 </x-filament::badge>
                             </td>
                             <td class="fi-ta-cell">
-                                <code title="{{ $entry['topic'] ?? '' }}" style="display:inline-block; max-width: 22rem; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;">
+                                <code title="{{ $entry['topic'] ?? '' }}"
+                                    style="display:inline-block; max-width: 22rem; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;">
                                     {{ $entry['topic'] ?? '—' }}
                                 </code>
                             </td>
                             <td class="fi-ta-cell">
-                                <div
-                                    x-data="{
-                                        copied: false,
-                                        payload: {{ \Illuminate\Support\Js::from($payloadPretty) }},
-                                        async copyPayload() {
-                                            try {
-                                                if (window?.navigator?.clipboard?.writeText) {
-                                                    await window.navigator.clipboard.writeText(this.payload);
-                                                } else {
-                                                    const textarea = document.createElement('textarea');
-                                                    textarea.value = this.payload;
-                                                    textarea.style.position = 'fixed';
-                                                    textarea.style.left = '-9999px';
-                                                    textarea.style.top = '0';
-                                                    document.body.appendChild(textarea);
-                                                    textarea.focus();
-                                                    textarea.select();
-                                                    document.execCommand('copy');
-                                                    textarea.remove();
-                                                }
-
-                                                this.copied = true;
-                                                setTimeout(() => this.copied = false, 1500);
-                                            } catch (e) {
-                                                console.error('Failed to copy payload', e);
+                                <div x-data="{
+                                    copied: false,
+                                    payload: {{ \Illuminate\Support\Js::from($payloadPretty) }},
+                                    async copyPayload() {
+                                        try {
+                                            if (window?.navigator?.clipboard?.writeText) {
+                                                await window.navigator.clipboard.writeText(this.payload);
+                                            } else {
+                                                const textarea = document.createElement('textarea');
+                                                textarea.value = this.payload;
+                                                textarea.style.position = 'fixed';
+                                                textarea.style.left = '-9999px';
+                                                textarea.style.top = '0';
+                                                document.body.appendChild(textarea);
+                                                textarea.focus();
+                                                textarea.select();
+                                                document.execCommand('copy');
+                                                textarea.remove();
                                             }
-                                        },
-                                    }"
-                                    style="display:flex; gap: .5rem; align-items:center;"
-                                >
-                                    <code
-                                        title="{{ $payloadPretty }}"
-                                        style="display:inline-block; max-width: 36rem; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;"
-                                    >
+                                
+                                            this.copied = true;
+                                            setTimeout(() => this.copied = false, 1500);
+                                        } catch (e) {
+                                            console.error('Failed to copy payload', e);
+                                        }
+                                    },
+                                }" style="display:flex; gap: .5rem; align-items:center;">
+                                    <code title="{{ $payloadPretty }}"
+                                        style="display:inline-block; max-width: 36rem; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;">
                                         {{ $payloadPreview }}
                                     </code>
 
-                                    <x-filament::icon-button
-                                        color="gray"
-                                        size="sm"
-                                        :icon="\Filament\Support\Icons\Heroicon::OutlinedClipboardDocument"
-                                        tooltip="Copy payload"
-                                        x-on:click="copyPayload()"
-                                        x-show="!copied"
-                                    />
+                                    <x-filament::icon-button color="gray" size="sm" :icon="\Filament\Support\Icons\Heroicon::OutlinedClipboardDocument"
+                                        tooltip="Copy payload" x-on:click="copyPayload()" x-show="!copied" />
 
-                                    <x-filament::icon-button
-                                        color="success"
-                                        size="sm"
-                                        :icon="\Filament\Support\Icons\Heroicon::OutlinedCheck"
-                                        tooltip="Copied"
-                                        x-cloak
-                                        x-show="copied"
-                                    />
+                                    <x-filament::icon-button color="success" size="sm" :icon="\Filament\Support\Icons\Heroicon::OutlinedCheck"
+                                        tooltip="Copied" x-cloak x-show="copied" />
                                 </div>
                             </td>
                         </tr>

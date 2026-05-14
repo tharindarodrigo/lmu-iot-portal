@@ -16,87 +16,66 @@ use App\Domain\DeviceSchema\Models\SchemaVersionTopic;
 use App\Domain\IoTDashboard\Enums\WidgetType;
 use App\Domain\IoTDashboard\Models\IoTDashboard;
 use App\Domain\Reporting\Models\OrganizationReportSetting;
+use App\Support\DeviceSelectOptions;
 use Illuminate\Database\Eloquent\Builder;
 
 class WidgetFormOptionsService
 {
     /**
-     * @return array<int|string, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     public function deviceOptions(IoTDashboard $dashboard): array
     {
-        return Device::query()
-            ->where('organization_id', $dashboard->organization_id)
-            ->orderBy('name')
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(fn (Device $device): array => [
-                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? "{$device->name} ({$device->external_id})"
-                    : $device->name,
-            ])
-            ->all();
+        return DeviceSelectOptions::groupedByType(
+            Device::query()->where('organization_id', $dashboard->organization_id),
+        );
     }
 
     /**
-     * @return array<int|string, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     public function stenterDeviceOptions(IoTDashboard $dashboard): array
     {
-        return Device::query()
-            ->where('organization_id', $dashboard->organization_id)
-            ->where('is_virtual', true)
-            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'stenter_line'))
-            ->whereHas('virtualDeviceLinks', fn (Builder $query): Builder => $query->where('purpose', 'status'))
-            ->whereHas('virtualDeviceLinks', fn (Builder $query): Builder => $query->where('purpose', 'length'))
-            ->orderBy('name')
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(fn (Device $device): array => [
-                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? "{$device->name} ({$device->external_id})"
-                    : $device->name,
-            ])
-            ->all();
+        return DeviceSelectOptions::groupedByType(
+            Device::query()
+                ->where('organization_id', $dashboard->organization_id)
+                ->where('is_virtual', true)
+                ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'stenter_line'))
+                ->whereHas('virtualDeviceLinks', fn (Builder $query): Builder => $query->where('purpose', 'status'))
+                ->whereHas('virtualDeviceLinks', fn (Builder $query): Builder => $query->where('purpose', 'length')),
+            collapseSingleGroup: true,
+        );
     }
 
     /**
-     * @return array<int|string, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     public function compressorDeviceOptions(IoTDashboard $dashboard): array
     {
-        return Device::query()
-            ->where('organization_id', $dashboard->organization_id)
-            ->where('is_virtual', false)
-            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'energy_meter'))
-            ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'status'))
-            ->orderBy('name')
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(fn (Device $device): array => [
-                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? "{$device->name} ({$device->external_id})"
-                    : $device->name,
-            ])
-            ->all();
+        return DeviceSelectOptions::groupedByType(
+            Device::query()
+                ->where('organization_id', $dashboard->organization_id)
+                ->where('is_virtual', false)
+                ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'energy_meter'))
+                ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'status')),
+            collapseSingleGroup: true,
+        );
     }
 
     /**
-     * @return array<int|string, string>
+     * @return array<int|string, string>|array<string, array<int|string, string>>
      */
     public function steamMeterDeviceOptions(IoTDashboard $dashboard): array
     {
-        return Device::query()
-            ->where('organization_id', $dashboard->organization_id)
-            ->where('is_virtual', false)
-            ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'steam_meter'))
-            ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'totalisedCount'))
-            ->whereHas('schemaVersion.topics.parameters', fn (Builder $query): Builder => $query->where('key', 'flow'))
-            ->orderBy('name')
-            ->get(['id', 'name', 'external_id'])
-            ->mapWithKeys(fn (Device $device): array => [
-                (string) $device->id => is_string($device->external_id) && trim($device->external_id) !== ''
-                    ? "{$device->name} ({$device->external_id})"
-                    : $device->name,
-            ])
-            ->all();
+        return DeviceSelectOptions::groupedByType(
+            Device::query()
+                ->where('organization_id', $dashboard->organization_id)
+                ->where('is_virtual', false)
+                ->whereHas('deviceType', fn (Builder $query): Builder => $query->where('key', 'steam_meter'))
+                ->whereHas('schemaVersion.derivedParameters', fn (Builder $query): Builder => $query->where('key', 'totalisedCount'))
+                ->whereHas('schemaVersion.topics.parameters', fn (Builder $query): Builder => $query->where('key', 'flow')),
+            collapseSingleGroup: true,
+        );
     }
 
     /**

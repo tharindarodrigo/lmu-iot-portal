@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\DeviceManagement\Models\Device;
+use App\Domain\DeviceManagement\Models\DeviceType;
 use App\Domain\DeviceSchema\Enums\ParameterCategory;
 use App\Domain\DeviceSchema\Enums\ParameterDataType;
 use App\Domain\DeviceSchema\Models\ParameterDefinition;
@@ -186,6 +187,51 @@ it('returns report type options based on available parameter categories for sele
         ->toHaveKey(ReportType::ParameterValues->value)
         ->toHaveKey(ReportType::CounterConsumption->value)
         ->toHaveKey(ReportType::StateUtilization->value);
+});
+
+it('groups report device options by device type for the device select', function (): void {
+    $organization = Organization::factory()->create();
+    $energyMeterType = DeviceType::factory()->create([
+        'name' => 'Energy Meter',
+        'key' => 'energy_meter_reports',
+    ]);
+    $steamMeterType = DeviceType::factory()->create([
+        'name' => 'Steam Meter',
+        'key' => 'steam_meter_reports',
+    ]);
+
+    $energyMeter = Device::factory()->create([
+        'organization_id' => $organization->id,
+        'device_type_id' => $energyMeterType->id,
+        'name' => 'Compressor Main Feed',
+        'external_id' => 'EM-001',
+    ]);
+    $steamMeter = Device::factory()->create([
+        'organization_id' => $organization->id,
+        'device_type_id' => $steamMeterType->id,
+        'name' => 'Boiler Header',
+        'external_id' => 'SM-002',
+    ]);
+
+    /** @var User $admin */
+    $admin = User::factory()->create();
+    $admin->organizations()->attach($organization->id);
+    $this->actingAs($admin);
+
+    $component = app(Reports::class);
+    $method = new ReflectionMethod($component, 'deviceOptions');
+    $method->setAccessible(true);
+
+    /** @var array<string, array<int, string>> $options */
+    $options = $method->invoke($component, $organization->id);
+
+    expect($options)
+        ->toHaveKey('Energy Meter')
+        ->toHaveKey('Steam Meter')
+        ->and($options['Energy Meter'])
+        ->toMatchArray([$energyMeter->id => 'Compressor Main Feed (EM-001)'])
+        ->and($options['Steam Meter'])
+        ->toMatchArray([$steamMeter->id => 'Boiler Header (SM-002)']);
 });
 
 it('adds custom shift schedule aggregation options only when schedules exist', function (): void {
